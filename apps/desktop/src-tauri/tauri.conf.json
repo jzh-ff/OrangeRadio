@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OrangeRadio",
+  "version": "0.1.0",
+  "identifier": "com.orangeradio.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "cd ../../frontend && npm run dev",
+    "beforeBuildCommand": "cd ../../frontend && npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "OrangeRadio · 沉浸式智能音乐播放器",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "focus": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Music",
+    "shortDescription": "沉浸式智能音乐播放器 + AI 音乐创作工作站",
+    "longDescription": "OrangeRadio 是一款全平台沉浸式智能音乐播放器，融合 Hi-Res 高保真音质、AI 智能推荐、沉浸式视觉、社交协作，以及由 MiniMax 驱动的专业级 AI 音乐创作工作站。"
+  }
+}

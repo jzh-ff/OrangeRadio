@@ -1,0 +1,77 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/orange-core",
+    "crates/orange-audio",
+    "crates/orange-library",
+    "crates/orange-sources",
+    "crates/orange-ai",
+    "crates/orange-studio",
+    "crates/orange-sync",
+    "crates/orange-hue",
+    "crates/orange-tauri",
+    "apps/desktop/src-tauri",
+    "server",
+]
+
+# 统一版本管理
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["OrangeRadio Team"]
+license = "MIT"
+repository = "https://github.com/orangeradio/orangeradio"
+
+[workspace.dependencies]
+# 内部 crate
+orange-core = { path = "crates/orange-core" }
+orange-audio = { path = "crates/orange-audio" }
+orange-library = { path = "crates/orange-library" }
+orange-sources = { path = "crates/orange-sources" }
+orange-ai = { path = "crates/orange-ai" }
+orange-studio = { path = "crates/orange-studio" }
+orange-sync = { path = "crates/orange-sync" }
+orange-hue = { path = "crates/orange-hue" }
+orange-tauri = { path = "crates/orange-tauri" }
+
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 错误处理
+thiserror = "1"
+anyhow = "1"
+
+# 通用工具
+once_cell = "1"
+parking_lot = "0.12"
+dashmap = "6"
+
+# 时间
+chrono = { version = "0.4", features = ["serde"] }
+
+# 唯一 ID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# HTTP 客户端
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# 异步 trait
+async-trait = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

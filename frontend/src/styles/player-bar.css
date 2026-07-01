@@ -1,0 +1,116 @@
+.playerbar {
+  height: 84px;
+  display: grid;
+  grid-template-columns: 280px 1fr 280px;
+  align-items: center;
+  padding: 0 24px;
+  gap: 20px;
+  background: rgba(10, 10, 18, 0.92);
+  backdrop-filter: blur(var(--blur));
+  border-top: 1px solid var(--border);
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+/* ===== 左：曲目信息 ===== */
+.pb-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+.pb-cover {
+  width: 50px; height: 50px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--orange), var(--orange-2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0;
+  box-shadow: 0 6px 18px rgba(255, 107, 26, 0.35);
+}
+.pb-cover--spin { animation: cover-spin 8s linear infinite; }
+@keyframes cover-spin { to { transform: rotate(360deg); } }
+
+.pb-meta { min-width: 0; }
+.pb-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pb-artist {
+  font-size: 11px; color: var(--text-3); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ===== 中：控制 + 进度 ===== */
+.pb-center { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+.pb-controls { display: flex; align-items: center; gap: 18px; }
+
+.pb-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  color: var(--text-2); transition: all 0.15s var(--ease);
+}
+.pb-btn:hover { color: var(--text); background: var(--bg-hover); transform: scale(1.08); }
+
+.pb-btn--play {
+  width: 42px; height: 42px;
+  background: linear-gradient(135deg, var(--orange), var(--orange-2));
+  color: #fff;
+  box-shadow: 0 4px 16px var(--orange-glow);
+}
+.pb-btn--play:hover {
+  background: linear-gradient(135deg, var(--orange-2), var(--orange));
+  box-shadow: 0 6px 22px var(--orange-glow);
+  transform: scale(1.08);
+}
+
+.pb-progress { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 520px; }
+
+.pb-time {
+  font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums;
+  min-width: 34px; text-align: center;
+}
+
+/* 自定义进度条 */
+.pb-slider { position: relative; flex: 1; height: 16px; display: flex; align-items: center; }
+.pb-slider__track {
+  position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1); overflow: visible;
+}
+.pb-slider__fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--orange), var(--orange-2));
+  transition: width 0.1s linear;
+}
+.pb-slider__thumb {
+  position: absolute; top: 50%; width: 12px; height: 12px;
+  border-radius: 50%; background: #fff; transform: translate(-50%, -50%);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4); opacity: 0;
+  transition: opacity 0.15s;
+}
+.pb-slider:hover .pb-slider__thumb { opacity: 1; }
+.pb-slider__input {
+  position: absolute; left: 0; right: 0; width: 100%; height: 16px;
+  opacity: 0; cursor: pointer; margin: 0;
+}
+
+/* ===== 右：模式 + 音量 ===== */
+.pb-right { display: flex; align-items: center; gap: 16px; justify-content: flex-end; }
+
+.pb-btn--mode {
+  width: auto; padding: 0 12px; gap: 6px; border-radius: 8px;
+  font-size: 13px; background: var(--bg-3);
+}
+.pb-mode-label { font-size: 12px; color: var(--text-2); }
+
+.pb-vol { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+
+.pb-vol-slider { position: relative; width: 90px; height: 16px; display: flex; align-items: center; }
+.pb-vol-track {
+  position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.pb-vol-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--text-2); transition: width 0.1s;
+}
+.pb-vol-input {
+  position: absolute; left: 0; right: 0; width: 100%; height: 16px;
+  opacity: 0; cursor: pointer; margin: 0;
+}

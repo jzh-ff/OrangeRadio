@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "OrangeRadio 识歌助手",
+  "version": "0.1.0",
+  "description": "在网页/视频站识别正在播放的 BGM，一键加入 OrangeRadio 音乐库",
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": ["activeTab", "tabCapture", "storage", "nativeMessaging"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+[package]
+name = "orangeradio-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OrangeRadio 沉浸式智能音乐播放器桌面端"
+
+[lib]
+name = "orangeradio_desktop_lib"
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# OrangeRadio 内部模块
+orange-core.workspace = true
+orange-tauri.workspace = true
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

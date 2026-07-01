@@ -1,0 +1,185 @@
+.studio-view {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.studio-view__header {
+  margin-bottom: 36px;
+}
+
+.studio-view__title {
+  font-size: 32px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.studio-view__badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent-orange), var(--accent-orange-soft));
+  color: white;
+}
+
+.studio-view__subtitle {
+  color: var(--text-secondary);
+  margin-top: 10px;
+  font-size: 15px;
+}
+
+/* AI 创作输入框 */
+.studio-prompt {
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.08), rgba(30, 30, 46, 0.6));
+  backdrop-filter: blur(var(--blur));
+  border: 1px solid rgba(255, 107, 26, 0.2);
+  border-radius: 16px;
+  margin-bottom: 20px;
+}
+
+.studio-prompt__label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.studio-prompt__input-wrap {
+  display: flex;
+  gap: 12px;
+}
+
+.studio-prompt__input {
+  flex: 1;
+  padding: 14px 16px;
+  background: rgba(10, 10, 15, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.studio-prompt__input:focus {
+  border-color: var(--accent-orange);
+}
+
+.studio-prompt__btn {
+  padding: 0 24px;
+  background: linear-gradient(135deg, var(--accent-orange), var(--accent-orange-soft));
+  color: white;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: transform 0.15s;
+  white-space: nowrap;
+}
+
+.studio-prompt__btn:hover {
+  transform: scale(1.03);
+}
+
+.studio-prompt__hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 创作流程 */
+.studio-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.studio-step {
+  position: relative;
+  padding: 18px 16px;
+  background: rgba(30, 30, 46, 0.5);
+  backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.studio-step__num {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-orange);
+}
+
+.studio-step__icon {
+  font-size: 26px;
+  margin-bottom: 8px;
+}
+
+.studio-step__title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.studio-step__desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* DAW 预览 */
+.daw-preview {
+  padding: 20px;
+  background: rgba(15, 15, 25, 0.8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.daw-preview__tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.daw-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.daw-track__label {
+  width: 90px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.daw-track__lane {
+  flex: 1;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  position: relative;
+}
+
+.daw-clip {
+  position: absolute;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.5), rgba(255, 140, 66, 0.3));
+  border-radius: 6px;
+  border: 1px solid rgba(255, 107, 26, 0.4);
+}
+
+.daw-preview__note {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}

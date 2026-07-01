@@ -1,0 +1,52 @@
+.sidebar {
+  width: 230px; height: 100%; flex-shrink: 0;
+  background: rgba(12, 12, 20, 0.7);
+  backdrop-filter: blur(var(--blur));
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 20px 0;
+  position: relative; z-index: 5;
+}
+
+.sidebar__logo {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 22px 22px; font-size: 19px; font-weight: 800;
+}
+.sidebar__logo-icon { font-size: 26px; filter: drop-shadow(0 2px 8px var(--orange-glow)); }
+.sidebar__logo-text {
+  background: linear-gradient(135deg, var(--orange), var(--orange-2));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+.sidebar__nav { padding: 0 14px; display: flex; flex-direction: column; gap: 4px; }
+
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  width: 100%; text-align: left; transition: all 0.18s var(--ease);
+}
+.nav-item:hover { background: var(--bg-hover); }
+.nav-item--active {
+  background: linear-gradient(135deg, var(--orange-soft), transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 107, 26, 0.25);
+}
+.nav-item--active .nav-item__label { color: var(--orange-2); }
+.nav-item__icon { font-size: 18px; width: 24px; text-align: center; }
+.nav-item__label { font-size: 14px; font-weight: 600; color: var(--text); }
+
+.sidebar__menu {
+  padding: 12px 14px; margin-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto; flex: 1;
+}
+.menu-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 12px; border-radius: 8px; width: 100%; text-align: left;
+  font-size: 13px; color: var(--text-2); transition: all 0.15s var(--ease);
+}
+.menu-item:hover { background: var(--bg-hover); color: var(--text); }
+.menu-item__icon { font-size: 15px; width: 24px; text-align: center; }
+
+.sidebar__footer { padding: 12px 22px; border-top: 1px solid var(--border); }
+.sidebar__version { font-size: 10px; color: var(--text-3); }
