@@ -35,6 +35,17 @@ export function LibraryView() {
 
   return (
     <div className="library">
+      <div className="library__deck-head">
+        <div>
+          <span className="library__eyebrow">Local deck</span>
+          <h2>音乐库控制台</h2>
+        </div>
+        <div className="library__deck-meta">
+          <span>{tracks.length} 首曲目</span>
+          <span>{loading ? "扫描信号中" : "待机就绪"}</span>
+        </div>
+      </div>
+
       <div className="library__toolbar">
         <div className="library__search">
           <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -49,6 +60,9 @@ export function LibraryView() {
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
           />
         </div>
+        <button className="btn-tune" onClick={() => doSearch()} disabled={loading}>
+          调谐搜索
+        </button>
         <button className="btn-scan" onClick={() => scanLocal()} disabled={loading}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7l-2-2H5a2 2 0 0 0-2 2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
@@ -68,7 +82,7 @@ export function LibraryView() {
             </svg>
           </div>
           <div className="library__empty-title">{loading ? "正在扫描你的音乐库…" : "还没有音乐"}</div>
-          <div className="library__empty-desc">点击右上角「扫描本地音乐」选择你的音乐文件夹</div>
+          <div className="library__empty-desc">点击「扫描本地音乐」选择文件夹，OrangeRadio 会接入你的本地声波。</div>
         </div>
       ) : (
         <div className="library__list">

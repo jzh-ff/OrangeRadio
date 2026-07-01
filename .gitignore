@@ -1,30 +1,51 @@
-# Rust
+# ===== Rust =====
 /target/
 **/target/
-Cargo.lock
 
-# Node
+# Cargo.lock：二进制应用应提交以保证可复现构建，故不忽略
+# （若开发库则取消注释下行）
+# Cargo.lock
+
+# ===== Node / 前端 =====
 node_modules/
 **/dist/
 
-# IDE
-.vscode/
-.idea/
-*.swp
+# ===== Tauri 自动生成物（cargo build 产出，不入库）=====
+apps/desktop/src-tauri/gen/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# 环境变量
-.env
-.env.local
-
-# 构建产物
+# ===== 构建产物 / 二进制 =====
 *.exe
 *.dll
 *.so
 *.dylib
+*.app
 
-# 测试音频（不入库）
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 环境变量 / 密钥 =====
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ===== 日志 / 临时文件 =====
+*.log
+*.tmp
+*.bak
+
+# ===== 截图 / 调试产物 =====
+*.png
+screenshot*.png
+webview*.log
+
+# ===== 测试音频（不入库）=====
 test-music/

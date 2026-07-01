@@ -45,10 +45,16 @@ export function PlayerBar() {
     <div className="playerbar">
       {/* 左：曲目信息 */}
       <div className="pb-left">
-        <div className={`pb-cover ${isPlaying ? "pb-cover--spin" : ""}`}>🎵</div>
+        <div className={`pb-cover ${isPlaying ? "pb-cover--spin" : ""}`}>
+          <span className="pb-cover__disc">OR</span>
+        </div>
         <div className="pb-meta">
           <div className="pb-title">{currentTrack?.meta.title || "OrangeRadio"}</div>
           <div className="pb-artist">{currentTrack?.meta.artist || "选择一首歌开始"}</div>
+          <div className="pb-state">
+            <span className={isPlaying ? "is-live" : ""} />
+            {isPlaying ? "LIVE SIGNAL" : "STANDBY"}
+          </div>
         </div>
       </div>
 
@@ -68,6 +74,11 @@ export function PlayerBar() {
           <button className="pb-btn" onClick={() => engineRef.next()} title="下一首">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6v12z" /></svg>
           </button>
+        </div>
+        <div className={`pb-waveform ${isPlaying ? "pb-waveform--live" : ""}`} aria-hidden="true">
+          {[32, 52, 40, 78, 62, 34, 88, 58, 46, 72, 38, 64, 50, 82, 44, 60].map((height, i) => (
+            <span key={i} style={{ height: `${height}%` }} />
+          ))}
         </div>
         <div className="pb-progress">
           <span className="pb-time">{fmt(position)}</span>
@@ -102,6 +113,7 @@ export function PlayerBar() {
             {volume > 0.3 && <path d="M15.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
             {volume > 0.6 && <path d="M18.5 5.5a9 9 0 0 1 0 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
           </svg>
+          <span className="pb-vol-pct">{volPct}</span>
           <div className="pb-vol-slider">
             <div className="pb-vol-track">
               <div className="pb-vol-fill" style={{ width: `${volPct}%` }} />
