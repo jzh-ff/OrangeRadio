@@ -25,3 +25,6 @@ Thumbs.db
 *.dll
 *.so
 *.dylib
+
+# 测试音频（不入库）
+test-music/
