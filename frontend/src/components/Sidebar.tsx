@@ -6,9 +6,9 @@ const NAV: { key: "player" | "studio"; label: string; icon: string; kicker: stri
   { key: "studio", label: "创作工作室", icon: "OS", kicker: "AI console" },
 ];
 
-const MENU = [
-  { label: "我的音乐库", icon: "LIB", status: "LIVE" },
-  { label: "网络电台", icon: "RAD", status: "SOON" },
+const MENU: { label: string; icon: string; status: string; sub?: "library" | "radio" }[] = [
+  { label: "我的音乐库", icon: "LIB", status: "", sub: "library" },
+  { label: "网络电台", icon: "RAD", status: "", sub: "radio" },
   { label: "播客", icon: "POD", status: "SOON" },
   { label: "AI 推荐", icon: "AI", status: "v0.5" },
   { label: "懂你模式", icon: "YOU", status: "v0.5" },
@@ -19,7 +19,9 @@ const MENU = [
 
 export function Sidebar() {
   const view = usePlayerStore((s) => s.view);
+  const subView = usePlayerStore((s) => s.subView);
   const setView = usePlayerStore((s) => s.setView);
+  const setSubView = usePlayerStore((s) => s.setSubView);
 
   return (
     <aside className="sidebar">
@@ -54,13 +56,20 @@ export function Sidebar() {
       </nav>
 
       <div className="sidebar__menu">
-        {MENU.map((item) => (
-          <button key={item.label} className="menu-item">
-            <span className="menu-item__icon">{item.icon}</span>
-            <span className="menu-item__label">{item.label}</span>
-            {item.status && <span className="menu-item__status">{item.status}</span>}
-          </button>
-        ))}
+        {MENU.map((item) => {
+          const active = item.sub && view === "player" && subView === item.sub;
+          return (
+            <button
+              key={item.label}
+              className={`menu-item ${active ? "menu-item--active" : ""}`}
+              onClick={() => item.sub && setSubView(item.sub)}
+            >
+              <span className="menu-item__icon">{item.icon}</span>
+              <span className="menu-item__label">{item.label}</span>
+              {item.status && <span className="menu-item__status">{item.status}</span>}
+            </button>
+          );
+        })}
       </div>
 
       <div className="sidebar__footer">
@@ -71,7 +80,7 @@ export function Sidebar() {
           <span style={{ height: "78%" }} />
           <span style={{ height: "52%" }} />
         </div>
-        <div className="sidebar__version">v0.2.0 · 播放器内核</div>
+        <div className="sidebar__version">v0.3.0 · 音源生态</div>
       </div>
     </aside>
   );
