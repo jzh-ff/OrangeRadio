@@ -17,3 +17,4 @@ chrono.workspace = true
 lofty = "0.21"
 walkdir = "2"
 parking_lot.workspace = true
+rusqlite = { version = "0.31", features = ["bundled"] }

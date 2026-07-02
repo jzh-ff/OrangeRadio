@@ -6,6 +6,7 @@ pub mod commands;
 
 use orange_library::LibraryDb;
 use orange_sources::WebRadioSource;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// 应用核心状态（注入到 Tauri 的 Managed State）
@@ -18,9 +19,18 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
+        // 打开 SQLite 持久化库（启动时从磁盘加载缓存，秒开无需重扫）
+        let db_path = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(".orangeradio")
+            .join("library.sqlite");
+        let library = LibraryDb::open(&db_path).unwrap_or_else(|e| {
+            tracing::warn!("打开本地库 SQLite 失败，降级为内存库: {}", e);
+            LibraryDb::new()
+        });
         Self {
             event_bus: orange_core::EventBus::default(),
-            library: LibraryDb::new(),
+            library,
             web_radio: Arc::new(WebRadioSource::new()),
         }
     }
