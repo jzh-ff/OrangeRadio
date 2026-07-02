@@ -1,8 +1,8 @@
 # OrangeRadio launcher
 # Usage: .\run.ps1
 #
-# IMPORTANT: this script prepends WinLibs GCC to PATH so the Rust GNU
-# toolchain can find libgcc/libgcc_eh during linking.
+# 自动配置：把 MSVC 的 link.exe 加到 PATH 最前面（盖过 Git 的 /usr/bin/link），
+# 解决 Rust MSVC 工具链链接报错 "link: extra operand"。
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -15,30 +15,36 @@ Write-Host ""
 Write-Host "Working dir: $Root"
 Write-Host ""
 
-# --- Prepend WinLibs GCC to PATH ---
-$WinLibsBin = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.MSVCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin"
-$GccExe = Join-Path $WinLibsBin "gcc.exe"
-if (Test-Path $GccExe) {
-    $env:PATH = "$WinLibsBin;" + $env:PATH
-    $gccVer = & $GccExe --version 2>&1 | Select-Object -First 1
-    Write-Host "[toolchain] WinLibs GCC enabled: $gccVer" -ForegroundColor Green
+# --- 1. 把 MSVC link.exe 加到 PATH 最前 ---
+# 在多个常见位置搜索 MSVC link.exe（VS 可能在 C 盘或 D 盘）
+$MsvcPatterns = @(
+    "$env:ProgramFiles\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64",
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64",
+    "D:\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64"
+)
+$MsvcLink = $null
+foreach ($pattern in $MsvcPatterns) {
+    $found = Get-ChildItem -Path $pattern -Filter "link.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) { $MsvcLink = $found.FullName; break }
+}
+if ($MsvcLink) {
+    $MsvcBin = Split-Path $MsvcLink
+    $env:PATH = "$MsvcBin;$env:PATH"
+    Write-Host "[toolchain] MSVC link.exe: $MsvcLink" -ForegroundColor Green
 } else {
-    Write-Host "[WARN] WinLibs GCC not found! Linking may fail." -ForegroundColor Red
-    Write-Host "  Expected at: $WinLibsBin" -ForegroundColor Red
-    Write-Host "  Install it: winget install BrechtSanders.WinLibs.POSIX.MSVCRT" -ForegroundColor Red
-    Write-Host ""
+    Write-Host "[toolchain] MSVC link.exe not found, using default PATH" -ForegroundColor Yellow
 }
 
-# --- Ensure cargo on PATH ---
+# --- 2. 确保 cargo 在 PATH ---
 $CargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
 if (Test-Path (Join-Path $CargoBin "cargo.exe")) {
-    $env:PATH = "$CargoBin;" + $env:PATH
+    $env:PATH = "$CargoBin;$env:PATH"
 }
 $rustcVer = rustc --version 2>&1
 Write-Host "[rust] $rustcVer" -ForegroundColor Cyan
 Write-Host ""
 
-# --- 1. Build frontend ---
+# --- 3. Build frontend ---
 Write-Host "[1/3] Building frontend..." -ForegroundColor Cyan
 Push-Location (Join-Path $Root "frontend")
 npm run build
@@ -48,19 +54,19 @@ if ($code -ne 0) { Write-Host "[FAIL] frontend build failed" -ForegroundColor Re
 Write-Host "[OK] frontend built" -ForegroundColor Green
 Write-Host ""
 
-# --- 2. Build Rust ---
+# --- 4. Build Rust ---
 Write-Host "[2/3] Building Rust desktop app..." -ForegroundColor Cyan
 cargo build -p orangeradio-desktop
 $code = $LASTEXITCODE
 if ($code -ne 0) {
     Write-Host "[FAIL] Rust build failed" -ForegroundColor Red
-    Write-Host "If you see libgcc link errors, make sure WinLibs GCC is installed." -ForegroundColor Yellow
+    Write-Host "If link error, ensure Visual Studio (C++ workload) is installed." -ForegroundColor Yellow
     exit 1
 }
 Write-Host "[OK] Rust built" -ForegroundColor Green
 Write-Host ""
 
-# --- 3. Launch ---
+# --- 5. Launch ---
 Write-Host "[3/3] Launching OrangeRadio..." -ForegroundColor Cyan
 Write-Host "(close the app window to exit)" -ForegroundColor Gray
 Write-Host ""

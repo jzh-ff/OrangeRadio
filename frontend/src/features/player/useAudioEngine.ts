@@ -54,7 +54,10 @@ export function useAudioEngine() {
     async (filePath: string) => {
       const audio = audioRef.current;
       if (!audio) return;
-      const url = convertFileSrc(filePath);
+      // 网络 URL（电台/流媒体）直接用；本地文件路径才走 asset 协议转换
+      const url = /^https?:\/\//i.test(filePath)
+        ? filePath
+        : convertFileSrc(filePath);
       audio.src = url;
       try {
         await audio.play();

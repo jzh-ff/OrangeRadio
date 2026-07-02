@@ -158,6 +158,12 @@
   font-size: 13px; color: var(--text-2); transition: all 0.18s var(--ease);
 }
 .menu-item:hover { background: var(--bg-hover); color: var(--text); transform: translateX(3px); }
+.menu-item--active {
+  background: linear-gradient(90deg, var(--orange-soft), transparent);
+  color: var(--orange-2);
+  box-shadow: inset 2px 0 0 var(--orange);
+}
+.menu-item--active .menu-item__icon { color: var(--orange-2); }
 .menu-item__icon {
   width: 30px;
   color: var(--text-3);

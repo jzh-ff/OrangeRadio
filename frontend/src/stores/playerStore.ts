@@ -16,12 +16,15 @@ interface PlayerState {
   volume: number;
   mode: PlaybackMode;
   view: "player" | "studio";
+  /** 播放器内子页面 */
+  subView: "library" | "radio";
   spectrum: number[];
   /** 当前播放队列 + 索引（用于上/下一首） */
   tracks: Track[];
   currentIndex: number;
 
   setView: (v: "player" | "studio") => void;
+  setSubView: (v: "library" | "radio") => void;
   setMode: (m: PlaybackMode) => void;
   setCurrent: (t: Track, index: number) => void;
   setQueue: (tracks: Track[]) => void;
@@ -36,11 +39,13 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   volume: 0.7,
   mode: "sequence",
   view: "player",
+  subView: "library",
   spectrum: new Array(64).fill(0),
   tracks: [],
   currentIndex: -1,
 
   setView: (view) => set({ view }),
+  setSubView: (subView) => set({ view: "player", subView }),
   setMode: (mode) => set({ mode }),
   setCurrent: (currentTrack, currentIndex) => set({ currentTrack, currentIndex }),
   setQueue: (tracks) => set({ tracks }),

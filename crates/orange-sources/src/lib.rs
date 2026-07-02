@@ -22,6 +22,8 @@ pub mod netease;
 pub mod qqmusic;
 pub mod spotify;
 
+pub use web_radio::WebRadioSource;
+
 /// 音源注册表：管理所有已注册的音源实例
 pub struct SourceRegistry {
     sources: Vec<Box<dyn orange_core::source::AudioSource>>,

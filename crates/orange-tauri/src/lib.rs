@@ -5,12 +5,15 @@
 pub mod commands;
 
 use orange_library::LibraryDb;
+use orange_sources::WebRadioSource;
+use std::sync::Arc;
 
 /// 应用核心状态（注入到 Tauri 的 Managed State）
 #[derive(Clone)]
 pub struct AppState {
     pub event_bus: orange_core::EventBus,
     pub library: LibraryDb,
+    pub web_radio: Arc<WebRadioSource>,
 }
 
 impl Default for AppState {
@@ -18,6 +21,7 @@ impl Default for AppState {
         Self {
             event_bus: orange_core::EventBus::default(),
             library: LibraryDb::new(),
+            web_radio: Arc::new(WebRadioSource::new()),
         }
     }
 }
