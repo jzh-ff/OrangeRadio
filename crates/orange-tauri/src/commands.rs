@@ -136,6 +136,68 @@ pub async fn radio_popular(
         .map_err(|e| e.to_string())
 }
 
+// ===== 网易云音乐命令 =====
+
+/// 网易云 Cookie 登录
+#[tauri::command]
+pub async fn netease_login(
+    state: tauri::State<'_, AppState>,
+    cookie: String,
+) -> Result<(), String> {
+    use orange_core::AuthSource;
+    state.netease.login_with_cookie(&cookie).await.map_err(|e| e.to_string())
+}
+
+/// 网易云登出
+#[tauri::command]
+pub async fn netease_logout(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    use orange_core::AuthSource;
+    state.netease.logout().await.map_err(|e| e.to_string())
+}
+
+/// 网易云是否已登录
+#[tauri::command]
+pub async fn netease_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.netease.is_ready())
+}
+
+/// 网易云搜索
+#[tauri::command]
+pub async fn netease_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+) -> Result<Vec<Track>, String> {
+    use orange_core::AudioSource;
+    let query = SearchQuery {
+        keyword,
+        page: 1,
+        page_size: 30,
+        ..Default::default()
+    };
+    let result = state.netease.search(&query).await.map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+/// 网易云获取播放地址
+#[tauri::command]
+pub async fn netease_stream(
+    state: tauri::State<'_, AppState>,
+    track_id: String,
+) -> Result<String, String> {
+    use orange_core::AudioSource;
+    // 构造临时 Track 来调用 resolve_stream
+    let track = Track::new(
+        state.netease.id(),
+        track_id,
+        orange_core::track::TrackMeta::default(),
+    );
+    let loc = state.netease.resolve_stream(&track).await.map_err(|e| e.to_string())?;
+    match loc {
+        orange_core::StreamLocation::Url { url, .. } => Ok(url),
+        _ => Err("不支持的流类型".into()),
+    }
+}
+
 /// 注册所有命令到 Tauri Builder
 pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder
@@ -151,5 +213,10 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             log_path,
             radio_search,
             radio_popular,
+            netease_login,
+            netease_logout,
+            netease_status,
+            netease_search,
+            netease_stream,
         ])
 }

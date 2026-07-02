@@ -118,6 +118,71 @@ pub trait AudioSource: Send + Sync {
     }
 }
 
+/// 可登录音源 trait（网易云/QQ 等需要账号的平台实现）
+///
+/// 支持两种登录方式：
+/// - 二维码扫码（推荐，最安全）
+/// - Cookie 导入（用户从浏览器复制登录态）
+#[async_trait]
+pub trait AuthSource: AudioSource {
+    /// 生成二维码登录 key + 图片 URL（二维码扫码登录）
+    async fn qrcode_create(&self) -> Result<QrCodeLogin> {
+        Err(crate::CoreError::Unsupported("该音源不支持二维码登录".into()))
+    }
+
+    /// 查询二维码扫码状态（轮询）
+    async fn qrcode_check(&self, _key: &str) -> Result<QrCodeStatus> {
+        Err(crate::CoreError::Unsupported("该音源不支持二维码登录".into()))
+    }
+
+    /// 用 Cookie 登录（用户导入浏览器 Cookie）
+    async fn login_with_cookie(&self, _cookie: &str) -> Result<()> {
+        Err(crate::CoreError::Unsupported("该音源不支持 Cookie 登录".into()))
+    }
+
+    /// 登出
+    async fn logout(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// 当前登录用户信息
+    async fn current_user(&self) -> Result<Option<UserInfo>> {
+        Ok(None)
+    }
+}
+
+/// 二维码登录信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QrCodeLogin {
+    /// 二维码 key（用于轮询状态）
+    pub key: String,
+    /// 二维码图片 URL 或 base64 data URI
+    pub qr_image: String,
+}
+
+/// 二维码扫码状态
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QrCodeStatus {
+    /// 等待扫码
+    Waiting,
+    /// 已扫码，等待确认
+    Scanned,
+    /// 已确认，登录成功
+    Confirmed { cookie: String },
+    /// 已过期
+    Expired,
+}
+
+/// 用户信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserInfo {
+    pub uid: String,
+    pub nickname: String,
+    pub avatar_url: Option<String>,
+    pub vip: bool,
+}
+
 /// 流地址：播放器据此获取音频数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]

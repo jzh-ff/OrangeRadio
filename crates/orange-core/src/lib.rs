@@ -21,7 +21,10 @@ pub mod recommendation;
 
 pub use error::{CoreError, Result};
 pub use track::{Track, TrackId, TrackMeta, Artwork};
-pub use source::{AudioSource, SourceId, SourceKind, SearchQuery, SearchResult};
+pub use source::{
+    AudioSource, AuthSource, SourceId, SourceKind, SearchQuery, SearchResult,
+    StreamLocation, PlaylistRef, QrCodeLogin, QrCodeStatus, UserInfo,
+};
 pub use player::{Player, PlayerState, PlayerEvent, PlaybackMode, RepeatMode};
 pub use events::{EventBus, EventSubscription};
 pub use audio_format::AudioFormat;
