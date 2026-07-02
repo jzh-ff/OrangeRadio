@@ -23,6 +23,7 @@ pub mod qqmusic;
 pub mod spotify;
 
 pub use web_radio::WebRadioSource;
+pub use netease::NeteaseSource;
 
 /// 音源注册表：管理所有已注册的音源实例
 pub struct SourceRegistry {

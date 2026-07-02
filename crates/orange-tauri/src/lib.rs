@@ -5,7 +5,7 @@
 pub mod commands;
 
 use orange_library::LibraryDb;
-use orange_sources::WebRadioSource;
+use orange_sources::{NeteaseSource, WebRadioSource};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -15,6 +15,7 @@ pub struct AppState {
     pub event_bus: orange_core::EventBus,
     pub library: LibraryDb,
     pub web_radio: Arc<WebRadioSource>,
+    pub netease: Arc<NeteaseSource>,
 }
 
 impl Default for AppState {
@@ -32,6 +33,7 @@ impl Default for AppState {
             event_bus: orange_core::EventBus::default(),
             library,
             web_radio: Arc::new(WebRadioSource::new()),
+            netease: Arc::new(NeteaseSource::new()),
         }
     }
 }

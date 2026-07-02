@@ -1,6 +1,7 @@
 import type { PointerEvent } from "react";
 import { LibraryView } from "./LibraryView";
 import { RadioView } from "./RadioView";
+import { NeteaseView } from "./NeteaseView";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { usePlayerStore, type PlaybackMode } from "../../stores/playerStore";
 import "../../styles/player.css";
@@ -76,6 +77,8 @@ export function PlayerView() {
 
       {subView === "radio" ? (
         <RadioView />
+      ) : subView === "netease" ? (
+        <NeteaseView />
       ) : (
         <>
           <LibraryView />
