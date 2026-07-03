@@ -2500,6 +2500,7 @@ name = "orange-sources"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "orange-core",
  "quick-xml 0.36.2",
  "reqwest 0.12.28",
