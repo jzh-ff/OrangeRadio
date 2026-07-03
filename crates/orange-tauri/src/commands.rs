@@ -197,7 +197,6 @@ pub async fn netease_stream(
     track_id: String,
 ) -> Result<String, String> {
     use orange_core::AudioSource;
-    // 构造临时 Track 来调用 resolve_stream
     let track = Track::new(
         state.netease.id(),
         track_id,
@@ -207,6 +206,34 @@ pub async fn netease_stream(
     match loc {
         orange_core::StreamLocation::Url { url, .. } => Ok(url),
         _ => Err("不支持的流类型".into()),
+    }
+}
+
+/// 网易云获取用户歌单
+#[tauri::command]
+pub async fn netease_playlists(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let list = state.netease.user_playlists().await.map_err(|e| e.to_string())?;
+    Ok(list.into_iter().map(|(id, name, count)| serde_json::json!({
+        "id": id, "name": name, "count": count
+    })).collect())
+}
+
+/// 网易云每日推荐
+#[tauri::command]
+pub async fn netease_daily(state: tauri::State<'_, AppState>) -> Result<Vec<Track>, String> {
+    state.netease.daily_songs().await.map_err(|e| e.to_string())
+}
+
+/// 网易云歌单详情
+#[tauri::command]
+pub async fn netease_playlist_detail(
+    state: tauri::State<'_, AppState>,
+    playlist_id: String,
+) -> Result<Vec<Track>, String> {
+    state.netease.playlist_detail(&playlist_id).await.map_err(|e| e.to_string())
+}
     }
 }
 
@@ -342,6 +369,9 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_status,
             netease_search,
             netease_stream,
+            netease_playlists,
+            netease_daily,
+            netease_playlist_detail,
             netease_qrcode_create,
             netease_qrcode_check,
             podcast_fetch,
