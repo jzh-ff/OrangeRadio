@@ -115,7 +115,7 @@ impl AudioSource for NeteaseSource {
         let limit = query.page_size.min(50);
         let offset = ((query.page.saturating_sub(1)) as usize) * limit as usize;
         let url = format!("{}/api/search/get/web?csrf_token=&type=1&offset={}&limit={}&s={}",
-            BASE, ((query.page.saturating_sub(1)) as usize) * limit as usize, limit, urlencode(&query.keyword));
+            BASE, ((query.page.saturating_sub(1)) as usize) * limit as usize, limit, &query.keyword);
 
         let mut req = self.client.get(&url).header("Referer", BASE);
         if let Some(c) = &cookie {
