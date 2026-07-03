@@ -186,13 +186,21 @@ impl AuthSource for NeteaseSource {
     ///
     /// GET /api/login/qrcode/client/login?key={key}
     /// 返回码：800=过期 801=等待扫码 802=已扫码待确认 803=成功(返回cookie)
+    ///
+    /// 关键：用不跟随重定向的 client，确保 803 时的 Set-Cookie 不丢失。
     async fn qrcode_check(&self, key: &str) -> Result<QrCodeStatus> {
         let url = format!("{}/api/login/qrcode/client/login?key={}", BASE, key);
 
-        let resp = self.client
+        // 专用 client：禁用重定向（803 可能返回 302，跟随会丢 Set-Cookie）
+        let no_redirect_client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .build()
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        let resp = no_redirect_client
             .get(&url)
             .header("Referer", BASE)
-            .header("User-Agent", "Mozilla/5.0")
             .send().await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
@@ -204,26 +212,44 @@ impl AuthSource for NeteaseSource {
             .filter_map(|v| v.to_str().ok().map(String::from))
             .collect();
 
-        #[derive(Deserialize)]
-        struct CheckResp { code: i32, message: Option<String> }
-        let body: CheckResp = resp
-            .json().await
+        // 先读 body 文本（803 时 header 过大可能导致 json() 失败）
+        let body_text = resp
+            .text().await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
-        match body.code {
+        tracing::debug!("扫码 check 响应: {}", &body_text[..body_text.len().min(200)]);
+
+        // 解析 code
+        let code = serde_json::from_str::<serde_json::Value>(&body_text)
+            .ok()
+            .and_then(|v| v["code"].as_i64())
+            .unwrap_or(-1) as i32;
+
+        match code {
             800 => Ok(QrCodeStatus::Expired),
             801 => Ok(QrCodeStatus::Waiting),
             802 => Ok(QrCodeStatus::Scanned),
             803 => {
-                // 成功：拼接完整 cookie
+                // 成功：从 Set-Cookie 提取 MUSIC_U 等登录态
                 let cookie = set_cookie
                     .iter()
+                    .filter(|c| c.contains("MUSIC_U") || c.contains("__csrf") || c.contains("NMTID"))
                     .map(|c| c.split(';').next().unwrap_or("").to_string())
                     .collect::<Vec<_>>()
                     .join("; ");
-                if cookie.is_empty() {
+                // 如果 Set-Cookie 没有 MUSIC_U，尝试从 body 提取
+                let cookie = if cookie.contains("MUSIC_U") {
+                    cookie
+                } else {
+                    serde_json::from_str::<serde_json::Value>(&body_text)
+                        .ok()
+                        .and_then(|v| v["cookie"].as_str().map(String::from))
+                        .unwrap_or(cookie)
+                };
+                if !cookie.contains("MUSIC_U") {
+                    tracing::warn!("扫码成功但未获取到 MUSIC_U cookie，set-cookie: {:?}", set_cookie);
                     return Err(orange_core::CoreError::AuthFailed(
-                        "扫码成功但未获取到 Cookie".into()
+                        "扫码成功但未获取到登录凭证，请重试".into()
                     ));
                 }
                 *self.cookie.write().await = Some(cookie.clone());
@@ -231,8 +257,11 @@ impl AuthSource for NeteaseSource {
                 tracing::info!("网易云扫码登录成功");
                 Ok(QrCodeStatus::Confirmed { cookie })
             }
-            // 其他 code（如 400 参数错误）当作等待处理，避免轮询中断
-            _ => Ok(QrCodeStatus::Waiting),
+            // 其他 code（如 400/502）当作等待处理，避免轮询中断
+            _ => {
+                tracing::debug!("扫码未知状态 code={}", code);
+                Ok(QrCodeStatus::Waiting)
+            }
         }
     }
 
