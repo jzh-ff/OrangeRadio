@@ -158,9 +158,8 @@ impl AuthSource for NeteaseSource {
     /// 生成二维码登录 key + 二维码 URL
     ///
     /// 流程：GET /api/login/qrcode/unikey → 得到 unikey
-    ///       GET /api/login/qrcode/client/login?key=unikey → 得到 qrurl
+    /// 二维码内容固定为 https://music.163.com/login?codekey={key}（APP 扫码识别）
     async fn qrcode_create(&self) -> Result<QrCodeLogin> {
-        // 1. 获取 unikey
         #[derive(Deserialize)]
         struct UnikeyResp { code: i32, unikey: String }
         let resp: UnikeyResp = self.client
@@ -171,43 +170,24 @@ impl AuthSource for NeteaseSource {
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
             .json().await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
         if resp.code != 200 {
             return Err(orange_core::CoreError::AuthFailed(
-                format!("获取二维码key失败: code={}", resp.code)
+                format!("获取二维码 key 失败: code={}", resp.code)
             ));
         }
-        let key = resp.unikey;
 
-        // 2. 用 unikey 获取二维码 URL
-        #[derive(Deserialize)]
-        struct QrResp { code: i32, qrurl: Option<String> }
-        let qr: QrResp = self.client
-            .get(&format!("{}/api/login/qrcode/client/login?key={}&type=1", BASE, key))
-            .header("Referer", BASE)
-            .header("User-Agent", "Mozilla/5.0")
-            .send().await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .json().await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-
-        let qr_image = qr.qrurl.unwrap_or_else(|| {
-            // 回退：直接用 unikey 拼二维码 URL
-            format!("{}/api/login/qrcode/client/login?key={}", BASE, key)
-        });
-
-        Ok(QrCodeLogin { key, qr_image })
+        // 二维码内容：网易云 APP 扫码后会自动打开此 URL 完成登录
+        let qr_image = format!("{}/login?codekey={}", BASE, resp.unikey);
+        Ok(QrCodeLogin { key: resp.unikey, qr_image })
     }
 
     /// 轮询二维码扫码状态
     ///
+    /// GET /api/login/qrcode/client/login?key={key}
     /// 返回码：800=过期 801=等待扫码 802=已扫码待确认 803=成功(返回cookie)
     async fn qrcode_check(&self, key: &str) -> Result<QrCodeStatus> {
-        // 用带 cookie 的 client 以便 check 接口能返回 cookie
-        let timestamp = chrono::Utc::now().timestamp_millis();
-        let url = format!(
-            "{}/api/login/qrcode/client/login?key={}&timestamp={}",
-            BASE, key, timestamp
-        );
+        let url = format!("{}/api/login/qrcode/client/login?key={}", BASE, key);
 
         let resp = self.client
             .get(&url)
@@ -251,9 +231,8 @@ impl AuthSource for NeteaseSource {
                 tracing::info!("网易云扫码登录成功");
                 Ok(QrCodeStatus::Confirmed { cookie })
             }
-            code => Err(orange_core::CoreError::AuthFailed(
-                format!("未知扫码状态: code={}", code)
-            )),
+            // 其他 code（如 400 参数错误）当作等待处理，避免轮询中断
+            _ => Ok(QrCodeStatus::Waiting),
         }
     }
 
