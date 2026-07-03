@@ -135,11 +135,15 @@ impl AudioSource for NeteaseSource {
     async fn resolve_stream(&self, track: &Track) -> Result<StreamLocation> {
         let cookie = self.cookie_str().await
             .ok_or_else(|| orange_core::CoreError::AuthFailed("未登录网易云".into()))?;
-        // 获取播放 URL（需登录态）
-        let url = format!("{}/song/enhance/player/url?ids=[{}]&br=320000", BASE, track.source_track_id);
+        // 获取播放 URL（需登录态）— 注意路径必须带 /api 前缀，方括号需 URL 编码
+        let url = format!(
+            "{}/api/song/enhance/player/url?ids=%5B{}%5D&br=320000",
+            BASE, track.source_track_id
+        );
         let resp: SongUrlResp = self.client.get(&url)
             .header("Cookie", &cookie)
             .header("Referer", BASE)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .send().await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
             .json().await
@@ -148,7 +152,8 @@ impl AudioSource for NeteaseSource {
         let play_url = resp.data.into_iter()
             .next()
             .and_then(|d| d.url)
-            .ok_or_else(|| orange_core::CoreError::Unsupported("无法获取播放地址（可能需VIP）".into()))?;
+            .filter(|u| !u.is_empty())
+            .ok_or_else(|| orange_core::CoreError::Unsupported("无法获取播放地址（可能需VIP或版权限制）".into()))?;
         Ok(StreamLocation::Url { url: play_url, headers: vec![] })
     }
 }
