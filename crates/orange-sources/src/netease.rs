@@ -41,11 +41,111 @@ impl NeteaseSource {
             cookie: Arc::new(RwLock::new(None)),
             logged_in: Arc::new(AtomicBool::new(false)),
         }
-    }
-
-        /// 当前 cookie（克隆）
+    /// 当前 cookie（克隆）
     async fn cookie_str(&self) -> Option<String> {
         self.cookie.read().await.clone()
+    }
+
+    /// weapi 加密 POST 请求（带登录 cookie）
+    async fn weapi_post(&self, path: &str, payload: &str) -> Result<serde_json::Value> {
+        let user_cookie = self.cookie_str().await
+            .ok_or_else(|| orange_core::CoreError::AuthFailed("未登录网易云".into()))?;
+        let cookie = format!("{}; os=pc; appver=2.10.14", user_cookie);
+        let (params, enc_sec_key) = crate::weapi::encrypt(payload);
+
+        let resp = self.client
+            .post(&format!("{}{}?csrf_token=", BASE, path))
+            .header("Cookie", &cookie)
+            .header("Referer", BASE)
+            .header("Origin", "https://music.163.com")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(format!("params={}&encSecKey={}", urlencoding(&params), urlencoding(&enc_sec_key)))
+            .send().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        let text = resp.text().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        serde_json::from_str(&text)
+            .map_err(|e| orange_core::CoreError::Network(format!("JSON解析失败: {} body={}", e, &text[..text.len().min(200)])))
+    }
+
+    /// 获取用户歌单
+    pub async fn user_playlists(&self) -> Result<Vec<(String, String, u32)>> {
+        // 先获取用户 uid（从 MUSIC_U 解析复杂，这里用 /weapi/w/nuser/account/get）
+        let account = self.weapi_post("/weapi/w/nuser/account/get", r#"{"csrf_token":""}"#).await?;
+        let uid = account["account"]["id"].as_i64()
+            .ok_or_else(|| orange_core::CoreError::AuthFailed("无法获取用户ID".into()))?;
+        tracing::info!("网易云用户ID: {}", uid);
+
+        let payload = format!(r#"{{"uid":{},"limit":30,"offset":0,"csrf_token":""}}"#, uid);
+        let resp = self.weapi_post("/weapi/user/playlist", &payload).await?;
+
+        let mut playlists = Vec::new();
+        if let Some(list) = resp["playlist"].as_array() {
+            for p in list {
+                let id = p["id"].as_i64().unwrap_or(0).to_string();
+                let name = p["name"].as_str().unwrap_or("未知歌单").to_string();
+                let count = p["trackCount"].as_i64().unwrap_or(0) as u32;
+                playlists.push((id, name, count));
+            }
+        }
+        Ok(playlists)
+    }
+
+    /// 获取每日推荐歌曲
+    pub async fn daily_songs(&self) -> Result<Vec<Track>> {
+        let resp = self.weapi_post("/weapi/v3/discovery/recommend/songs", r#"{"limit":30,"offset":0,"total":true,"csrf_token":""}"#).await?;
+
+        let mut tracks = Vec::new();
+        if let Some(list) = resp["data"]["dailySongs"].as_array() {
+            for s in list {
+                let id = s["id"].as_i64().unwrap_or(0);
+                let name = s["name"].as_str().unwrap_or("").to_string();
+                let artists: Vec<String> = s["ar"].as_array()
+                    .map(|arr| arr.iter().filter_map(|a| a["name"].as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let artist = artists.join("/");
+                let album = s["al"]["name"].as_str().map(String::from);
+                let dt = s["dt"].as_i64().map(|d| d as f64 / 1000.0);
+
+                let mut t = Track::new(self.id, id.to_string(), TrackMeta {
+                    title: name, artist, album, duration_secs: dt, ..Default::default()
+                });
+                t.format = orange_core::audio_format::AudioFormat::Mp3;
+                t.quality = orange_core::audio_format::Quality::High;
+                tracks.push(t);
+            }
+        }
+        Ok(tracks)
+    }
+
+    /// 获取歌单详情（歌曲列表）
+    pub async fn playlist_detail(&self, playlist_id: &str) -> Result<Vec<Track>> {
+        let payload = format!(r#"{{"id":{},"n":100,"s":0,"csrf_token":""}}"#, playlist_id);
+        let resp = self.weapi_post("/weapi/v6/playlist/detail", &payload).await?;
+
+        let mut tracks = Vec::new();
+        if let Some(list) = resp["playlist"]["tracks"].as_array() {
+            for s in list {
+                let id = s["id"].as_i64().unwrap_or(0);
+                let name = s["name"].as_str().unwrap_or("").to_string();
+                let artists: Vec<String> = s["ar"].as_array()
+                    .map(|arr| arr.iter().filter_map(|a| a["name"].as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let artist = artists.join("/");
+                let album = s["al"]["name"].as_str().map(String::from);
+                let dt = s["dt"].as_i64().map(|d| d as f64 / 1000.0);
+
+                let mut t = Track::new(self.id, id.to_string(), TrackMeta {
+                    title: name, artist, album, duration_secs: dt, ..Default::default()
+                });
+                t.format = orange_core::audio_format::AudioFormat::Mp3;
+                t.quality = orange_core::audio_format::Quality::High;
+                tracks.push(t);
+            }
+        }
+        Ok(tracks)
     }
 }
 

@@ -6,11 +6,18 @@ import { engineRef } from "../../App";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
-/** 网易云音乐视图（Cookie 登录） */
+type View = "search" | "playlists" | "playlist";
+
+/** 网易云音乐视图 */
 export function NeteaseView() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [cookieInput, setCookieInput] = useState("");
+  // 导航
+  const [view, setView] = useState<View>("search");
+  // 数据
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [playlists, setPlaylists] = useState<{ id: string; name: string; count: number }[]>([]);
+  const [currentPlaylist, setCurrentPlaylist] = useState("");
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -32,12 +39,37 @@ export function NeteaseView() {
 
   const doSearch = async () => {
     if (!keyword.trim()) return;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setView("search");
     try {
       const list = await invoke<Track[]>("netease_search", { keyword });
-      if (list.length === 0) {
-        setError("搜索无结果（网易云接口可能受限，请尝试 Cookie 登录后重试）");
-      }
+      if (list.length === 0) setError("搜索无结果");
+      setTracks(list); setQueue(list);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+
+  const loadPlaylists = async () => {
+    setLoading(true); setError(""); setView("playlists");
+    try {
+      const list = await invoke<{ id: string; name: string; count: number }[]>("netease_playlists");
+      setPlaylists(list);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+
+  const loadDaily = async () => {
+    setLoading(true); setError(""); setView("search");
+    try {
+      const list = await invoke<Track[]>("netease_daily");
+      setTracks(list); setQueue(list);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+
+  const openPlaylist = async (id: string, name: string) => {
+    setLoading(true); setError(""); setView("playlist"); setCurrentPlaylist(name);
+    try {
+      const list = await invoke<Track[]>("netease_playlist_detail", { playlistId: id });
       setTracks(list); setQueue(list);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
@@ -48,66 +80,73 @@ export function NeteaseView() {
       const url = await invoke<string>("netease_stream", { trackId: track.source_track_id });
       usePlayerStore.getState().setCurrent(track, index);
       engineRef.playPath(url);
-    } catch (e: any) { setError(e?.message || "获取播放地址失败"); }
+    } catch (e: any) { setError(e?.message || "播放失败（可能需VIP）"); }
   };
 
+  // ===== 未登录 =====
   if (!loggedIn) {
     return (
       <div className="library__empty">
         <div className="library__empty-icon">🎵</div>
         <div className="library__empty-title">登录网易云音乐</div>
-        <div className="library__empty-desc" style={{ marginBottom: 16 }}>
-          用浏览器登录后导入 Cookie（扫码登录被网易云风控拦截）
-        </div>
-        <div style={{ maxWidth: 500, width: "100%", textAlign: "left", background: "rgba(255,107,26,0.06)", border: "1px solid rgba(255,107,26,0.2)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#ff9248", marginBottom: 8 }}>操作步骤：</div>
-          <ol style={{ fontSize: 12, color: "#9a9ab0", lineHeight: 1.8, paddingLeft: 16 }}>
-            <li>点击下方按钮打开网易云网页并登录</li>
-            <li>登录后按 F12 → Application → Cookies → music.163.com</li>
-            <li>复制 <code style={{ color: "#ff9248" }}>MUSIC_U</code> 的值</li>
-            <li>粘贴到输入框，格式：<code>MUSIC_U=你的值</code></li>
-          </ol>
-        </div>
-        <button className="btn-scan" style={{ background: "#1DB954", marginBottom: 12 }} onClick={() => open("https://music.163.com/#/login")}>
-          🔗 打开网易云网页登录
-        </button>
+        <div className="library__empty-desc" style={{ marginBottom: 16 }}>用浏览器登录后导入 Cookie</div>
+        <button className="btn-scan" style={{ background: "#1DB954", marginBottom: 12 }} onClick={() => open("https://music.163.com/#/login")}>🔗 打开网易云网页登录</button>
         <input className="library__search-input" style={{ maxWidth: 500, fontFamily: "monospace" }}
           placeholder="MUSIC_U=你的cookie值" value={cookieInput} onChange={(e) => setCookieInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && doLogin()} />
-        <button className="btn-scan" style={{ marginTop: 8 }} onClick={doLogin} disabled={loading}>
-          {loading ? "登录中…" : "确认登录"}
-        </button>
-        {error && (
-          <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500, textAlign: "left" }}>
-            ⚠️ {error}
-          </div>
-        )}
+        <button className="btn-scan" style={{ marginTop: 8 }} onClick={doLogin} disabled={loading}>{loading ? "登录中…" : "确认登录"}</button>
+        {error && <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>⚠️ {error}</div>}
       </div>
     );
   }
 
+  // ===== 已登录 =====
   return (
     <div className="library">
-      <div className="library__toolbar">
-        <div className="library__search">
-          <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-            <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          <input className="library__search-input" placeholder="搜索网易云歌曲…" value={keyword}
-            onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} />
-        </div>
-        <button className="btn-scan" style={{ background: "#333" }} onClick={async () => { await invoke("netease_logout"); setLoggedIn(false); setTracks([]); }}>退出</button>
+      {/* 导航栏 */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <button className="q-badge" style={{ cursor: "pointer", padding: "6px 12px", border: "none", background: view === "search" ? "var(--orange)" : "#1e1e30", color: "white" }} onClick={() => setView("search")}>🔍 搜索</button>
+        <button className="q-badge" style={{ cursor: "pointer", padding: "6px 12px", border: "none", background: "#1DB954", color: "white" }} onClick={loadDaily}>📅 每日推荐</button>
+        <button className="q-badge" style={{ cursor: "pointer", padding: "6px 12px", border: "none", background: view === "playlists" ? "var(--orange)" : "#1e1e30", color: "white" }} onClick={loadPlaylists}>📋 我的歌单</button>
+        <button className="q-badge" style={{ cursor: "pointer", padding: "6px 12px", border: "none", background: "#333" }} onClick={async () => { await invoke("netease_logout"); setLoggedIn(false); }}>退出</button>
       </div>
+
+      {/* 搜索框 */}
+      {view === "search" && (
+        <div className="library__toolbar" style={{ marginBottom: 16 }}>
+          <div className="library__search">
+            <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <input className="library__search-input" placeholder="搜索网易云歌曲…" value={keyword}
+              onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} />
+          </div>
+        </div>
+      )}
+
       {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>⚠️ {error}</div>}
-      {tracks.length === 0 ? (
-        <div className="library__empty"><div className="library__empty-icon">🎵</div>
-          <div className="library__empty-title">搜索网易云音乐</div>
-          <div className="library__empty-desc">依赖网易云接口，可能受限</div></div>
-      ) : (
+
+      {/* 歌单列表 */}
+      {view === "playlists" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+          {playlists.map((p) => (
+            <div key={p.id} onClick={() => openPlaylist(p.id, p.name)} style={{ background: "#1a1a2a", borderRadius: 12, padding: 16, cursor: "pointer", transition: "all 0.2s" }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "#252540"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "#1a1a2a"}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>📋 {p.name}</div>
+              <div style={{ fontSize: 12, color: "#5a5a70" }}>{p.count} 首</div>
+            </div>
+          ))}
+          {playlists.length === 0 && !loading && <div style={{ color: "#5a5a70", padding: 20 }}>点击「我的歌单」加载</div>}
+        </div>
+      )}
+
+      {/* 歌曲列表（搜索/每日推荐/歌单详情共用） */}
+      {(view === "search" || view === "playlist") && tracks.length > 0 && (
         <div className="library__list">
           <div className="lib-header"><span className="col-i">#</span><span className="col-title">标题</span>
-            <span className="col-artist">艺术家</span><span className="col-album">专辑</span><span className="col-dur">时长</span></div>
+            <span className="col-artist">艺术家</span><span className="col-album">{view === "playlist" ? currentPlaylist : "专辑"}</span><span className="col-dur">时长</span></div>
           <div className="lib-rows">
             {tracks.map((t, i) => {
               const active = currentIndex === i;
@@ -124,6 +163,10 @@ export function NeteaseView() {
             })}
           </div>
         </div>
+      )}
+
+      {loading && tracks.length === 0 && view !== "playlists" && (
+        <div className="library__empty"><div className="library__empty-title">加载中…</div></div>
       )}
     </div>
   );
