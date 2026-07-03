@@ -41,6 +41,8 @@ impl NeteaseSource {
             cookie: Arc::new(RwLock::new(None)),
             logged_in: Arc::new(AtomicBool::new(false)),
         }
+    }
+
     /// 当前 cookie（克隆）
     async fn cookie_str(&self) -> Option<String> {
         self.cookie.read().await.clone()
