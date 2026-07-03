@@ -198,6 +198,91 @@ pub async fn netease_stream(
     }
 }
 
+// ===== 播客 RSS 命令 =====
+
+/// 订阅播客 RSS（输入 URL，返回 episode 列表）
+#[tauri::command]
+pub async fn podcast_fetch(
+    state: tauri::State<'_, AppState>,
+    rss_url: String,
+) -> Result<Vec<Track>, String> {
+    use orange_core::AudioSource;
+    let query = SearchQuery {
+        keyword: rss_url,
+        ..Default::default()
+    };
+    let result = state.podcast.search(&query).await.map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+// ===== QQ 音乐命令 =====
+
+#[tauri::command]
+pub async fn qqmusic_login(
+    state: tauri::State<'_, AppState>,
+    cookie: String,
+) -> Result<(), String> {
+    use orange_core::AuthSource;
+    state.qqmusic.login_with_cookie(&cookie).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn qqmusic_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.qqmusic.is_ready())
+}
+
+#[tauri::command]
+pub async fn qqmusic_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+) -> Result<Vec<Track>, String> {
+    use orange_core::AudioSource;
+    let query = SearchQuery { keyword, page: 1, page_size: 30, ..Default::default() };
+    let result = state.qqmusic.search(&query).await.map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+#[tauri::command]
+pub async fn qqmusic_stream(
+    state: tauri::State<'_, AppState>,
+    track_id: String,
+) -> Result<String, String> {
+    use orange_core::AudioSource;
+    let track = Track::new(state.qqmusic.id(), track_id, orange_core::track::TrackMeta::default());
+    let loc = state.qqmusic.resolve_stream(&track).await.map_err(|e| e.to_string())?;
+    match loc {
+        orange_core::StreamLocation::Url { url, .. } => Ok(url),
+        _ => Err("不支持的流类型".into()),
+    }
+}
+
+// ===== Spotify 命令 =====
+
+#[tauri::command]
+pub async fn spotify_configure(
+    state: tauri::State<'_, AppState>,
+    client_id: String,
+    client_secret: String,
+) -> Result<(), String> {
+    state.spotify.configure(&client_id, &client_secret).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn spotify_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.spotify.is_ready())
+}
+
+#[tauri::command]
+pub async fn spotify_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+) -> Result<Vec<Track>, String> {
+    use orange_core::AudioSource;
+    let query = SearchQuery { keyword, page: 1, page_size: 20, ..Default::default() };
+    let result = state.spotify.search(&query).await.map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
 /// 注册所有命令到 Tauri Builder
 pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder
@@ -218,5 +303,13 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_status,
             netease_search,
             netease_stream,
+            podcast_fetch,
+            qqmusic_login,
+            qqmusic_status,
+            qqmusic_search,
+            qqmusic_stream,
+            spotify_configure,
+            spotify_status,
+            spotify_search,
         ])
 }

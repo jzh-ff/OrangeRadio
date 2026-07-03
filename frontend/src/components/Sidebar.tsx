@@ -6,11 +6,13 @@ const NAV: { key: "player" | "studio"; label: string; icon: string; kicker: stri
   { key: "studio", label: "创作工作室", icon: "OS", kicker: "AI console" },
 ];
 
-const MENU: { label: string; icon: string; status: string; sub?: "library" | "radio" | "netease" }[] = [
+const MENU: { label: string; icon: string; status: string; sub?: "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" }[] = [
   { label: "我的音乐库", icon: "LIB", status: "", sub: "library" },
   { label: "网络电台", icon: "RAD", status: "", sub: "radio" },
   { label: "网易云音乐", icon: "NE", status: "实验", sub: "netease" },
-  { label: "播客", icon: "POD", status: "SOON" },
+  { label: "QQ音乐", icon: "QQ", status: "实验", sub: "qqmusic" },
+  { label: "Spotify", icon: "SP", status: "30s", sub: "spotify" },
+  { label: "播客", icon: "POD", status: "", sub: "podcast" },
   { label: "AI 推荐", icon: "AI", status: "v0.5" },
   { label: "懂你模式", icon: "YOU", status: "v0.5" },
   { label: "一起听", icon: "SYNC", status: "v0.7" },
