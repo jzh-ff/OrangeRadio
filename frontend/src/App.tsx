@@ -19,6 +19,8 @@ export const engineRef: {
   next: () => void;
   prev: () => void;
   playTrack: (t: { source_track_id: string }, index: number) => void;
+  /** 音源解析器：网易云/QQ需要先获取播放URL，设为null表示直接用source_track_id */
+  resolver: ((trackId: string) => Promise<string>) | null;
 } = {
   playPath: () => {},
   toggle: () => {},
@@ -27,11 +29,12 @@ export const engineRef: {
   next: () => {},
   prev: () => {},
   playTrack: () => {},
+  resolver: null,
 };
 
 export default function App() {
   const view = usePlayerStore((s) => s.view);
-  const engine = useAudioEngine();
+  const engine = useAudioEngine(() => engineRef.next());
 
   // 注入引擎方法到全局 ref
   useEffect(() => {
@@ -39,18 +42,22 @@ export default function App() {
     engineRef.toggle = engine.togglePlay;
     engineRef.seek = engine.seek;
     engineRef.setVol = engine.setVolume;
-    engineRef.next = engine.next;
-    engineRef.prev = engine.prev;
-    engineRef.playTrack = (t, index) => {
-      const store = usePlayerStore.getState();
-      if (store.tracks.length === 0) {
-        // 队列未就绪时直接播放当前曲目（队列会在 loadTracks 后补齐）
-        usePlayerStore.getState().setCurrent(t as any, index);
-        engine.playPath(t.source_track_id);
-        return;
-      }
+    // next/prev 传入 playTrack 作为播放回调（带 resolver 支持）
+    engineRef.next = () => engine.next(engineRef.playTrack);
+    engineRef.prev = () => engine.prev(engineRef.playTrack);
+    engineRef.playTrack = async (t, index) => {
       usePlayerStore.getState().setCurrent(t as any, index);
-      engine.playPath(t.source_track_id);
+      // 如果有解析器（网易云/QQ），先获取真实播放 URL
+      if (engineRef.resolver) {
+        try {
+          const url = await engineRef.resolver(t.source_track_id);
+          engine.playPath(url);
+        } catch (e) {
+          console.error("[播放] 解析地址失败:", e);
+        }
+      } else {
+        engine.playPath(t.source_track_id);
+      }
     };
   }, [engine]);
 

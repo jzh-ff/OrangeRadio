@@ -12,7 +12,7 @@ import { usePlayerStore } from "../../stores/playerStore";
  *   - captureStream 在媒体渲染层捕获，不受 createMediaElementSource 的同源限制
  *   - 对不支持 captureStream 的环境，回退到模拟频谱
  */
-export function useAudioEngine() {
+export function useAudioEngine(autoNext?: () => void) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -132,7 +132,9 @@ export function useAudioEngine() {
     usePlayerStore.setState({ volume: v });
   }, []);
 
-  const next = useCallback(() => {
+  // next/prev 只选歌 + 设置 currentTrack，实际播放由 onTrackChange 回调处理
+  // 这样网易云/QQ可以在回调里先解析播放地址
+  const next = useCallback((onPlay?: (track: any, index: number) => void) => {
     const { tracks, currentIndex, mode } = usePlayerStore.getState();
     if (tracks.length === 0) return;
     let ni: number;
@@ -145,16 +147,18 @@ export function useAudioEngine() {
     }
     const t = tracks[ni];
     usePlayerStore.setState({ currentIndex: ni, currentTrack: t });
-    playPath(t.source_track_id);
+    if (onPlay) onPlay(t, ni);
+    else playPath(t.source_track_id);
   }, [playPath]);
 
-  const prev = useCallback(() => {
+  const prev = useCallback((onPlay?: (track: any, index: number) => void) => {
     const { tracks, currentIndex } = usePlayerStore.getState();
     if (tracks.length === 0) return;
     const pi = currentIndex - 1 < 0 ? tracks.length - 1 : currentIndex - 1;
     const t = tracks[pi];
     usePlayerStore.setState({ currentIndex: pi, currentTrack: t });
-    playPath(t.source_track_id);
+    if (onPlay) onPlay(t, pi);
+    else playPath(t.source_track_id);
   }, [playPath]);
 
   // ===== 事件监听 =====
@@ -167,7 +171,8 @@ export function useAudioEngine() {
     const onPause = () => usePlayerStore.setState({ isPlaying: false });
     const onEnd = () => {
       usePlayerStore.setState({ isPlaying: false });
-      next();
+      if (autoNext) autoNext();
+      else next();
     };
     const onError = () => {
       console.error("[audio error]", audio.error);

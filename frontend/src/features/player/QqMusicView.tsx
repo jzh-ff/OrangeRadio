@@ -18,7 +18,13 @@ export function QqMusicView() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
-  useEffect(() => { invoke<boolean>("qqmusic_status").then(setLoggedIn).catch(() => {}); }, []);
+  useEffect(() => {
+    invoke<boolean>("qqmusic_status").then(setLoggedIn).catch(() => {});
+    engineRef.resolver = async (trackId: string) => {
+      return invoke<string>("qqmusic_stream", { trackId });
+    };
+    return () => { engineRef.resolver = null; };
+  }, []);
 
   const doLogin = async () => {
     if (!cookieInput.trim()) return;
