@@ -257,6 +257,10 @@ impl AuthSource for NeteaseSource {
                 tracing::info!("网易云扫码登录成功");
                 Ok(QrCodeStatus::Confirmed { cookie })
             }
+            // 8821 = 网易云风控拦截（非官方客户端）
+            8821 => Err(orange_core::CoreError::AuthFailed(
+                "网易云风控拦截：请改用 Cookie 登录（在浏览器登录 music.163.com 后复制 MUSIC_U cookie）".into()
+            )),
             // 其他 code（如 400/502）当作等待处理，避免轮询中断
             _ => {
                 tracing::debug!("扫码未知状态 code={}", code);
