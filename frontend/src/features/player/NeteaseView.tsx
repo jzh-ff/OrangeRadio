@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-shell";
+import { open } from "@tauri-apps/plugin-shell";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import type { Track } from "../../stores/libraryStore";
@@ -68,7 +68,7 @@ export function NeteaseView() {
             <li>粘贴到输入框，格式：<code>MUSIC_U=你的值</code></li>
           </ol>
         </div>
-        <button className="btn-scan" style={{ background: "#1DB954", marginBottom: 12 }} onClick={() => openUrl("https://music.163.com/#/login")}>
+        <button className="btn-scan" style={{ background: "#1DB954", marginBottom: 12 }} onClick={() => open("https://music.163.com/#/login")}>
           🔗 打开网易云网页登录
         </button>
         <input className="library__search-input" style={{ maxWidth: 500, fontFamily: "monospace" }}
