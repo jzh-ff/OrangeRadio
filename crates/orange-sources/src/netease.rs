@@ -145,8 +145,11 @@ impl AudioSource for NeteaseSource {
     }
 
     async fn resolve_stream(&self, track: &Track) -> Result<StreamLocation> {
-        let cookie = self.cookie_str().await
+        let user_cookie = self.cookie_str().await
             .ok_or_else(|| orange_core::CoreError::AuthFailed("未登录网易云".into()))?;
+
+        // 补充 weapi 必需的 cookie 参数（网易云服务端要求 os=pc 等）
+        let cookie = format!("{}; os=pc; appver=2.10.14", user_cookie);
 
         // weapi 加密 POST 获取播放地址
         let payload = format!(
@@ -160,6 +163,7 @@ impl AudioSource for NeteaseSource {
             .header("Cookie", &cookie)
             .header("Referer", BASE)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("Origin", "https://music.163.com")
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(format!("params={}&encSecKey={}",
                 urlencoding(&params), urlencoding(&enc_sec_key)))
