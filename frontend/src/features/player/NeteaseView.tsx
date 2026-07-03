@@ -74,7 +74,13 @@ export function NeteaseView() {
         }
       } catch (e: any) {
         clearInterval(pollRef.current);
-        setError(e?.message || "查询扫码状态失败");
+        const msg = e?.message || "查询扫码状态失败";
+        setError(msg);
+        setQrStatus(msg);
+        // 风控/失败时切回菜单让用户选其他方式
+        if (msg.includes("风控") || msg.includes("Cookie")) {
+          setQrExpired(true);
+        }
       }
     }, 2000);
   }, []);
