@@ -2,6 +2,9 @@ import type { PointerEvent } from "react";
 import { LibraryView } from "./LibraryView";
 import { RadioView } from "./RadioView";
 import { NeteaseView } from "./NeteaseView";
+import { QqMusicView } from "./QqMusicView";
+import { SpotifyView } from "./SpotifyView";
+import { PodcastView } from "./PodcastView";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { usePlayerStore, type PlaybackMode } from "../../stores/playerStore";
 import "../../styles/player.css";
@@ -79,6 +82,12 @@ export function PlayerView() {
         <RadioView />
       ) : subView === "netease" ? (
         <NeteaseView />
+      ) : subView === "qqmusic" ? (
+        <QqMusicView />
+      ) : subView === "spotify" ? (
+        <SpotifyView />
+      ) : subView === "podcast" ? (
+        <PodcastView />
       ) : (
         <>
           <LibraryView />

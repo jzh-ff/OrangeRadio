@@ -5,7 +5,7 @@
 pub mod commands;
 
 use orange_library::LibraryDb;
-use orange_sources::{NeteaseSource, WebRadioSource};
+use orange_sources::{NeteaseSource, PodcastSource, QqMusicSource, SpotifySource, WebRadioSource};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -16,6 +16,9 @@ pub struct AppState {
     pub library: LibraryDb,
     pub web_radio: Arc<WebRadioSource>,
     pub netease: Arc<NeteaseSource>,
+    pub podcast: Arc<PodcastSource>,
+    pub qqmusic: Arc<QqMusicSource>,
+    pub spotify: Arc<SpotifySource>,
 }
 
 impl Default for AppState {
@@ -34,6 +37,9 @@ impl Default for AppState {
             library,
             web_radio: Arc::new(WebRadioSource::new()),
             netease: Arc::new(NeteaseSource::new()),
+            podcast: Arc::new(PodcastSource::new()),
+            qqmusic: Arc::new(QqMusicSource::new()),
+            spotify: Arc::new(SpotifySource::new()),
         }
     }
 }

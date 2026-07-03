@@ -17,14 +17,14 @@ interface PlayerState {
   mode: PlaybackMode;
   view: "player" | "studio";
   /** 播放器内子页面 */
-  subView: "library" | "radio" | "netease";
+  subView: "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify";
   spectrum: number[];
   /** 当前播放队列 + 索引（用于上/下一首） */
   tracks: Track[];
   currentIndex: number;
 
   setView: (v: "player" | "studio") => void;
-  setSubView: (v: "library" | "radio" | "netease") => void;
+  setSubView: (v: "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify") => void;
   setMode: (m: PlaybackMode) => void;
   setCurrent: (t: Track, index: number) => void;
   setQueue: (tracks: Track[]) => void;

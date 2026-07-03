@@ -14,3 +14,4 @@ tokio.workspace = true
 tracing.workspace = true
 reqwest.workspace = true
 uuid.workspace = true
+quick-xml = "0.36"
