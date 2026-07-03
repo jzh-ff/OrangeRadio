@@ -234,8 +234,6 @@ pub async fn netease_playlist_detail(
 ) -> Result<Vec<Track>, String> {
     state.netease.playlist_detail(&playlist_id).await.map_err(|e| e.to_string())
 }
-    }
-}
 
 /// 网易云生成二维码登录
 #[tauri::command]
