@@ -1,96 +1,31 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import QRCode from "qrcode";
+import { openUrl } from "@tauri-apps/plugin-shell";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
-type LoginMode = "menu" | "qrcode" | "cookie";
-
-/** 网易云音乐视图 */
+/** 网易云音乐视图（Cookie 登录） */
 export function NeteaseView() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [mode, setMode] = useState<LoginMode>("menu");
-  // 扫码
-  const [qrDataUrl, setQrDataUrl] = useState("");
-  const [qrKey, setQrKey] = useState("");
-  const [qrStatus, setQrStatus] = useState("");
-  const [qrExpired, setQrExpired] = useState(false);
-  const pollRef = useRef<number>(0);
-  // cookie
   const [cookieInput, setCookieInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  // 搜索
   const [tracks, setTracks] = useState<Track[]>([]);
   const [keyword, setKeyword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const currentIndex = usePlayerStore((s) => s.currentIndex);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
-  useEffect(() => {
-    invoke<boolean>("netease_status").then(setLoggedIn).catch(() => {});
-    return () => clearInterval(pollRef.current);
-  }, []);
+  useEffect(() => { invoke<boolean>("netease_status").then(setLoggedIn).catch(() => {}); }, []);
 
-  // 生成二维码
-  const startQrcode = useCallback(async () => {
-    setError("");
-    setQrExpired(false);
-    setQrDataUrl(""); // 清空旧二维码，显示"生成中"
-    setQrStatus("正在生成二维码…");
-    setMode("qrcode"); // 关键：立即切到二维码界面
-    try {
-      const info = await invoke<{ key: string; qr_url: string }>("netease_qrcode_create");
-      setQrKey(info.key);
-      // 用 qrcode 库把 URL 渲染成 data URL
-      const dataUrl = await QRCode.toDataURL(info.qr_url, { width: 220, margin: 1 });
-      setQrDataUrl(dataUrl);
-      setQrStatus("请用网易云音乐 APP 扫码");
-      // 开始轮询
-      startPolling(info.key);
-    } catch (e: any) {
-      setError(e?.message || "生成二维码失败");
-    }
-  }, []);
-
-  const startPolling = useCallback((key: string) => {
-    clearInterval(pollRef.current);
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const r = await invoke<{ code: number; message: string }>("netease_qrcode_check", { key });
-        setQrStatus(r.message);
-        if (r.code === 800) {
-          clearInterval(pollRef.current);
-          setQrExpired(true);
-        } else if (r.code === 802) {
-          setQrStatus("已扫码，请在手机确认登录");
-        } else if (r.code === 803) {
-          clearInterval(pollRef.current);
-          setLoggedIn(true);
-          setMode("menu");
-        }
-      } catch (e: any) {
-        clearInterval(pollRef.current);
-        const msg = e?.message || "查询扫码状态失败";
-        setError(msg);
-        setQrStatus(msg);
-        // 风控/失败时切回菜单让用户选其他方式
-        if (msg.includes("风控") || msg.includes("Cookie")) {
-          setQrExpired(true);
-        }
-      }
-    }, 2000);
-  }, []);
-
-  const doCookieLogin = async () => {
+  const doLogin = async () => {
     if (!cookieInput.trim()) return;
     setLoading(true); setError("");
     try {
       await invoke("netease_login", { cookie: cookieInput });
-      setLoggedIn(true); setMode("menu"); setCookieInput("");
+      setLoggedIn(true); setCookieInput("");
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
   };
@@ -100,6 +35,9 @@ export function NeteaseView() {
     setLoading(true); setError("");
     try {
       const list = await invoke<Track[]>("netease_search", { keyword });
+      if (list.length === 0) {
+        setError("搜索无结果（网易云接口可能受限，请尝试 Cookie 登录后重试）");
+      }
       setTracks(list); setQueue(list);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
@@ -110,66 +48,37 @@ export function NeteaseView() {
       const url = await invoke<string>("netease_stream", { trackId: track.source_track_id });
       usePlayerStore.getState().setCurrent(track, index);
       engineRef.playPath(url);
-    } catch (e: any) { setError(e?.message || "获取播放地址失败（可能需要VIP）"); }
+    } catch (e: any) { setError(e?.message || "获取播放地址失败"); }
   };
 
-  // ===== 未登录：登录界面 =====
   if (!loggedIn) {
     return (
       <div className="library__empty">
         <div className="library__empty-icon">🎵</div>
-        {mode === "menu" && (
-          <>
-            <div className="library__empty-title">登录网易云音乐</div>
-            <div className="library__empty-desc" style={{ marginBottom: 20 }}>
-              绑定你的账号，使用自己的权益听歌
-            </div>
-            <button className="btn-scan" onClick={startQrcode}>📱 扫码登录（推荐）</button>
-            <button className="btn-scan" style={{ background: "#333", marginTop: 10 }} onClick={() => setMode("cookie")}>
-              🍪 Cookie 登录
-            </button>
-          </>
-        )}
-
-        {mode === "qrcode" && (
-          <div style={{ textAlign: "center" }}>
-            <div className="library__empty-title" style={{ marginBottom: 16 }}>扫码登录</div>
-            {qrExpired ? (
-              <>
-                <div style={{ color: "#ff6b6b", marginBottom: 16 }}>二维码已过期</div>
-                <button className="btn-scan" onClick={startQrcode}>重新生成</button>
-              </>
-            ) : qrDataUrl ? (
-              <>
-                <img src={qrDataUrl} alt="二维码" style={{ borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.4)" }} />
-                <div style={{ marginTop: 16, color: "#9a9ab0", fontSize: 13 }}>{qrStatus}</div>
-              </>
-            ) : (
-              <div style={{ width: 220, height: 220, background: "#1a1a2a", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#5a5a70" }}>生成中…</div>
-            )}
-            <div style={{ marginTop: 16 }}>
-              <button className="btn-scan" style={{ background: "#333" }} onClick={() => { clearInterval(pollRef.current); setMode("menu"); }}>返回</button>
-            </div>
-          </div>
-        )}
-
-        {mode === "cookie" && (
-          <div style={{ maxWidth: 500, width: "100%", textAlign: "left" }}>
-            <p style={{ fontSize: 12, color: "#9a9ab0", marginBottom: 8, lineHeight: 1.6 }}>
-              1. 浏览器打开 music.163.com 并登录<br />
-              2. F12 → Application → Cookies → 复制 <code style={{ color: "#ff9248" }}>MUSIC_U</code> 的值<br />
-              3. 粘贴到下方（格式：<code>MUSIC_U=xxxxx</code>）
-            </p>
-            <textarea className="library__search-input" style={{ height: 70, paddingTop: 10, resize: "none", fontFamily: "monospace" }}
-              placeholder="MUSIC_U=你的cookie值" value={cookieInput} onChange={(e) => setCookieInput(e.target.value)} />
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="btn-scan" onClick={doCookieLogin} disabled={loading}>{loading ? "登录中…" : "确认登录"}</button>
-              <button className="btn-scan" style={{ background: "#333" }} onClick={() => setMode("menu")}>返回</button>
-            </div>
-          </div>
-        )}
+        <div className="library__empty-title">登录网易云音乐</div>
+        <div className="library__empty-desc" style={{ marginBottom: 16 }}>
+          用浏览器登录后导入 Cookie（扫码登录被网易云风控拦截）
+        </div>
+        <div style={{ maxWidth: 500, width: "100%", textAlign: "left", background: "rgba(255,107,26,0.06)", border: "1px solid rgba(255,107,26,0.2)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#ff9248", marginBottom: 8 }}>操作步骤：</div>
+          <ol style={{ fontSize: 12, color: "#9a9ab0", lineHeight: 1.8, paddingLeft: 16 }}>
+            <li>点击下方按钮打开网易云网页并登录</li>
+            <li>登录后按 F12 → Application → Cookies → music.163.com</li>
+            <li>复制 <code style={{ color: "#ff9248" }}>MUSIC_U</code> 的值</li>
+            <li>粘贴到输入框，格式：<code>MUSIC_U=你的值</code></li>
+          </ol>
+        </div>
+        <button className="btn-scan" style={{ background: "#1DB954", marginBottom: 12 }} onClick={() => openUrl("https://music.163.com/#/login")}>
+          🔗 打开网易云网页登录
+        </button>
+        <input className="library__search-input" style={{ maxWidth: 500, fontFamily: "monospace" }}
+          placeholder="MUSIC_U=你的cookie值" value={cookieInput} onChange={(e) => setCookieInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && doLogin()} />
+        <button className="btn-scan" style={{ marginTop: 8 }} onClick={doLogin} disabled={loading}>
+          {loading ? "登录中…" : "确认登录"}
+        </button>
         {error && (
-          <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>
+          <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500, textAlign: "left" }}>
             ⚠️ {error}
           </div>
         )}
@@ -177,7 +86,6 @@ export function NeteaseView() {
     );
   }
 
-  // ===== 已登录：搜索界面 =====
   return (
     <div className="library">
       <div className="library__toolbar">
@@ -195,7 +103,7 @@ export function NeteaseView() {
       {tracks.length === 0 ? (
         <div className="library__empty"><div className="library__empty-icon">🎵</div>
           <div className="library__empty-title">搜索网易云音乐</div>
-          <div className="library__empty-desc">实验性 · 依赖网易云接口</div></div>
+          <div className="library__empty-desc">依赖网易云接口，可能受限</div></div>
       ) : (
         <div className="library__list">
           <div className="lib-header"><span className="col-i">#</span><span className="col-title">标题</span>
