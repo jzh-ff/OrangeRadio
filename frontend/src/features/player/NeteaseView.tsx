@@ -25,7 +25,14 @@ export function NeteaseView() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
-  useEffect(() => { invoke<boolean>("netease_status").then(setLoggedIn).catch(() => {}); }, []);
+  useEffect(() => {
+    invoke<boolean>("netease_status").then(setLoggedIn).catch(() => {});
+    // 设置网易云解析器：歌曲ID → 播放URL
+    engineRef.resolver = async (trackId: string) => {
+      return invoke<string>("netease_stream", { trackId });
+    };
+    return () => { engineRef.resolver = null; };
+  }, []);
 
   const doLogin = async () => {
     if (!cookieInput.trim()) return;
