@@ -39,7 +39,9 @@ export function NeteaseView() {
   const startQrcode = useCallback(async () => {
     setError("");
     setQrExpired(false);
+    setQrDataUrl(""); // 清空旧二维码，显示"生成中"
     setQrStatus("正在生成二维码…");
+    setMode("qrcode"); // 关键：立即切到二维码界面
     try {
       const info = await invoke<{ key: string; qr_url: string }>("netease_qrcode_create");
       setQrKey(info.key);
