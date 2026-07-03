@@ -43,10 +43,21 @@ impl NeteaseSource {
         }
     }
 
-    /// 当前 cookie（克隆）
+        /// 当前 cookie（克隆）
     async fn cookie_str(&self) -> Option<String> {
         self.cookie.read().await.clone()
     }
+}
+
+/// URL 编码（用于 form-urlencoded body）
+fn urlencoding(s: &str) -> String {
+    s.bytes().map(|b| {
+        if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
+            (b as char).to_string()
+        } else {
+            format!("%{:02X}", b)
+        }
+    }).collect()
 }
 
 /// 网易云搜索结果（歌曲）
@@ -136,25 +147,38 @@ impl AudioSource for NeteaseSource {
     async fn resolve_stream(&self, track: &Track) -> Result<StreamLocation> {
         let cookie = self.cookie_str().await
             .ok_or_else(|| orange_core::CoreError::AuthFailed("未登录网易云".into()))?;
-        // 获取播放 URL（需登录态）— 注意路径必须带 /api 前缀，方括号需 URL 编码
-        let url = format!(
-            "{}/api/song/enhance/player/url?ids=%5B{}%5D&br=320000",
-            BASE, track.source_track_id
+
+        // weapi 加密 POST 获取播放地址
+        let payload = format!(
+            r#"{{"ids":"[{}]","level":"standard","encodeType":"aac","csrf_token":""}}"#,
+            track.source_track_id
         );
-        let resp: SongUrlResp = self.client.get(&url)
+        let (params, enc_sec_key) = crate::weapi::encrypt(&payload);
+
+        let resp = self.client
+            .post(&format!("{}/weapi/song/enhance/player/url/v1?csrf_token=", BASE))
             .header("Cookie", &cookie)
             .header("Referer", BASE)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(format!("params={}&encSecKey={}",
+                urlencoding(&params), urlencoding(&enc_sec_key)))
             .send().await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .json().await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
-        let play_url = resp.data.into_iter()
-            .next()
-            .and_then(|d| d.url)
+        let body_text = resp.text().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        tracing::debug!("网易云播放地址响应: {}", &body_text[..body_text.len().min(300)]);
+
+        let v: serde_json::Value = serde_json::from_str(&body_text)
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        let play_url = v["data"].get(0)
+            .and_then(|d| d["url"].as_str())
             .filter(|u| !u.is_empty())
-            .ok_or_else(|| orange_core::CoreError::Unsupported("无法获取播放地址（可能需VIP或版权限制）".into()))?;
+            .ok_or_else(|| orange_core::CoreError::Unsupported("无法获取播放地址（可能需VIP或版权限制）".into()))?
+            .to_string();
+
         Ok(StreamLocation::Url { url: play_url, headers: vec![] })
     }
 }
