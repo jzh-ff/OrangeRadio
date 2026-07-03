@@ -56,6 +56,18 @@ pub struct ScanReport {
     pub count: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QrCodeInfo {
+    pub key: String,
+    pub qr_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QrStatusInfo {
+    pub code: i32,
+    pub message: String,
+}
+
 /// 获取本地库全部曲目
 #[tauri::command]
 pub async fn library_tracks(state: tauri::State<'_, AppState>) -> Result<Vec<Track>, String> {
@@ -198,6 +210,33 @@ pub async fn netease_stream(
     }
 }
 
+/// 网易云生成二维码登录
+#[tauri::command]
+pub async fn netease_qrcode_create(
+    state: tauri::State<'_, AppState>,
+) -> Result<QrCodeInfo, String> {
+    use orange_core::AuthSource;
+    let qr = state.netease.qrcode_create().await.map_err(|e| e.to_string())?;
+    Ok(QrCodeInfo { key: qr.key, qr_url: qr.qr_image })
+}
+
+/// 网易云查询二维码状态
+#[tauri::command]
+pub async fn netease_qrcode_check(
+    state: tauri::State<'_, AppState>,
+    key: String,
+) -> Result<QrStatusInfo, String> {
+    use orange_core::AuthSource;
+    let status = state.netease.qrcode_check(&key).await.map_err(|e| e.to_string())?;
+    let (code, msg) = match &status {
+        orange_core::QrCodeStatus::Waiting => (801, "等待扫码".into()),
+        orange_core::QrCodeStatus::Scanned => (802, "已扫码，请在手机确认".into()),
+        orange_core::QrCodeStatus::Expired => (800, "二维码已过期".into()),
+        orange_core::QrCodeStatus::Confirmed { .. } => (803, "登录成功".into()),
+    };
+    Ok(QrStatusInfo { code, message: msg })
+}
+
 // ===== 播客 RSS 命令 =====
 
 /// 订阅播客 RSS（输入 URL，返回 episode 列表）
@@ -303,6 +342,8 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_status,
             netease_search,
             netease_stream,
+            netease_qrcode_create,
+            netease_qrcode_check,
             podcast_fetch,
             qqmusic_login,
             qqmusic_status,

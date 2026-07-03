@@ -155,6 +155,108 @@ impl AudioSource for NeteaseSource {
 
 #[async_trait]
 impl AuthSource for NeteaseSource {
+    /// 生成二维码登录 key + 二维码 URL
+    ///
+    /// 流程：GET /api/login/qrcode/unikey → 得到 unikey
+    ///       GET /api/login/qrcode/client/login?key=unikey → 得到 qrurl
+    async fn qrcode_create(&self) -> Result<QrCodeLogin> {
+        // 1. 获取 unikey
+        #[derive(Deserialize)]
+        struct UnikeyResp { code: i32, unikey: String }
+        let resp: UnikeyResp = self.client
+            .get(&format!("{}/api/login/qrcode/unikey?type=1", BASE))
+            .header("Referer", BASE)
+            .header("User-Agent", "Mozilla/5.0")
+            .send().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
+            .json().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        if resp.code != 200 {
+            return Err(orange_core::CoreError::AuthFailed(
+                format!("获取二维码key失败: code={}", resp.code)
+            ));
+        }
+        let key = resp.unikey;
+
+        // 2. 用 unikey 获取二维码 URL
+        #[derive(Deserialize)]
+        struct QrResp { code: i32, qrurl: Option<String> }
+        let qr: QrResp = self.client
+            .get(&format!("{}/api/login/qrcode/client/login?key={}&type=1", BASE, key))
+            .header("Referer", BASE)
+            .header("User-Agent", "Mozilla/5.0")
+            .send().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
+            .json().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        let qr_image = qr.qrurl.unwrap_or_else(|| {
+            // 回退：直接用 unikey 拼二维码 URL
+            format!("{}/api/login/qrcode/client/login?key={}", BASE, key)
+        });
+
+        Ok(QrCodeLogin { key, qr_image })
+    }
+
+    /// 轮询二维码扫码状态
+    ///
+    /// 返回码：800=过期 801=等待扫码 802=已扫码待确认 803=成功(返回cookie)
+    async fn qrcode_check(&self, key: &str) -> Result<QrCodeStatus> {
+        // 用带 cookie 的 client 以便 check 接口能返回 cookie
+        let timestamp = chrono::Utc::now().timestamp_millis();
+        let url = format!(
+            "{}/api/login/qrcode/client/login?key={}&timestamp={}",
+            BASE, key, timestamp
+        );
+
+        let resp = self.client
+            .get(&url)
+            .header("Referer", BASE)
+            .header("User-Agent", "Mozilla/5.0")
+            .send().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        // 提取 Set-Cookie（803 成功时返回 MUSIC_U）
+        let set_cookie: Vec<String> = resp
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|v| v.to_str().ok().map(String::from))
+            .collect();
+
+        #[derive(Deserialize)]
+        struct CheckResp { code: i32, message: Option<String> }
+        let body: CheckResp = resp
+            .json().await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        match body.code {
+            800 => Ok(QrCodeStatus::Expired),
+            801 => Ok(QrCodeStatus::Waiting),
+            802 => Ok(QrCodeStatus::Scanned),
+            803 => {
+                // 成功：拼接完整 cookie
+                let cookie = set_cookie
+                    .iter()
+                    .map(|c| c.split(';').next().unwrap_or("").to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                if cookie.is_empty() {
+                    return Err(orange_core::CoreError::AuthFailed(
+                        "扫码成功但未获取到 Cookie".into()
+                    ));
+                }
+                *self.cookie.write().await = Some(cookie.clone());
+                self.logged_in.store(true, Ordering::Relaxed);
+                tracing::info!("网易云扫码登录成功");
+                Ok(QrCodeStatus::Confirmed { cookie })
+            }
+            code => Err(orange_core::CoreError::AuthFailed(
+                format!("未知扫码状态: code={}", code)
+            )),
+        }
+    }
+
     /// Cookie 登录：用户从浏览器复制 MUSIC_U=xxx
     async fn login_with_cookie(&self, cookie: &str) -> Result<()> {
         // 简单校验：网易云登录态核心是 MUSIC_U
