@@ -189,7 +189,7 @@ impl AuthSource for NeteaseSource {
     ///
     /// 关键：用不跟随重定向的 client，确保 803 时的 Set-Cookie 不丢失。
     async fn qrcode_check(&self, key: &str) -> Result<QrCodeStatus> {
-        let url = format!("{}/api/login/qrcode/client/login?key={}", BASE, key);
+        let url = format!("{}/api/login/qrcode/client/login?key={}&type=1", BASE, key);
 
         // 专用 client：禁用重定向（803 可能返回 302，跟随会丢 Set-Cookie）
         let no_redirect_client = reqwest::Client::builder()
