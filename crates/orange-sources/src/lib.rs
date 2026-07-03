@@ -17,6 +17,7 @@
 pub mod local;
 pub mod web_radio;
 pub mod podcast;
+pub mod weapi;
 // 第三方平台 v0.3 实现
 pub mod netease;
 pub mod qqmusic;
