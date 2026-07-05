@@ -45,7 +45,12 @@ pub async fn library_scan(
     let scanner = LibraryScanner::new();
     let tracks = scanner.scan(&options).await.map_err(|e| e.to_string())?;
     let count = tracks.len() as u32;
-    state.library.replace_all(tracks);
+    // SQLite 持久化（persist_local 逐条 INSERT）是同步阻塞 IO，
+    // 放进 spawn_blocking 避免占住 tokio worker（大库 + 慢盘时尤为关键）
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.replace_all(tracks))
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(ScanReport { count })
 }
 
@@ -74,13 +79,7 @@ pub async fn library_tracks(
     limit: Option<usize>,
 ) -> Result<Vec<Track>, String> {
     match (offset, limit) {
-        (Some(o), Some(l)) => Ok(state
-            .library
-            .all()
-            .into_iter()
-            .skip(o)
-            .take(l)
-            .collect()),
+        (Some(o), Some(l)) => Ok(state.library.all().into_iter().skip(o).take(l).collect()),
         _ => Ok(state.library.all()),
     }
 }
@@ -413,9 +412,10 @@ pub async fn toggle_liked(
     track_id: String,
     liked: bool,
 ) -> Result<(), String> {
-    state
-        .library
-        .set_liked(&track_id, liked)
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.set_liked(&track_id, liked))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -431,9 +431,10 @@ pub async fn create_playlist(
     state: tauri::State<'_, AppState>,
     name: String,
 ) -> Result<String, String> {
-    state
-        .library
-        .create_playlist(&name)
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.create_playlist(&name))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -444,9 +445,10 @@ pub async fn rename_playlist(
     playlist_id: String,
     name: String,
 ) -> Result<(), String> {
-    state
-        .library
-        .rename_playlist(&playlist_id, &name)
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.rename_playlist(&playlist_id, &name))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -456,9 +458,10 @@ pub async fn delete_playlist(
     state: tauri::State<'_, AppState>,
     playlist_id: String,
 ) -> Result<(), String> {
-    state
-        .library
-        .delete_playlist(&playlist_id)
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.delete_playlist(&playlist_id))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -469,9 +472,10 @@ pub async fn add_to_playlist(
     playlist_id: String,
     track: Track,
 ) -> Result<(), String> {
-    state
-        .library
-        .add_to_playlist(&playlist_id, &track)
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.add_to_playlist(&playlist_id, &track))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -482,9 +486,10 @@ pub async fn remove_from_playlist(
     playlist_id: String,
     track_id: String,
 ) -> Result<(), String> {
-    state
-        .library
-        .remove_from_playlist(&playlist_id, &track_id)
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.remove_from_playlist(&playlist_id, &track_id))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -496,9 +501,11 @@ pub async fn playlist_tracks(
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> Result<Vec<Track>, String> {
-    let mut tracks = state
-        .library
-        .playlist_tracks(&playlist_id)
+    let library = state.library.clone();
+    // SQLite JOIN + 分页在阻塞线程里完成
+    let mut tracks = tokio::task::spawn_blocking(move || library.playlist_tracks(&playlist_id))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     if let (Some(o), Some(l)) = (offset, limit) {
         tracks = tracks.into_iter().skip(o).take(l).collect();
@@ -511,7 +518,11 @@ pub async fn playlist_tracks(
 pub async fn all_playlists(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<orange_library::UserPlaylist>, String> {
-    state.library.all_playlists().map_err(|e| e.to_string())
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.all_playlists())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// 网易云生成二维码登录
@@ -996,10 +1007,13 @@ pub async fn record_playback(
     completed: bool,
     skipped: bool,
 ) -> Result<(), String> {
-    state
-        .library
-        .record_play_history(&track_id, played_secs, total_secs, completed, skipped)
-        .map_err(|e| e.to_string())
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || {
+        library.record_play_history(&track_id, played_secs, total_secs, completed, skipped)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 /// 获取用户画像（settings / 调试用）
@@ -1007,9 +1021,11 @@ pub async fn record_playback(
 pub async fn get_user_profile(
     state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let profile = state
-        .library
-        .aggregate_user_profile()
+    let library = state.library.clone();
+    // aggregate_user_profile 会 LIMIT 2000 全表扫 + 遍历建 HashMap，较重，放阻塞线程
+    let profile = tokio::task::spawn_blocking(move || library.aggregate_user_profile())
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     serde_json::to_value(profile).map_err(|e| e.to_string())
 }
@@ -1022,13 +1038,22 @@ pub async fn recommend_next(
     current_track_id: Option<String>,
 ) -> Result<Vec<Track>, String> {
     use orange_core::recommendation::RecommendContext;
-    let profile = state
-        .library
-        .aggregate_user_profile()
-        .map_err(|e| e.to_string())?;
-    let recent = state.library.recent_track_ids(20);
-    let feedback = state.library.recent_feedback(20);
-    let all = state.library.all();
+    // 把所有同步 SQLite + 内存聚合（aggregate_user_profile / recent_track_ids /
+    // recent_feedback / all）打包进一次 spawn_blocking，避免多次阻塞 worker。
+    // recommender 的推荐算法是 async 的，在 spawn_blocking 之外 await。
+    let library = state.library.clone();
+    let prep = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let profile = library
+            .aggregate_user_profile()
+            .map_err(|e| e.to_string())?;
+        let recent = library.recent_track_ids(20);
+        let feedback = library.recent_feedback(20);
+        let all = library.all();
+        Ok((profile, recent, feedback, all))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let (profile, recent, feedback, all) = prep;
     let current = current_track_id
         .as_ref()
         .and_then(|id| all.iter().find(|t| t.id.0.to_string() == *id).cloned());
@@ -1451,6 +1476,10 @@ pub async fn studio_generate_music(
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let dest = cache_dir.join(format!("{ts}-{task_id}.mp3", task_id = result.task_id));
+    tracing::info!(
+        "开始下载 MiniMax 音频到本地: dest={}",
+        dest.display()
+    );
     let audio_path = provider
         .download_audio(&audio_url, &dest)
         .await
@@ -1496,6 +1525,7 @@ pub async fn studio_separate_vocal(
     let vocals_path = match stems.vocals.as_deref() {
         Some(url) if url.starts_with("http") => {
             let dest = cache_dir.join(format!("{ts}-vocals.mp3"));
+            tracing::info!("开始下载人声轨: dest={}", dest.display());
             downloader
                 .download_audio(url, &dest)
                 .await
@@ -1507,6 +1537,7 @@ pub async fn studio_separate_vocal(
     let instrumental_path = match stems.other.as_deref() {
         Some(url) if url.starts_with("http") => {
             let dest = cache_dir.join(format!("{ts}-instrumental.mp3"));
+            tracing::info!("开始下载伴奏轨: dest={}", dest.display());
             downloader
                 .download_audio(url, &dest)
                 .await

@@ -27,6 +27,7 @@ impl PodcastSource {
             id: SourceId(uuid::Uuid::new_v4()),
             client: reqwest::Client::builder()
                 .user_agent("OrangeRadio/0.3 (Podcast)")
+                .timeout(std::time::Duration::from_secs(15))
                 .build()
                 .unwrap_or_default(),
         }

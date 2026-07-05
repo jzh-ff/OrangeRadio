@@ -128,6 +128,8 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const trackIdRef = useRef("");
   const lyricScrollRef = useRef<HTMLDivElement>(null);
   const lyricLineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // 歌词居中的补帧 rAF 句柄（卸载时取消，避免对已卸载 DOM 操作）
+  const lyricCenterRafRef = useRef<number>(0);
 
   // 切歌时重新拉歌词（按音源分发：网易云 / QQ；本地等无在线歌词）
   useEffect(() => {
@@ -187,7 +189,8 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
 
     centerActiveLine();
     // 等 active 行字号/背景样式应用后再补一次（消除首帧高度未更新偏差）
-    requestAnimationFrame(centerActiveLine);
+    lyricCenterRafRef.current = requestAnimationFrame(centerActiveLine);
+    return () => cancelAnimationFrame(lyricCenterRafRef.current);
   }, [activeIndex, lines.length]);
 
   /** 当前行平滑扫光（CSS 变量 --lyric-p 驱动渐变边界，对标 MineRadio uProgress smoothstep）

@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useLibraryStore, type Track } from "../../stores/libraryStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -22,8 +23,22 @@ const QUALITY_BADGE: Record<string, { label: string; cls: string }> = {
 };
 
 export function LibraryView() {
+  // 细粒度订阅：用 useShallow 浅比较选中的字段集合，避免 store 任意字段变化
+  // （如 loading 翻转）导致整个 LibraryView 连带虚拟列表父级重渲染。
   const { tracks, loading, searchKeyword, loadTracks, loadMore, hasMore, scanLocal, doSearch, setSearchKeyword } =
-    useLibraryStore();
+    useLibraryStore(
+      useShallow((s) => ({
+        tracks: s.tracks,
+        loading: s.loading,
+        searchKeyword: s.searchKeyword,
+        loadTracks: s.loadTracks,
+        loadMore: s.loadMore,
+        hasMore: s.hasMore,
+        scanLocal: s.scanLocal,
+        doSearch: s.doSearch,
+        setSearchKeyword: s.setSearchKeyword,
+      }))
+    );
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
 

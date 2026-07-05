@@ -221,8 +221,16 @@ interface PlayerState {
   subView: "home" | "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "gequbao" | "user_playlist" | "search" | "wallpaper";
   /** 当前查看的用户歌单 ID */
   currentPlaylistId: string | null;
+  /**
+   * @deprecated 高频实时频谱已迁移到 spectrumBus（见 stores/spectrumBus.ts），
+   * 此字段仅作兼容保留，不再由 useAudioEngine 写入；新代码请用 `readSpectrum()`。
+   */
   spectrum: number[];
-  /** 节拍检测实时结果 */
+  /**
+   * @deprecated 节拍实时结果已迁移到 spectrumBus（见 stores/spectrumBus.ts），
+   * 此字段仅作兼容保留，不再由 useBeatDetector 写入；新代码请用 `readBeat()`。
+   * 注意：beatmap（图谱）仍是 store 字段，低频写入，未迁移。
+   */
   beat: BeatState;
   /** 节拍图谱（本地文件预计算，null 表示用实时检测退化） */
   beatmap: BeatHit[] | null;

@@ -221,7 +221,10 @@ async fn handle_we_file(
     // 首次请求触发，discover 完成后写入 AppState，后续请求 roots 非空直接走快路径。
     if roots.is_empty() {
         let discovered = orange_tauri::wallpaper_engine::discover_dirs();
-        tracing::info!("wefile 首次请求，自动发现 Workshop 根目录: {:?}", discovered);
+        tracing::info!(
+            "wefile 首次请求，自动发现 Workshop 根目录: {:?}",
+            discovered
+        );
         *state.we_roots.write() = discovered.clone();
         roots = discovered;
     }
@@ -245,11 +248,7 @@ async fn handle_we_file(
     let content_type = we_content_type(&path);
 
     // 解析 Range 头（形如 "bytes=0-1023" 或 "bytes=0-"）
-    let (start, end, status) = match request
-        .headers()
-        .get("range")
-        .and_then(|r| r.to_str().ok())
-    {
+    let (start, end, status) = match request.headers().get("range").and_then(|r| r.to_str().ok()) {
         Some(r) if r.starts_with("bytes=") => {
             let spec = &r[6..];
             let (s, e) = spec.split_once('-').unwrap_or((spec, ""));

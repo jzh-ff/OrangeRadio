@@ -63,6 +63,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # HTTP 客户端
 reqwest = { version = "0.12", features = ["json", "stream", "cookies"] }
 
+# URL 解析（MiniMax 音频下载前校验 / 相对路径拼接）
+url = "2"
+
 # 异步 trait
 async-trait = "0.1"
 

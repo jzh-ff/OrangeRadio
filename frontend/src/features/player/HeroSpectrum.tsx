@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "../../stores/playerStore";
+import { readSpectrum } from "../../stores/spectrumBus";
 
 interface HeroSpectrumProps {
   /** 频谱条数量（默认 64，跟 store spectrum 数组长度对齐） */
@@ -10,8 +11,11 @@ interface HeroSpectrumProps {
 
 /**
  * Hero Live 频谱条
- * 订阅 usePlayerStore.spectrum（useAudioEngine 已经在 RAF 里写入 64-bin FFT），
+ * 从 spectrumBus 拉取实时频谱（useAudioEngine 已经在 RAF 里写入 64-bin FFT），
  * 用 canvas 2D 画「对数频率分布」的频谱条贴在 hero 顶部。
+ *
+ * 性能：spectrum 走 bus 不经过 React 状态，本组件不会因频谱每帧变化而重渲染；
+ *      内部 draw 循环在 RAF 里直接 readSpectrum() 绘制。
  *
  * 设计要点：
  * - 对数频率映射（Math.pow(f, 1.6)）：低频占更多横向空间，高频收窄（人耳对低频更敏感）
@@ -21,7 +25,6 @@ interface HeroSpectrumProps {
  */
 export function HeroSpectrum({ bars = 64, height = 56 }: HeroSpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const spectrum = usePlayerStore((s) => s.spectrum);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const rafRef = useRef<number>(0);
   const peaksRef = useRef<Float32Array>(new Float32Array(bars));
@@ -49,7 +52,7 @@ export function HeroSpectrum({ bars = 64, height = 56 }: HeroSpectrumProps) {
       const h = rect.height;
       ctx.clearRect(0, 0, w, h);
 
-      const data = spectrum;
+      const data = readSpectrum();
       const binCount = data.length;
       const stepX = w / bars;
       const barW = Math.max(2, stepX * 0.72);
@@ -93,7 +96,7 @@ export function HeroSpectrum({ bars = 64, height = 56 }: HeroSpectrumProps) {
       cancelAnimationFrame(rafRef.current);
       ro.disconnect();
     };
-  }, [spectrum, isPlaying, bars]);
+  }, [isPlaying, bars]);
 
   return (
     <div className="hero-spectrum" aria-hidden style={{ height }}>

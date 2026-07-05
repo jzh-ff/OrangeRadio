@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "../../stores/playerStore";
+import { readSpectrum, readBeat, writeBeat } from "../../stores/spectrumBus";
 
 /**
  * 纯前端实时节拍检测 Hook
@@ -13,7 +14,7 @@ import { usePlayerStore } from "../../stores/playerStore";
  *   - mid:    bin 4~16  （中频，人声/吉他主体）
  *   - treble: bin 17~63 （高频，镲片/空气感）
  *
- * 把结果写入 usePlayerStore.beat，供视觉层（BeatParticles 等）消费。
+ * 把结果写入 spectrumBus.beat，供视觉层（BeatParticles 等）消费。
  */
 export function useBeatDetector() {
   const rafRef = useRef<number>(0);
@@ -27,7 +28,9 @@ export function useBeatDetector() {
 
   useEffect(() => {
     const tick = () => {
-      const { spectrum, isPlaying, visualParams, beat, setBeat } = usePlayerStore.getState();
+      const { isPlaying, visualParams } = usePlayerStore.getState();
+      const spectrum = readSpectrum();
+      const beat = readBeat();
       const sens = visualParams.sensitivity;
 
       // 节拍图谱存在时，由 useAudioEngine.loopSpectrum 负责按时间轴回放，实时检测退出
@@ -39,7 +42,7 @@ export function useBeatDetector() {
       if (!isPlaying || spectrum.length === 0) {
         // 不播放时：能量衰减归零，清空历史
         if (beat.intensity > 0.001 || beat.bass > 0.001) {
-          setBeat({ isBeat: false, intensity: 0, bass: 0, mid: 0, treble: 0 });
+          writeBeat({ isBeat: false, intensity: 0, bass: 0, mid: 0, treble: 0 });
         }
         historyRef.current = [];
         rafRef.current = requestAnimationFrame(tick);
@@ -99,8 +102,8 @@ export function useBeatDetector() {
       }
       const intensity = Math.max(0, Math.min(1, intensityRef.current));
 
-      // 写入 store（只在变化明显时写，减少渲染）
-      setBeat({ isBeat, bass, mid, treble, intensity });
+      // 写入频谱 bus（不再每帧写 store，避免高频 setState）
+      writeBeat({ isBeat, bass, mid, treble, intensity });
 
       rafRef.current = requestAnimationFrame(tick);
     };
