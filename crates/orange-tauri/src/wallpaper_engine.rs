@@ -72,16 +72,14 @@ pub fn is_within_roots(path: &std::path::Path, roots: &[std::path::PathBuf]) -> 
 }
 
 /// `project.json` 的瘦反序列化结构(serde 忽略未知字段,即便文件 256KB 也只取这几项)。
+///
+/// Wallpaper Engine 的 `file`/`title`/`type`/`preview`/`tags` 都在 JSON **顶层**;
+/// `general` 块只装 `localization`/`properties`,不含这些字段。
 #[derive(serde::Deserialize, Clone)]
 struct ProjectJson {
     file: Option<String>,
-    general: Option<GeneralBlock>,
-}
-
-#[derive(serde::Deserialize, Clone)]
-struct GeneralBlock {
     title: Option<String>,
-    /// JSON 字段名 "type"
+    /// JSON 字段名 "type"(Wallpaper Engine 顶层字段)
     #[serde(rename = "type")]
     kind: Option<String>,
     preview: Option<String>,
@@ -133,23 +131,16 @@ pub fn scan_dir(dir: &Path) -> Vec<WallpaperEngineEntry> {
             }
         };
         let file = proj.file.clone().unwrap_or_default();
-        let general = proj.general.clone();
-        let title = general
-            .as_ref()
-            .and_then(|g| g.title.clone())
-            .unwrap_or_else(|| workshop_id.clone());
-        let kind = infer_kind(&file, general.as_ref().and_then(|g| g.kind.as_deref()));
+        let title = proj.title.clone().unwrap_or_else(|| workshop_id.clone());
+        let kind = infer_kind(&file, proj.kind.as_deref());
         out.push(WallpaperEngineEntry {
             workshop_id,
             title,
             kind,
             file,
-            preview: general.as_ref().and_then(|g| g.preview.clone()),
+            preview: proj.preview.clone(),
             size_bytes: dir_size(&sub),
-            tags: general
-                .as_ref()
-                .and_then(|g| g.tags.clone())
-                .unwrap_or_default(),
+            tags: proj.tags.clone().unwrap_or_default(),
             applicable: kind.applicable(),
             source_dir: sub.to_string_lossy().into_owned(),
         });
@@ -345,7 +336,7 @@ mod tests {
         fs::create_dir_all(&v).unwrap();
         fs::write(
             v.join("project.json"),
-            r#"{"file":"clip.mp4","general":{"title":"My Video","type":"Video","preview":"preview.jpg","tags":["Anime"]}}"#,
+            r#"{"file":"clip.mp4","title":"My Video","type":"Video","preview":"preview.jpg","tags":["Anime"]}"#,
         ).unwrap();
         fs::write(v.join("clip.mp4"), b"fake").unwrap();
         fs::write(v.join("preview.jpg"), b"fake").unwrap();
@@ -354,7 +345,7 @@ mod tests {
         fs::create_dir_all(&s).unwrap();
         fs::write(
             s.join("project.json"),
-            r#"{"file":"scene.pkg","general":{"title":"Scene One"}}"#,
+            r#"{"file":"scene.pkg","title":"Scene One"}"#,
         )
         .unwrap();
         // 损坏的 project.json(应被跳过,不中断)
