@@ -215,9 +215,16 @@ async fn handle_we_file(
     let path = std::path::PathBuf::from(&path_str);
 
     // 安全校验：必须在已登记 Workshop 根目录之下
-    // fail-closed：we_roots 为空（未扫描）时 is_within_roots 返回 false → 全部拒绝
     let state = app.state::<orange_tauri::AppState>();
-    let roots = state.we_roots.read().clone();
+    let mut roots = state.we_roots.read().clone();
+    // 启动后未扫描（we_roots 空）：自动发现一次填充，避免 WE 壁纸重启后 wefile 全拒（黑屏）。
+    // 首次请求触发，discover 完成后写入 AppState，后续请求 roots 非空直接走快路径。
+    if roots.is_empty() {
+        let discovered = orange_tauri::wallpaper_engine::discover_dirs();
+        tracing::info!("wefile 首次请求，自动发现 Workshop 根目录: {:?}", discovered);
+        *state.we_roots.write() = discovered.clone();
+        roots = discovered;
+    }
     if !orange_tauri::wallpaper_engine::is_within_roots(&path, &roots) {
         tracing::warn!("wefile 拒绝越界路径: {}", path.display());
         return Response::builder()
