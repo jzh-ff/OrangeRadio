@@ -52,10 +52,9 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const fullLayout = usePlayerStore((s) => s.fullLayout);
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
-  const dominantColor = usePlayerStore((s) => s.dominantColor);
   const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
 
-  // 切歌时提取封面主色 → 写入 store（驱动 fp-blur-bg + BeatParticles auto 主题）
+  // 切歌时提取封面主色 → 写入 store（驱动 cinema 模式 CoverParticles / BeatParticles auto 主题）
   useDominantColor(currentTrack);
 
   const [lyricData, setLyricData] = useState<LyricData | null>(null);
@@ -202,10 +201,6 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const artist = currentTrack?.meta.artist || "";
   const coverUrl = getCoverUrl(currentTrack);
   const songId = currentTrack?.source_track_id || "";
-  // 封面主色 → CSS 变量 --fp-accent（fp-blur-bg 径向渐变用；null 时 CSS 回退橙色）
-  const accentStyle = dominantColor
-    ? { ["--fp-accent" as string]: `rgb(${dominantColor[0]}, ${dominantColor[1]}, ${dominantColor[2]})` } as React.CSSProperties
-    : undefined;
 
   const activeLayout = LAYOUT_OPTIONS.find((o) => o.id === fullLayout)!;
 
@@ -222,11 +217,6 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           <div className="fp-starriver-bg"><StarRiver /></div>
         </div>
       )}
-      {/* 其他模式：模糊封面背景（颜色跟随封面主色 --fp-accent） */}
-      {fullLayout !== "cinema" && (
-        <div className="fp-blur-bg" style={accentStyle} />
-      )}
-
       {/* 顶部：模式导航 + 工具 */}
       <header className="fp-header">
         <div className="fp-header__brand">
