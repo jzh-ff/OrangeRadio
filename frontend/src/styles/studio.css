@@ -394,3 +394,128 @@
     width: auto;
   }
 }
+
+/* ===== v0.6 真实功能面板 ===== */
+
+.studio-step--panel {
+  display: block;
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+
+.studio-step__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.studio-step__head .studio-step__title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-1, #fff);
+}
+
+.studio-prompt__btn--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 157, 69, 0.4);
+  color: var(--amber, #ff9d45);
+  flex-shrink: 0;
+}
+
+.studio-prompt__btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 107, 26, 0.12);
+}
+
+.studio-prompt__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.studio-lyrics-editor {
+  width: 100%;
+  min-height: 180px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-1, #fff);
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.studio-lyrics-editor:focus {
+  outline: none;
+  border-color: rgba(255, 157, 69, 0.5);
+}
+
+.studio-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 30px 0;
+  color: var(--text-2, #aaa);
+  font-size: 14px;
+}
+
+.studio-loading__spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 157, 69, 0.2);
+  border-top-color: var(--amber, #ff9d45);
+  animation: studio-spin 0.9s linear infinite;
+}
+
+@keyframes studio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.studio-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.studio-result__audio {
+  width: 100%;
+}
+
+.studio-result__path {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-2, #888);
+  word-break: break-all;
+}
+
+.studio-stems {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.studio-stems__track {
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.studio-stems__label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-1, #fff);
+}
+
+.studio-stems__track audio {
+  width: 100%;
+}
+

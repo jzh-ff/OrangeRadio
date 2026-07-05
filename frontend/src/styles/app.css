@@ -6,8 +6,9 @@
   flex-direction: column;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 18%, rgba(255, 107, 26, 0.18), transparent 28%),
-    radial-gradient(circle at 82% 8%, rgba(71, 217, 255, 0.1), transparent 26%),
+    radial-gradient(circle at 18% 18%, rgba(255, 107, 26, 0.16), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(71, 217, 255, 0.08), transparent 26%),
+    radial-gradient(circle at 50% 100%, rgba(192, 67, 24, 0.08), transparent 38%),
     linear-gradient(145deg, #04050a 0%, #080a12 42%, #030409 100%);
 }
 
@@ -18,12 +19,13 @@
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(circle at 50% 36%, black 0%, transparent 72%);
+    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 50% 36%, black 0%, transparent 75%);
 }
 
+/* 编辑杂志感：胶片噪点 + 顶/底暗角 */
 .app::after {
   content: "";
   position: fixed;
@@ -31,8 +33,9 @@
   z-index: 2;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(255, 107, 26, 0.045), transparent 16%, transparent 84%, rgba(71, 217, 255, 0.03)),
-    radial-gradient(circle at 50% 120%, rgba(255, 107, 26, 0.1), transparent 42%);
+    linear-gradient(90deg, rgba(255, 107, 26, 0.04), transparent 16%, transparent 84%, rgba(71, 217, 255, 0.025)),
+    radial-gradient(ellipse at 50% 120%, rgba(255, 107, 26, 0.09), transparent 42%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, transparent 12%, transparent 88%, rgba(0, 0, 0, 0.4) 100%);
 }
 
 /* Three.js 画布容器（粒子背景） */
@@ -50,6 +53,7 @@
   overflow: hidden;
   position: relative;
   z-index: 3;
+  padding-top: 38px; /* P14 自定义 titlebar 让位 */
 }
 
 .app__main {

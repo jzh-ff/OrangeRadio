@@ -14,20 +14,22 @@
 //! 用户/社区可通过实现 [`AudioSource`](orange_core::source::AudioSource) trait
 //! 编写自定义音源插件。
 
+pub mod auth_store;
 pub mod local;
-pub mod web_radio;
 pub mod podcast;
 pub mod weapi;
+pub mod web_radio;
 // 第三方平台 v0.3 实现
 pub mod netease;
 pub mod qqmusic;
 pub mod spotify;
 
-pub use web_radio::WebRadioSource;
+pub use auth_store::{AuthStore, StoredAuth};
 pub use netease::NeteaseSource;
 pub use podcast::PodcastSource;
 pub use qqmusic::QqMusicSource;
 pub use spotify::SpotifySource;
+pub use web_radio::WebRadioSource;
 
 /// 音源注册表：管理所有已注册的音源实例
 pub struct SourceRegistry {
@@ -36,7 +38,9 @@ pub struct SourceRegistry {
 
 impl SourceRegistry {
     pub fn new() -> Self {
-        Self { sources: Vec::new() }
+        Self {
+            sources: Vec::new(),
+        }
     }
 
     /// 注册一个音源
@@ -46,8 +50,14 @@ impl SourceRegistry {
     }
 
     /// 按 ID 查找音源
-    pub fn get(&self, id: orange_core::source::SourceId) -> Option<&dyn orange_core::source::AudioSource> {
-        self.sources.iter().map(|s| s.as_ref()).find(|s| s.id() == id)
+    pub fn get(
+        &self,
+        id: orange_core::source::SourceId,
+    ) -> Option<&dyn orange_core::source::AudioSource> {
+        self.sources
+            .iter()
+            .map(|s| s.as_ref())
+            .find(|s| s.id() == id)
     }
 
     /// 列出所有音源

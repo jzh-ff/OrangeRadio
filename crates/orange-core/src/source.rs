@@ -36,6 +36,12 @@ pub enum SourceKind {
     Plugin,
 }
 
+impl Default for SourceKind {
+    fn default() -> Self {
+        SourceKind::Local
+    }
+}
+
 /// 搜索查询
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
@@ -127,17 +133,23 @@ pub trait AudioSource: Send + Sync {
 pub trait AuthSource: AudioSource {
     /// 生成二维码登录 key + 图片 URL（二维码扫码登录）
     async fn qrcode_create(&self) -> Result<QrCodeLogin> {
-        Err(crate::CoreError::Unsupported("该音源不支持二维码登录".into()))
+        Err(crate::CoreError::Unsupported(
+            "该音源不支持二维码登录".into(),
+        ))
     }
 
     /// 查询二维码扫码状态（轮询）
     async fn qrcode_check(&self, _key: &str) -> Result<QrCodeStatus> {
-        Err(crate::CoreError::Unsupported("该音源不支持二维码登录".into()))
+        Err(crate::CoreError::Unsupported(
+            "该音源不支持二维码登录".into(),
+        ))
     }
 
     /// 用 Cookie 登录（用户导入浏览器 Cookie）
     async fn login_with_cookie(&self, _cookie: &str) -> Result<()> {
-        Err(crate::CoreError::Unsupported("该音源不支持 Cookie 登录".into()))
+        Err(crate::CoreError::Unsupported(
+            "该音源不支持 Cookie 登录".into(),
+        ))
     }
 
     /// 登出
@@ -172,6 +184,8 @@ pub enum QrCodeStatus {
     Confirmed { cookie: String },
     /// 已过期
     Expired,
+    /// 被风控/拦截（如网易云 8821：非官方客户端被安全系统识别）
+    Blocked { message: String },
 }
 
 /// 用户信息
@@ -190,9 +204,15 @@ pub enum StreamLocation {
     /// 本地文件路径
     File { path: String },
     /// HTTP(S) 流 URL
-    Url { url: String, headers: Vec<(String, String)> },
+    Url {
+        url: String,
+        headers: Vec<(String, String)>,
+    },
     /// 需要先获取的临时 URL（带过期）
-    TempUrl { url: String, expires_at: chrono::DateTime<chrono::Utc> },
+    TempUrl {
+        url: String,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    },
 }
 
 /// 歌单引用

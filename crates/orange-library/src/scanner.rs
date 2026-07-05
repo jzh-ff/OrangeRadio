@@ -79,10 +79,7 @@ impl LibraryScanner {
                         continue;
                     }
                     let path = entry.path();
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("");
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                     let fmt = AudioFormat::from_extension(ext);
                     if !formats.contains(&fmt) {
                         continue;

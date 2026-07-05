@@ -92,8 +92,11 @@ pub struct Track {
     pub id: TrackId,
     /// 来自哪个音源
     pub source_id: crate::source::SourceId,
-    /// 在音源中的原始 ID
+    /// 在音源中的原始 ID（本地=文件路径；网易云/QQ=歌曲ID）
     pub source_track_id: String,
+    /// 音源类型（用于跨源收藏后定位取流方式）
+    #[serde(default)]
+    pub source_kind: crate::source::SourceKind,
     pub meta: TrackMeta,
     /// 音频格式
     pub format: AudioFormat,
@@ -113,11 +116,16 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn new(source_id: crate::source::SourceId, source_track_id: String, meta: TrackMeta) -> Self {
+    pub fn new(
+        source_id: crate::source::SourceId,
+        source_track_id: String,
+        meta: TrackMeta,
+    ) -> Self {
         Self {
             id: TrackId::new(),
             source_id,
             source_track_id,
+            source_kind: crate::source::SourceKind::Local,
             meta,
             format: AudioFormat::Unknown,
             quality: Quality::Standard,

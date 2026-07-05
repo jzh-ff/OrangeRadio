@@ -61,10 +61,25 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # HTTP 客户端
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "cookies"] }
 
 # 异步 trait
 async-trait = "0.1"
+
+# 加密 / 凭据持久化（AuthStore 用）
+aes-gcm = "0.10"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+base64 = "0.22"
+rand = "0.8"
+
+# 哈希（QQ音乐接口 sign 用）
+md5 = "0.7"
+
+# 音频解码（节拍图谱预计算用：symphonia 解码整曲 PCM）
+symphonia = { version = "0.5", features = ["mp3", "aac", "flac", "wav", "ogg", "isomp4"] }
+
+# 异步流（server WebSocket 一起听用）
+futures-util = "0.3"
 
 [profile.release]
 opt-level = 3

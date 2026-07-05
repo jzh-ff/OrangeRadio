@@ -1,0 +1,70 @@
+/* ===== 自定义窗口标题栏（对标 MineRadio #desktop-titlebar） ===== */
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 200;
+  background: transparent;
+  -webkit-app-region: drag;
+  pointer-events: none;
+}
+.titlebar__drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 16px;
+  pointer-events: auto;
+}
+.titlebar__logo {
+  font-family: var(--font-display-serif);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, var(--orange-2), var(--champagne));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.titlebar__title {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.titlebar__controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+.titlebar__btn {
+  width: 28px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.titlebar__btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.titlebar__btn--close:hover {
+  background: rgba(255, 80, 80, 0.85);
+  color: #fff;
+}

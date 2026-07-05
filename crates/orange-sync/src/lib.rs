@@ -11,5 +11,5 @@
 pub mod cast;
 pub mod handoff;
 
-pub use cast::{DeviceCaster, CastDevice, CastProtocol};
+pub use cast::{CastDevice, CastProtocol, DeviceCaster};
 pub use handoff::{HandoffManager, PlayState};

@@ -1,5 +1,5 @@
 :root {
-  /* 橙波电台控制台：深色录音室 + 烧橙信号光 */
+  /* 橙波电台控制台：深色录音室 + 烧橙信号光（主品牌） */
   --bg-0: #030409;
   --bg-1: #080a12;
   --bg-2: #10121d;
@@ -38,7 +38,47 @@
     "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-body: "Inter", "Segoe UI Variable Text", "PingFang SC",
     "Microsoft YaHei", sans-serif;
-  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  /* 装饰性 serif display（splash wordmark / hero 标题，对标 MineRadio Cinzel 的克制替代） */
+  --font-display-serif: "Cormorant Garamond", "Cinzel Decorative", serif;
+  /* 编辑杂志感衬线（混排 Fraunces + Cormorant），用于 hero / bento 大标题 */
+  --font-editorial: "Fraunces", "Cormorant Garamond", "Noto Serif SC", serif;
+  /* 中文衬线（用于中文 hero 大标题，让中英文气质统一） */
+  --font-zh-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+  /* 数字大字（混排 tabular-nums，用于 index / 频谱 / 时长） */
+  --font-num: "Fraunces", "Cormorant Garamond", "JetBrains Mono", monospace;
+
+  /* 冷色辅助点（对标 MineRadio 薄荷绿 + 香槟金，用于 splash 信号线/玻璃描边/首页 tone/星河） */
+  --mint: #00f5d4;
+  --mint-soft: rgba(0, 245, 212, 0.14);
+  --mint-glow: rgba(0, 245, 212, 0.5);
+  --champagne: #f4d28a;
+  --champagne-deep: #9a6f2c;
+  --champagne-soft: rgba(244, 210, 138, 0.18);
+  --chill-cyan: #8fe9ff;
+  --chill-blue: #73a7ff;
+  --chill-mint: #9cffdf;
+
+  /* 编辑杂志感辅助色（克制过渡色，用于渐变描边 / 频谱 / 装饰线） */
+  --orange-deep: #c04318;       /* 老铜橙：深色模式下的"信号红"，克制不刺眼 */
+  --gold: #d6a560;              /* 古金：champagne 的更深更红版本 */
+  --gold-soft: rgba(214, 165, 96, 0.18);
+  --ink: #0c0e16;               /* 深墨：纯黑偏蓝，替代 #000 用于面板底色 */
+  --paper: #efe7d8;             /* 纸色：暖白，高对比文字 / 频谱数值 */
+  --jade: #2dd4a5;              /* 冷翠绿：mint 的暗调版本，用于 hero 标题 accent */
+  --rose: #ff7e8e;              /* 信号粉：reserve / live 状态 */
+
+  /* 玻璃三层级（对标 MineRadio --glass-* + --saved-panel-glass-*，saturate+brightness 让玻璃通透） */
+  --glass-bg: linear-gradient(112deg, rgba(72, 74, 76, 0.62), rgba(24, 27, 30, 0.7) 48%, rgba(8, 12, 14, 0.74));
+  --glass-bg-focus: linear-gradient(112deg, rgba(88, 91, 92, 0.68), rgba(28, 32, 35, 0.76) 50%, rgba(8, 13, 15, 0.82));
+  --glass-border: rgba(0, 245, 212, 0.3);
+  --glass-border-soft: rgba(255, 255, 255, 0.095);
+  --glass-shadow: 0 22px 64px rgba(0, 0, 0, 0.3), 0 0 34px rgba(0, 245, 212, 0.052),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -24px 58px rgba(0, 0, 0, 0.16);
+  --glass-shadow-focus: 0 24px 72px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(0, 245, 212, 0.13),
+    0 0 42px rgba(0, 245, 212, 0.075), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  --glass-filter: blur(12px) saturate(1.8) brightness(1.16);
+
   /* 兼容旧样式变量 */
   --accent-orange: var(--orange);
   --accent-orange-soft: var(--orange-2);
@@ -59,10 +99,26 @@ html, body, #root {
 }
 
 body {
-  background: var(--bg-0);
+  background: transparent;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   user-select: none;
+}
+
+/* P14 桌面壳圆角：transparent 窗口下 #root 做圆角背景 + clip-path 让四角透明 */
+#root {
+  background: var(--bg-0);
+  border-radius: 34px;
+  clip-path: inset(0 round 34px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.46);
+  transform: translateZ(0);
+}
+/* 最大化/全屏时去圆角 + 去阴影 */
+body.window-maximized #root,
+body:fullscreen #root {
+  border-radius: 0 !important;
+  clip-path: none !important;
+  box-shadow: none !important;
 }
 
 ::selection {
@@ -139,3 +195,155 @@ textarea:focus-visible {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ===== Wallpaper 银河主背景（对标 MineRadio wallpaper.html） ===== */
+.wallpaper-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.wallpaper-bg canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+/* prefers-reduced-motion 静态回退 */
+.wallpaper-static {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 30% 40%, var(--mint-soft), transparent 50%),
+    radial-gradient(circle at 70% 70%, var(--champagne-soft), transparent 50%),
+    linear-gradient(135deg, #050608, #0a0e14);
+}
+
+/* ===== P12 壁纸系统（应用内自定义背景） ===== */
+.wallpaper-layer-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #050608;
+}
+.wallpaper-layer-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.6s ease, filter 0.4s ease;
+}
+.wallpaper-layer-dim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.6) 100%);
+  pointer-events: none;
+}
+
+/* ===== P13 3D 歌单架 ===== */
+.shelf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(3, 4, 9, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.shelf-overlay canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+.shelf-hint {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 101;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-2);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+/* ===== P15 歌词 3D 舞台 shader ===== */
+.lyric-stage-3d {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lyric-stage-3d canvas {
+  display: block;
+  width: 90% !important;
+  height: 30% !important;
+}
+
+/* ===== 编辑杂志感：胶片噪点（film grain） ===== */
+/* 全屏覆盖的 SVG 噪点纹理，通过 data-URI 内联，零额外网络请求 */
+.film-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 240px 240px;
+}
+.film-grain--heavy {
+  opacity: 0.12;
+  mix-blend-mode: soft-light;
+}
+
+/* 编辑杂志感：暖白渐隐光斑（用于 hero / featured 卡顶部） */
+.warm-halo {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 70% at 75% 25%, rgba(255, 157, 69, 0.18), transparent 60%),
+    radial-gradient(50% 60% at 20% 80%, rgba(0, 245, 212, 0.08), transparent 65%);
+}
+
+/* 编辑杂志感：hairline 分隔线（贯穿容器宽度，0.5px 暖白） */
+.hairline {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(244, 210, 138, 0.18) 18%, rgba(244, 210, 138, 0.18) 82%, transparent);
+}
+
+/* 编辑杂志感：频谱装饰条（mini equalizer，用于角标 / 状态指示） */
+.eq-mini {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+.eq-mini i {
+  width: 2px;
+  background: var(--orange-2);
+  border-radius: 1px;
+  animation: eq-mini 1s var(--ease) infinite;
+}
+.eq-mini i:nth-child(1) { height: 30%; animation-delay: 0s; }
+.eq-mini i:nth-child(2) { height: 70%; animation-delay: 0.12s; }
+.eq-mini i:nth-child(3) { height: 50%; animation-delay: 0.24s; }
+.eq-mini i:nth-child(4) { height: 90%; animation-delay: 0.36s; }
+.eq-mini i:nth-child(5) { height: 40%; animation-delay: 0.48s; }
+@keyframes eq-mini {
+  0%, 100% { transform: scaleY(0.35); transform-origin: bottom; }
+  50%      { transform: scaleY(1);    transform-origin: bottom; }
+}
+.eq-mini--mute i { animation: none; height: 25%; background: rgba(255, 255, 255, 0.18); }

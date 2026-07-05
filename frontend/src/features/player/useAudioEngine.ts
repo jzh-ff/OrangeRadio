@@ -1,6 +1,34 @@
 import { useRef, useCallback, useEffect } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
+import type { Track } from "../../stores/libraryStore";
+import { recordPlayback } from "../../lib/playback";
+
+/**
+ * 把后端返回的播放源 URL 转成 webview 实际能加载的 URL。
+ *
+ * 三种情况：
+ * 1. `http(s)://` 直链 —— 原样返回（网易云 / 电台 / 远端 URL）。
+ * 2. 自定义协议 `<scheme>://localhost/...`（QQ 音乐的 `orangeradio://localhost/qqstream?url=...`）——
+ *    Tauri 2 在 Windows/Android 上把自定义协议路由成 `http://<scheme>.localhost/...`，
+ *    直接喂 `orangeradio://` 给 `<audio>` 既不被识别、又被 convertFileSrc 误包成 asset URL，
+ *    这是 QQ 音乐“双击播放没反应”的根因。这里按平台拼正确形式。
+ * 3. 其他（本地文件路径）—— 走 convertFileSrc（asset 协议）。
+ */
+function toWebviewUrl(raw: string): string {
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const m = raw.match(/^([a-z][a-z0-9+.-]*):\/\/localhost\//i);
+  if (m) {
+    const scheme = m[1].toLowerCase();
+    const rest = raw.slice(m[0].length); // 保留 path?query
+    const isWinLike =
+      navigator.userAgent.includes("Windows") || /Android/i.test(navigator.userAgent);
+    return isWinLike
+      ? `http://${scheme}.localhost/${rest}`
+      : `${scheme}://localhost/${rest}`;
+  }
+  return convertFileSrc(raw);
+}
 
 /**
  * Web Audio 播放引擎（v4：真实频谱）
@@ -59,9 +87,43 @@ export function useAudioEngine(autoNext?: () => void) {
     }
   }, []);
 
-  // 频谱采样循环（真实优先，回退模拟）
+  // 频谱采样循环（真实优先，回退模拟）+ 节拍图谱回放
   const loopSpectrum = useCallback(() => {
     const tick = () => {
+      // 节拍图谱回放（优先于实时检测：预知 hit 时间点，消除"慢半拍"）
+      const audio = audioRef.current;
+      const { beatmap, beatmapIndex } = usePlayerStore.getState();
+      if (beatmap && beatmap.length > 0 && audio) {
+        const t = audio.currentTime;
+        const cur = usePlayerStore.getState().beat;
+        let intensity = cur.intensity * 0.92; // 命中后指数衰减
+        let bass = cur.bass;
+        let body = cur.mid;
+        let treble = cur.treble;
+        let isBeat = intensity > 0.3;
+        let combo = cur.currentCombo;
+        let idx = beatmapIndex;
+        while (idx < beatmap.length && beatmap[idx].time <= t) {
+          const hit = beatmap[idx];
+          intensity = Math.max(intensity, hit.impact);
+          bass = hit.low;
+          body = hit.body;
+          treble = hit.snap;
+          combo = hit.combo;
+          isBeat = true;
+          idx++;
+        }
+        if (
+          idx !== beatmapIndex ||
+          isBeat !== cur.isBeat ||
+          Math.abs(intensity - cur.intensity) > 0.01
+        ) {
+          usePlayerStore.setState({
+            beatmapIndex: idx,
+            beat: { isBeat, bass, mid: body, treble, intensity, currentCombo: combo },
+          });
+        }
+      }
       const analyser = analyserRef.current;
       if (analyser && graphOkRef.current) {
         // 真实频谱
@@ -95,8 +157,8 @@ export function useAudioEngine(autoNext?: () => void) {
     async (filePath: string) => {
       const audio = audioRef.current;
       if (!audio) return;
-      // 网络 URL 直接用；本地路径走 asset 协议
-      const url = /^https?:\/\//i.test(filePath) ? filePath : convertFileSrc(filePath);
+      // 网络 URL / 自定义协议（orangeradio://）/ 本地路径 统一在此归类
+      const url = toWebviewUrl(filePath);
       audio.src = url;
       try {
         await audio.play();
@@ -135,20 +197,51 @@ export function useAudioEngine(autoNext?: () => void) {
   // next/prev 只选歌 + 设置 currentTrack，实际播放由 onTrackChange 回调处理
   // 这样网易云/QQ可以在回调里先解析播放地址
   const next = useCallback((onPlay?: (track: any, index: number) => void) => {
-    const { tracks, currentIndex, mode } = usePlayerStore.getState();
-    if (tracks.length === 0) return;
-    let ni: number;
-    if (mode === "shuffle") {
-      ni = Math.floor(Math.random() * tracks.length);
-    } else if (mode === "single_loop") {
-      ni = currentIndex;
-    } else {
-      ni = currentIndex + 1 >= tracks.length ? 0 : currentIndex + 1;
+    const { tracks, currentIndex, mode, currentTrack } = usePlayerStore.getState();
+    // 顺序/循环的兜底选歌
+    const fallback = () => {
+      if (tracks.length === 0) return;
+      const ni = currentIndex + 1 >= tracks.length ? 0 : currentIndex + 1;
+      const t = tracks[ni];
+      usePlayerStore.setState({ currentIndex: ni, currentTrack: t });
+      if (onPlay) onPlay(t, ni);
+      else playPath(t.source_track_id);
+    };
+    // 懂你模式：异步拉推荐（基于用户画像 + 跳过反馈）
+    if (mode === "understand_you") {
+      void invoke<Track[]>("recommend_next", {
+        limit: 1,
+        currentTrackId: (currentTrack as { id?: string } | null)?.id,
+      })
+        .then((list) => {
+          if (list[0]) {
+            usePlayerStore.setState({ currentTrack: list[0], currentIndex: -1 });
+            if (onPlay) onPlay(list[0], -1);
+            else playPath(list[0].source_track_id);
+          } else {
+            fallback();
+          }
+        })
+        .catch(() => fallback());
+      return;
     }
-    const t = tracks[ni];
-    usePlayerStore.setState({ currentIndex: ni, currentTrack: t });
-    if (onPlay) onPlay(t, ni);
-    else playPath(t.source_track_id);
+    if (tracks.length === 0) return;
+    if (mode === "shuffle") {
+      const ni = Math.floor(Math.random() * tracks.length);
+      const t = tracks[ni];
+      usePlayerStore.setState({ currentIndex: ni, currentTrack: t });
+      if (onPlay) onPlay(t, ni);
+      else playPath(t.source_track_id);
+      return;
+    }
+    if (mode === "single_loop") {
+      const t = tracks[currentIndex];
+      usePlayerStore.setState({ currentTrack: t });
+      if (onPlay) onPlay(t, currentIndex);
+      else playPath(t.source_track_id);
+      return;
+    }
+    fallback(); // sequence / list_loop
   }, [playPath]);
 
   const prev = useCallback((onPlay?: (track: any, index: number) => void) => {
@@ -171,6 +264,7 @@ export function useAudioEngine(autoNext?: () => void) {
     const onPause = () => usePlayerStore.setState({ isPlaying: false });
     const onEnd = () => {
       usePlayerStore.setState({ isPlaying: false });
+      recordPlayback(true, false); // 自然播完 = 正反馈
       if (autoNext) autoNext();
       else next();
     };

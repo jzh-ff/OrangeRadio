@@ -1,0 +1,147 @@
+/* 桌面歌词悬浮窗（对标 MineRadio desktop-lyrics.html）
+ * 卡拉 OK 四色渐变 + 描边字重 900 + 节拍震动。
+ * 透明窗口在 Windows dev 模式可能不生效 → 用半透明深色背景兜底保证可读。 */
+
+.lyric-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  background: rgba(18, 18, 26, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 14px;
+  color: #fff;
+  font-family: "Inter", "Noto Sans SC", -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+.lyric-overlay__drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  padding: 0 28px;
+  /* 节拍震动（对标 MineRadio applyStageMotion：sin 漂浮 + 亮度脉冲）
+   * 这里用 CSS 轻量震动，beat 脉冲由 JS 写 --beat-pulse 变量（后续 P11 接入） */
+  animation: lyric-float 6s ease-in-out infinite;
+}
+
+@keyframes lyric-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.lyric-overlay__lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  max-width: 100%;
+}
+
+.lyric-line {
+  line-height: 1.3;
+  transition: opacity 0.3s;
+  position: relative;
+}
+
+/* 当前行：卡拉 OK 双层（bg 灰底 + fill 四色渐变裁切宽度） */
+.lyric-line--cur {
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1.25;
+  -webkit-text-stroke: 0.18px rgba(0, 0, 0, 0.6);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 18px rgba(255, 140, 60, 0.4);
+  filter: drop-shadow(0 0 12px rgba(244, 210, 138, 0.2));
+}
+
+/* 灰底字（未唱） */
+.lyric-line--cur .lyric-line__bg {
+  color: rgba(255, 255, 255, 0.32);
+}
+
+/* 已唱字：四色渐变（橙→香槟金→薄荷绿→冷色），用 background-clip:text 裁切 */
+.lyric-line--cur .lyric-line__fill {
+  position: absolute;
+  inset: 0;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--orange), var(--champagne), var(--mint), var(--chill-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 22px rgba(244, 210, 138, 0.5), 0 0 36px rgba(0, 245, 212, 0.25);
+  transition: width 0.08s linear;
+}
+
+.lyric-line--cur.is-empty .lyric-line__fill {
+  display: none;
+}
+.lyric-line--cur.is-empty {
+  color: #9a9ab0;
+  font-weight: 500;
+  font-size: 20px;
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+}
+
+.lyric-line--next {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  -webkit-text-stroke: 0.12px rgba(0, 0, 0, 0.5);
+  paint-order: stroke fill;
+}
+
+/* 控件：默认隐藏，hover 浮现 */
+.lyric-overlay__controls {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+
+.lyric-overlay:hover .lyric-overlay__controls {
+  opacity: 1;
+}
+
+.lyric-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.lyric-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* 锁定态：减弱震动，保持可读 */
+.lyric-overlay--locked .lyric-overlay__drag {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyric-overlay__drag { animation: none; }
+  .lyric-line--cur .lyric-line__fill { transition: none; }
+}

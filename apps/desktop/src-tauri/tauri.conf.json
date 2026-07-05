@@ -20,8 +20,9 @@
         "resizable": true,
         "fullscreen": false,
         "center": true,
-        "decorations": true,
-        "transparent": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
         "alwaysOnTop": false,
         "focus": true,
         "visible": true

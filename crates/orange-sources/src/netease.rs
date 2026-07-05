@@ -7,40 +7,150 @@
 //!
 //! 登录方式：
 //! 1. Cookie 导入（用户从 music.163.com 浏览器复制 MUSIC_U cookie）
-//! 2. 二维码扫码（后续实现）
+//! 2. 二维码扫码（推荐，应用内显示二维码，无需打开浏览器）
+//!
+//! 登录态持久化：通过 [`AuthStore`] 加密存到本地，下次启动自动恢复登录。
 
 use async_trait::async_trait;
 use orange_core::source::*;
-use orange_core::track::{Track, TrackMeta};
+use orange_core::track::{Artwork, ArtworkSource, Track, TrackMeta};
 use orange_core::Result;
 use serde::Deserialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::auth_store::AuthStore;
+
 const BASE: &str = "https://music.163.com";
+const AUTH_SOURCE_KEY: &str = "netease";
 
 pub struct NeteaseSource {
     id: SourceId,
     client: reqwest::Client,
+    /// 扫码登录专用 client：启用 cookie_store 共享 unikey 种下的游客 cookie，
+    /// 同时禁用重定向（803 成功时可能 302，跟随会丢 Set-Cookie 里的 MUSIC_U）。
+    /// 用独立 client 而非 self.client，避免把扫码中间 cookie 混入已登录会话。
+    qr_client: reqwest::Client,
     /// 登录态 Cookie（MUSIC_U=xxx）
     cookie: Arc<RwLock<Option<String>>>,
     /// 是否已登录（同步可读，配合 is_ready）
     logged_in: Arc<AtomicBool>,
+    /// 加密持久化存储
+    auth_store: Arc<AuthStore>,
+    /// 鉴权过期事件 sink（cookie 失效时调用，emit 到前端）
+    event_sink: Option<Arc<dyn orange_core::AuthEventSink>>,
 }
 
 impl NeteaseSource {
-    pub fn new() -> Self {
+    pub fn new(
+        auth_store: Arc<AuthStore>,
+        event_sink: Option<Arc<dyn orange_core::AuthEventSink>>,
+    ) -> Self {
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .build()
             .unwrap_or_default();
+
+        // 扫码专用 client：cookie_store 共享 unikey/check 的 cookie，禁用重定向保住 803 的 Set-Cookie。
+        // 不启用 cookie_store 时 client/login 会因缺 cookie 返回 code=400（参数错误）。
+        let qr_client = reqwest::Client::builder()
+            .cookie_store(true)
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .build()
+            .unwrap_or_default();
+
+        // 启动时尝试从 AuthStore 恢复登录态（零 IO，cache 已在 AuthStore::new 时填充）
+        let (initial_cookie, already_logged_in) = match auth_store.get_sync(AUTH_SOURCE_KEY) {
+            Some(auth) if !auth.cookie.is_empty() && auth.cookie.contains("MUSIC_U") => {
+                tracing::info!("网易云从 AuthStore 恢复登录态");
+                (Some(auth.cookie), true)
+            }
+            _ => (None, false),
+        };
+
         Self {
             id: SourceId(uuid::Uuid::new_v4()),
             client,
-            cookie: Arc::new(RwLock::new(None)),
-            logged_in: Arc::new(AtomicBool::new(false)),
+            qr_client,
+            cookie: Arc::new(RwLock::new(initial_cookie)),
+            logged_in: Arc::new(AtomicBool::new(already_logged_in)),
+            auth_store,
+            event_sink,
         }
+    }
+
+    /// 构造时不带 event_sink（用于测试 / 默认 fallback）
+    pub fn without_event_sink(auth_store: Arc<AuthStore>) -> Self {
+        Self::new(auth_store, None)
+    }
+
+    /// 后台健康检查循环：每 6 小时调一次 `/weapi/w/nuser/account/get` 验证 cookie
+    /// 失败 → 清 cookie + 标记未登录 + emit AuthExpired
+    ///
+    /// **必须是 async 函数**，由调用方用 `tauri::async_runtime::spawn` 提交到 runtime：
+    /// ```ignore
+    /// rt::spawn(async move { src.run_health_loop().await; });
+    /// ```
+    /// 整个函数体在 tokio runtime worker 上跑，sleep/interval/check 都安全。
+    pub async fn run_health_loop(self: Arc<Self>) {
+        // 首次等 60s 让 UI 起来
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(6 * 3600));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            if self.logged_in.load(Ordering::Relaxed) {
+                if let Err(e) = self.check_and_clear_if_expired().await {
+                    tracing::warn!("网易云 health check 出错: {}", e);
+                }
+            }
+            interval.tick().await;
+        }
+    }
+
+    /// Heartbeat：调 `/weapi/w/nuser/account/get` 验证 cookie 是否还有效
+    async fn heartbeat_check(&self) -> Result<bool> {
+        // 没登录直接返回 false
+        if self.cookie_str().await.is_none() {
+            return Ok(false);
+        }
+        // 调 weapi 获取当前账号信息；成功 → 有效；失败或 code != 200 → 失效
+        match self
+            .weapi_post("/weapi/w/nuser/account/get", r#"{"csrf_token":""}"#)
+            .await
+        {
+            Ok(v) => {
+                let valid = v["code"].as_i64() == Some(200)
+                    && v["account"]["id"].as_i64().is_some();
+                Ok(valid)
+            }
+            Err(orange_core::CoreError::AuthFailed(_)) => Ok(false),
+            Err(e) => {
+                tracing::debug!("网易云 heartbeat 网络错误: {}", e);
+                // 网络错误保守当作有效（避免误判；下次再测）
+                Ok(true)
+            }
+        }
+    }
+
+    /// 完整流程：heartbeat → 失效就清 cookie + emit AuthExpired
+    pub async fn check_and_clear_if_expired(&self) -> Result<bool> {
+        if !self.heartbeat_check().await? {
+            tracing::warn!("网易云 cookie heartbeat 失败，标记未登录");
+            *self.cookie.write().await = None;
+            self.logged_in.store(false, Ordering::Relaxed);
+            let _ = self.auth_store.clear(AUTH_SOURCE_KEY).await;
+            if let Some(sink) = &self.event_sink {
+                sink.on_auth_expired(orange_core::AuthExpiredPayload {
+                    source: "netease".into(),
+                    source_name: "网易云音乐".into(),
+                    reason: Some("cookie 已失效".into()),
+                });
+            }
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     /// 当前 cookie（克隆）
@@ -50,33 +160,56 @@ impl NeteaseSource {
 
     /// weapi 加密 POST 请求（带登录 cookie）
     async fn weapi_post(&self, path: &str, payload: &str) -> Result<serde_json::Value> {
-        let user_cookie = self.cookie_str().await
+        let user_cookie = self
+            .cookie_str()
+            .await
             .ok_or_else(|| orange_core::CoreError::AuthFailed("未登录网易云".into()))?;
         let cookie = format!("{}; os=pc; appver=2.10.14", user_cookie);
         let (params, enc_sec_key) = crate::weapi::encrypt(payload);
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&format!("{}{}?csrf_token=", BASE, path))
             .header("Cookie", &cookie)
             .header("Referer", BASE)
             .header("Origin", "https://music.163.com")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            )
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(format!("params={}&encSecKey={}", urlencoding(&params), urlencoding(&enc_sec_key)))
-            .send().await
+            .body(format!(
+                "params={}&encSecKey={}",
+                urlencoding(&params),
+                urlencoding(&enc_sec_key)
+            ))
+            .send()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
-        let text = resp.text().await
+        let text = resp
+            .text()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        serde_json::from_str(&text)
-            .map_err(|e| orange_core::CoreError::Network(format!("JSON解析失败: {} body={}", e, &text[..text.len().min(200)])))
+        serde_json::from_str(&text).map_err(|e| {
+            orange_core::CoreError::Network(format!(
+                "JSON解析失败: {} body={}",
+                e,
+                &text[..text.len().min(200)]
+            ))
+        })
     }
 
     /// 获取用户歌单
-    pub async fn user_playlists(&self) -> Result<Vec<(String, String, u32)>> {
+    ///
+    /// 返回 (id, name, 歌曲数, 封面URL, 播放数)
+    pub async fn user_playlists(&self) -> Result<Vec<(String, String, u32, String, u64)>> {
         // 先获取用户 uid（从 MUSIC_U 解析复杂，这里用 /weapi/w/nuser/account/get）
-        let account = self.weapi_post("/weapi/w/nuser/account/get", r#"{"csrf_token":""}"#).await?;
-        let uid = account["account"]["id"].as_i64()
+        let account = self
+            .weapi_post("/weapi/w/nuser/account/get", r#"{"csrf_token":""}"#)
+            .await?;
+        let uid = account["account"]["id"]
+            .as_i64()
             .ok_or_else(|| orange_core::CoreError::AuthFailed("无法获取用户ID".into()))?;
         tracing::info!("网易云用户ID: {}", uid);
 
@@ -89,7 +222,19 @@ impl NeteaseSource {
                 let id = p["id"].as_i64().unwrap_or(0).to_string();
                 let name = p["name"].as_str().unwrap_or("未知歌单").to_string();
                 let count = p["trackCount"].as_i64().unwrap_or(0) as u32;
-                playlists.push((id, name, count));
+                // 封面图：网易云返回的 coverImgUrl 是高清原图，加 ?param=300x300 缩略
+                let cover = p["coverImgUrl"]
+                    .as_str()
+                    .map(|u| {
+                        if u.contains('?') {
+                            format!("{}&param=300y300", u)
+                        } else {
+                            format!("{}?param=300y300", u)
+                        }
+                    })
+                    .unwrap_or_default();
+                let play_count = p["playCount"].as_i64().unwrap_or(0) as u64;
+                playlists.push((id, name, count, cover, play_count));
             }
         }
         Ok(playlists)
@@ -97,23 +242,17 @@ impl NeteaseSource {
 
     /// 获取每日推荐歌曲
     pub async fn daily_songs(&self) -> Result<Vec<Track>> {
-        let resp = self.weapi_post("/weapi/v3/discovery/recommend/songs", r#"{"limit":30,"offset":0,"total":true,"csrf_token":""}"#).await?;
+        let resp = self
+            .weapi_post(
+                "/weapi/v3/discovery/recommend/songs",
+                r#"{"limit":30,"offset":0,"total":true,"csrf_token":""}"#,
+            )
+            .await?;
 
         let mut tracks = Vec::new();
         if let Some(list) = resp["data"]["dailySongs"].as_array() {
             for s in list {
-                let id = s["id"].as_i64().unwrap_or(0);
-                let name = s["name"].as_str().unwrap_or("").to_string();
-                let artists: Vec<String> = s["ar"].as_array()
-                    .map(|arr| arr.iter().filter_map(|a| a["name"].as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                let artist = artists.join("/");
-                let album = s["al"]["name"].as_str().map(String::from);
-                let dt = s["dt"].as_i64().map(|d| d as f64 / 1000.0);
-
-                let mut t = Track::new(self.id, id.to_string(), TrackMeta {
-                    title: name, artist, album, duration_secs: dt, ..Default::default()
-                });
+                let mut t = parse_netease_song(s, self.id);
                 t.format = orange_core::audio_format::AudioFormat::Mp3;
                 t.quality = orange_core::audio_format::Quality::High;
                 tracks.push(t);
@@ -125,23 +264,14 @@ impl NeteaseSource {
     /// 获取歌单详情（歌曲列表）
     pub async fn playlist_detail(&self, playlist_id: &str) -> Result<Vec<Track>> {
         let payload = format!(r#"{{"id":{},"n":100,"s":0,"csrf_token":""}}"#, playlist_id);
-        let resp = self.weapi_post("/weapi/v6/playlist/detail", &payload).await?;
+        let resp = self
+            .weapi_post("/weapi/v6/playlist/detail", &payload)
+            .await?;
 
         let mut tracks = Vec::new();
         if let Some(list) = resp["playlist"]["tracks"].as_array() {
             for s in list {
-                let id = s["id"].as_i64().unwrap_or(0);
-                let name = s["name"].as_str().unwrap_or("").to_string();
-                let artists: Vec<String> = s["ar"].as_array()
-                    .map(|arr| arr.iter().filter_map(|a| a["name"].as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                let artist = artists.join("/");
-                let album = s["al"]["name"].as_str().map(String::from);
-                let dt = s["dt"].as_i64().map(|d| d as f64 / 1000.0);
-
-                let mut t = Track::new(self.id, id.to_string(), TrackMeta {
-                    title: name, artist, album, duration_secs: dt, ..Default::default()
-                });
+                let mut t = parse_netease_song(s, self.id);
                 t.format = orange_core::audio_format::AudioFormat::Mp3;
                 t.quality = orange_core::audio_format::Quality::High;
                 tracks.push(t);
@@ -149,17 +279,168 @@ impl NeteaseSource {
         }
         Ok(tracks)
     }
+
+    /// 获取歌曲歌词（原文 + 翻译）
+    ///
+    /// 端点 POST /weapi/song/lyric
+    /// 参数 {id, lv:-1, tv:-1, csrf_token:""}
+    /// 返回 {lrc:{lyric:"[mm:ss.xx]..."}, tlyric:{lyric:"...翻译"}}
+    pub async fn song_lyric(&self, song_id: &str) -> Result<(String, Option<String>)> {
+        // 校验 song_id 是纯数字（网易云歌曲 ID）
+        if song_id.trim().is_empty() || !song_id.trim().chars().all(|c| c.is_ascii_digit()) {
+            return Err(orange_core::CoreError::Unsupported("歌曲 ID 无效".into()));
+        }
+        let payload = format!(
+            r#"{{"id":{},"lv":-1,"tv":-1,"csrf_token":""}}"#,
+            song_id.trim()
+        );
+        let resp = self.weapi_post("/weapi/song/lyric", &payload).await?;
+
+        // 原文歌词
+        let raw_lrc = resp["lrc"]["lyric"].as_str().unwrap_or("").to_string();
+        // 翻译歌词（罗马音/外文翻译，可选）
+        let translated_lrc = resp["tlyric"]["lyric"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+
+        if raw_lrc.is_empty() {
+            tracing::debug!("网易云歌词为空 song_id={}", song_id);
+        }
+        Ok((raw_lrc, translated_lrc))
+    }
+
+    /// 获取歌曲热门评论
+    ///
+    /// 端点 POST /weapi/v1/resource/comments/R_SO_4_{歌曲ID}
+    /// 资源标识 R_SO_4_ 表示歌曲（Song），后接歌曲数字 ID。
+    /// payload 参数：{limit, offset, csrf_token}
+    /// 返回 {hotComments:[{content,user:{nickname,avatarUrl},likedCount}], comments:[...], total}
+    pub async fn song_comments(&self, song_id: &str, limit: u32) -> Result<CommentData> {
+        if song_id.trim().is_empty() || !song_id.trim().chars().all(|c| c.is_ascii_digit()) {
+            return Err(orange_core::CoreError::Unsupported("歌曲 ID 无效".into()));
+        }
+        let sid = song_id.trim();
+        // 资源标识符拼进 URL 路径（R_SO_4_ = 歌曲）
+        let path = format!("/weapi/v1/resource/comments/R_SO_4_{}", sid);
+        let payload = format!(r#"{{"limit":{},"offset":0,"csrf_token":""}}"#, limit);
+        let resp = self.weapi_post(&path, &payload).await?;
+
+        let total = resp["total"].as_i64().unwrap_or(0) as u64;
+        let mut hot_comments = Vec::new();
+        // 优先取 hotComments；若无则降级取 comments（最新评论）
+        let lists: Vec<&serde_json::Value> = resp
+            .get("hotComments")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().collect())
+            .unwrap_or_default();
+        let fallback: Vec<&serde_json::Value> = if lists.is_empty() {
+            resp.get("comments")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().collect())
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        for c in lists.iter().chain(fallback.iter()) {
+            let content = c["content"].as_str().unwrap_or("").to_string();
+            if content.is_empty() {
+                continue;
+            }
+            let nickname = c["user"]["nickname"]
+                .as_str()
+                .unwrap_or("匿名用户")
+                .to_string();
+            let avatar_url = c["user"]["avatarUrl"].as_str().map(String::from);
+            let liked_count = c["likedCount"].as_i64().unwrap_or(0) as u64;
+            hot_comments.push(HotComment {
+                content,
+                nickname,
+                avatar_url,
+                liked_count,
+            });
+        }
+        Ok(CommentData {
+            total,
+            hot_comments,
+        })
+    }
+
+    /// 收藏歌曲到网易云「我喜欢的音乐」歌单
+    ///
+    /// 流程：
+    /// 1. 调 /weapi/w/nuser/account/get 获取 uid
+    /// 2. 「我喜欢的音乐」歌单 ID = 用户歌单列表中第一个（网易云约定：用户的第一个歌单是"我喜欢的音乐"）
+    /// 3. 调 /weapi/playlist/manipulate/tracks 添加歌曲
+    ///
+    /// 端点参数：{op:"add", pid:歌单ID, tracks:"歌曲ID", trackIds:[{id:歌曲ID}], csrf_token:""}
+    /// 返回 body.code=200 成功，512=已在歌单中
+    pub async fn like_track(&self, song_id: &str) -> Result<bool> {
+        if song_id.trim().is_empty() || !song_id.trim().chars().all(|c| c.is_ascii_digit()) {
+            return Err(orange_core::CoreError::Unsupported("歌曲 ID 无效".into()));
+        }
+        let sid = song_id.trim();
+
+        // 1. 获取用户 ID
+        let account = self
+            .weapi_post("/weapi/w/nuser/account/get", r#"{"csrf_token":""}"#)
+            .await?;
+        let uid = account["account"]["id"]
+            .as_i64()
+            .ok_or_else(|| orange_core::CoreError::AuthFailed("无法获取用户ID".into()))?;
+
+        // 2. 获取用户歌单，第一个是「我喜欢的音乐」
+        let payload = format!(r#"{{"uid":{},"limit":1,"offset":0,"csrf_token":""}}"#, uid);
+        let resp = self.weapi_post("/weapi/user/playlist", &payload).await?;
+        let pid = resp["playlist"]
+            .get(0)
+            .and_then(|p| p["id"].as_i64())
+            .ok_or_else(|| {
+                orange_core::CoreError::AuthFailed("无法获取「我喜欢的音乐」歌单ID".into())
+            })?;
+        tracing::info!("网易云「我喜欢的音乐」歌单 ID: {}", pid);
+
+        // 3. 添加歌曲到歌单
+        let add_payload = format!(
+            r#"{{"op":"add","pid":{},"tracks":"{}","trackIds":"[{{\"id\":{}}}]","csrf_token":""}}"#,
+            pid, sid, sid
+        );
+        let result = self
+            .weapi_post("/weapi/playlist/manipulate/tracks", &add_payload)
+            .await?;
+        let code = result["body"]["code"].as_i64().unwrap_or(0);
+        tracing::info!("网易云收藏结果 code={} song_id={}", code, sid);
+        // 200=成功，512=已在歌单中（也算成功）
+        Ok(code == 200 || code == 512 || code == 200)
+    }
+}
+
+/// 网易云热门评论数据
+pub struct CommentData {
+    pub total: u64,
+    pub hot_comments: Vec<HotComment>,
+}
+
+/// 单条热门评论
+pub struct HotComment {
+    pub content: String,
+    pub nickname: String,
+    pub avatar_url: Option<String>,
+    pub liked_count: u64,
 }
 
 /// URL 编码（用于 form-urlencoded body）
 fn urlencoding(s: &str) -> String {
-    s.bytes().map(|b| {
-        if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
-            (b as char).to_string()
-        } else {
-            format!("%{:02X}", b)
-        }
-    }).collect()
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
+                (b as char).to_string()
+            } else {
+                format!("%{:02X}", b)
+            }
+        })
+        .collect()
 }
 
 /// 网易云搜索结果（歌曲）
@@ -183,19 +464,52 @@ struct NeteaseSong {
     duration: Option<u64>,
 }
 #[derive(Debug, Deserialize)]
-struct NeteaseArtist { name: String }
+struct NeteaseArtist {
+    name: String,
+}
 #[derive(Debug, Deserialize)]
-struct NeteaseAlbum { name: String }
+struct NeteaseAlbum {
+    name: String,
+    /// 专辑封面原图（搜索接口也返回，与 playlist/daily 一致）
+    #[serde(default)]
+    pic_url: Option<String>,
+}
 
 /// 播放 URL 响应
 #[derive(Debug, Deserialize)]
-struct SongUrlResp { data: Vec<SongUrlData> }
+struct SongUrlResp {
+    data: Vec<SongUrlData>,
+}
 #[derive(Debug, Deserialize)]
-struct SongUrlData { url: Option<String>, size: Option<u64> }
+struct SongUrlData {
+    url: Option<String>,
+    size: Option<u64>,
+}
+
+/// 把 picUrl 套上 300x300 缩略参数；空 picUrl 返回 None
+fn build_netease_artwork(pic: Option<String>) -> Option<orange_core::track::Artwork> {
+    let raw = pic?;
+    let url = if raw.contains('?') {
+        format!("{raw}&param=300y300")
+    } else {
+        format!("{raw}?param=300y300")
+    };
+    Some(orange_core::track::Artwork {
+        source: orange_core::track::ArtworkSource::Url { url },
+        dominant_color: None,
+        palette: vec![],
+    })
+}
 
 fn song_to_track(song: &NeteaseSong, source_id: SourceId) -> Track {
-    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join("/");
+    let artist = song
+        .artists
+        .iter()
+        .map(|a| a.name.as_str())
+        .collect::<Vec<_>>()
+        .join("/");
     let album = song.album.as_ref().map(|a| a.name.clone());
+    let artwork = build_netease_artwork(song.album.as_ref().and_then(|a| a.pic_url.clone()));
     let mut t = Track::new(
         source_id,
         song.id.to_string(), // source_track_id 存网易云歌曲 ID
@@ -204,20 +518,77 @@ fn song_to_track(song: &NeteaseSong, source_id: SourceId) -> Track {
             artist,
             album,
             duration_secs: song.duration.map(|d| d as f64 / 1000.0),
+            artwork,
             ..Default::default()
         },
     );
+    t.source_kind = SourceKind::NeteaseCloudMusic;
     t.format = orange_core::audio_format::AudioFormat::Mp3;
     t.quality = orange_core::audio_format::Quality::High;
     t
 }
 
+/// 从 weapi JSON 响应解析歌曲（daily_songs / playlist_detail 共用）
+///
+/// 字段说明：al.picUrl=专辑封面，al.name=专辑名，ar[]=艺术家，dt=时长(ms)
+fn parse_netease_song(s: &serde_json::Value, source_id: SourceId) -> Track {
+    let id = s["id"].as_i64().unwrap_or(0);
+    let name = s["name"].as_str().unwrap_or("").to_string();
+    let artists: Vec<String> = s["ar"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|a| a["name"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let artist = artists.join("/");
+    let album = s["al"]["name"].as_str().map(String::from);
+    let dt = s["dt"].as_i64().map(|d| d as f64 / 1000.0);
+    // 封面图：网易云 al.picUrl 是高清原图，加 ?param=300x300 缩略
+    let pic_url = s["al"]["picUrl"].as_str().map(|u| {
+        if u.contains('?') {
+            format!("{}&param=300y300", u)
+        } else {
+            format!("{}?param=300y300", u)
+        }
+    });
+    let artwork = pic_url.map(|url| Artwork {
+        source: ArtworkSource::Url { url },
+        dominant_color: None,
+        palette: vec![],
+    });
+
+    let mut t = Track::new(
+        source_id,
+        id.to_string(),
+        TrackMeta {
+            title: name,
+            artist,
+            album,
+            duration_secs: dt,
+            artwork,
+            ..Default::default()
+        },
+    );
+    t.source_kind = SourceKind::NeteaseCloudMusic;
+    t
+}
+
 #[async_trait]
 impl AudioSource for NeteaseSource {
-    fn id(&self) -> SourceId { self.id }
-    fn kind(&self) -> SourceKind { SourceKind::NeteaseCloudMusic }
-    fn name(&self) -> &str { "网易云音乐" }
-    fn requires_auth(&self) -> bool { true }
+    fn id(&self) -> SourceId {
+        self.id
+    }
+    fn kind(&self) -> SourceKind {
+        SourceKind::NeteaseCloudMusic
+    }
+    fn name(&self) -> &str {
+        "网易云音乐"
+    }
+    fn requires_auth(&self) -> bool {
+        true
+    }
 
     fn is_ready(&self) -> bool {
         self.logged_in.load(Ordering::Relaxed)
@@ -227,27 +598,41 @@ impl AudioSource for NeteaseSource {
         let cookie = self.cookie_str().await;
         let limit = query.page_size.min(50);
         let offset = ((query.page.saturating_sub(1)) as usize) * limit as usize;
-        let url = format!("{}/api/search/get/web?csrf_token=&type=1&offset={}&limit={}&s={}",
-            BASE, ((query.page.saturating_sub(1)) as usize) * limit as usize, limit, &query.keyword);
+        let url = format!(
+            "{}/api/search/get/web?csrf_token=&type=1&offset={}&limit={}&s={}",
+            BASE,
+            ((query.page.saturating_sub(1)) as usize) * limit as usize,
+            limit,
+            &query.keyword
+        );
 
         let mut req = self.client.get(&url).header("Referer", BASE);
         if let Some(c) = &cookie {
             req = req.header("Cookie", c);
         }
-        let resp: NeteaseSearchResp = req.send().await
+        let resp: NeteaseSearchResp = req
+            .send()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .json().await
+            .json()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
         let result = resp.result.unwrap_or_default();
         let songs = result.songs.unwrap_or_default();
         let total = result.songCount.unwrap_or(0);
         let tracks = songs.iter().map(|s| song_to_track(s, self.id)).collect();
-        Ok(SearchResult { tracks, total, has_more: total > (offset as u32 + limit) })
+        Ok(SearchResult {
+            tracks,
+            total,
+            has_more: total > (offset as u32 + limit),
+        })
     }
 
     async fn resolve_stream(&self, track: &Track) -> Result<StreamLocation> {
-        let user_cookie = self.cookie_str().await
+        let user_cookie = self
+            .cookie_str()
+            .await
             .ok_or_else(|| orange_core::CoreError::AuthFailed("未登录网易云".into()))?;
 
         // 补充 weapi 必需的 cookie 参数（网易云服务端要求 os=pc 等）
@@ -260,32 +645,56 @@ impl AudioSource for NeteaseSource {
         );
         let (params, enc_sec_key) = crate::weapi::encrypt(&payload);
 
-        let resp = self.client
-            .post(&format!("{}/weapi/song/enhance/player/url/v1?csrf_token=", BASE))
+        let resp = self
+            .client
+            .post(&format!(
+                "{}/weapi/song/enhance/player/url/v1?csrf_token=",
+                BASE
+            ))
             .header("Cookie", &cookie)
             .header("Referer", BASE)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            )
             .header("Origin", "https://music.163.com")
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(format!("params={}&encSecKey={}",
-                urlencoding(&params), urlencoding(&enc_sec_key)))
-            .send().await
+            .body(format!(
+                "params={}&encSecKey={}",
+                urlencoding(&params),
+                urlencoding(&enc_sec_key)
+            ))
+            .send()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        tracing::debug!("网易云播放地址响应: {}", &body_text[..body_text.len().min(300)]);
+        tracing::debug!(
+            "网易云播放地址响应: {}",
+            &body_text[..body_text.len().min(300)]
+        );
 
         let v: serde_json::Value = serde_json::from_str(&body_text)
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
-        let play_url = v["data"].get(0)
+        let play_url = v["data"]
+            .get(0)
             .and_then(|d| d["url"].as_str())
             .filter(|u| !u.is_empty())
-            .ok_or_else(|| orange_core::CoreError::Unsupported("无法获取播放地址（可能需VIP或版权限制）".into()))?
+            .ok_or_else(|| {
+                orange_core::CoreError::Unsupported(
+                    "无法获取播放地址（可能需VIP或版权限制）".into(),
+                )
+            })?
             .to_string();
 
-        Ok(StreamLocation::Url { url: play_url, headers: vec![] })
+        Ok(StreamLocation::Url {
+            url: play_url,
+            headers: vec![],
+        })
     }
 }
 
@@ -297,25 +706,36 @@ impl AuthSource for NeteaseSource {
     /// 二维码内容固定为 https://music.163.com/login?codekey={key}（APP 扫码识别）
     async fn qrcode_create(&self) -> Result<QrCodeLogin> {
         #[derive(Deserialize)]
-        struct UnikeyResp { code: i32, unikey: String }
-        let resp: UnikeyResp = self.client
+        struct UnikeyResp {
+            code: i32,
+            unikey: String,
+        }
+        let resp: UnikeyResp = self
+            .qr_client
             .get(&format!("{}/api/login/qrcode/unikey?type=1", BASE))
             .header("Referer", BASE)
             .header("User-Agent", "Mozilla/5.0")
-            .send().await
+            .send()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .json().await
+            .json()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
         if resp.code != 200 {
-            return Err(orange_core::CoreError::AuthFailed(
-                format!("获取二维码 key 失败: code={}", resp.code)
-            ));
+            return Err(orange_core::CoreError::AuthFailed(format!(
+                "获取二维码 key 失败: code={}",
+                resp.code
+            )));
         }
 
         // 二维码内容：网易云 APP 扫码后会自动打开此 URL 完成登录
         let qr_image = format!("{}/login?codekey={}", BASE, resp.unikey);
-        Ok(QrCodeLogin { key: resp.unikey, qr_image })
+        tracing::info!("网易云生成扫码 unikey={}（cookie 已种入 qr_client）", resp.unikey);
+        Ok(QrCodeLogin {
+            key: resp.unikey,
+            qr_image,
+        })
     }
 
     /// 轮询二维码扫码状态
@@ -327,17 +747,14 @@ impl AuthSource for NeteaseSource {
     async fn qrcode_check(&self, key: &str) -> Result<QrCodeStatus> {
         let url = format!("{}/api/login/qrcode/client/login?key={}&type=1", BASE, key);
 
-        // 专用 client：禁用重定向（803 可能返回 302，跟随会丢 Set-Cookie）
-        let no_redirect_client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .build()
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-
-        let resp = no_redirect_client
+        // 复用 self.qr_client（cookie_store + no_redirect）：自动带上 unikey 种下的游客 cookie，
+        // 否则接口返回 code=400（参数错误）；同时禁用重定向以保住 803 的 Set-Cookie。
+        let resp = self
+            .qr_client
             .get(&url)
             .header("Referer", BASE)
-            .send().await
+            .send()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
         // 提取 Set-Cookie（803 成功时返回 MUSIC_U）
@@ -350,10 +767,18 @@ impl AuthSource for NeteaseSource {
 
         // 先读 body 文本（803 时 header 过大可能导致 json() 失败）
         let body_text = resp
-            .text().await
+            .text()
+            .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
-        tracing::debug!("扫码 check 响应: {}", &body_text[..body_text.len().min(200)]);
+        tracing::info!(
+            "扫码 check 响应: code={} body={}",
+            serde_json::from_str::<serde_json::Value>(&body_text)
+                .ok()
+                .and_then(|v| v["code"].as_i64())
+                .unwrap_or(-1),
+            &body_text[..body_text.len().min(160)]
+        );
 
         // 解析 code
         let code = serde_json::from_str::<serde_json::Value>(&body_text)
@@ -390,16 +815,26 @@ impl AuthSource for NeteaseSource {
                 }
                 *self.cookie.write().await = Some(cookie.clone());
                 self.logged_in.store(true, Ordering::Relaxed);
+                // 加密持久化，下次启动自动恢复登录
+                if let Err(e) = self.auth_store.save(AUTH_SOURCE_KEY, cookie.clone()).await {
+                    tracing::warn!("网易云 cookie 持久化失败: {}", e);
+                }
                 tracing::info!("网易云扫码登录成功");
                 Ok(QrCodeStatus::Confirmed { cookie })
             }
-            // 8821 = 网易云风控拦截（非官方客户端）
-            8821 => Err(orange_core::CoreError::AuthFailed(
-                "网易云风控拦截：请改用 Cookie 登录（在浏览器登录 music.163.com 后复制 MUSIC_U cookie）".into()
-            )),
-            // 其他 code（如 400/502）当作等待处理，避免轮询中断
+            // 8821 = 网易云易盾风控：非官方客户端被识别为"安全环境异常"。
+            // 服务端行为，无法在客户端绕过；引导用户改用 Cookie 登录（浏览器已通过风控）。
+            // 走 Blocked 状态（而非 Err）让前端能展示明确提示，否则会被轮询 catch 吞掉、UI 卡死。
+            8821 => Ok(QrCodeStatus::Blocked {
+                message: "扫码被网易云安全风控拦截(8821，非官方客户端)。请在浏览器登录 music.163.com 后，复制含 MUSIC_U 的 cookie，改用 Cookie 登录".into(),
+            }),
+            // 其他 code（如 400 参数错误 / 502）记告警便于排查，按等待处理避免轮询中断
             _ => {
-                tracing::debug!("扫码未知状态 code={}", code);
+                tracing::warn!(
+                    "扫码未知状态 code={} 响应: {}",
+                    code,
+                    &body_text[..body_text.len().min(200)]
+                );
                 Ok(QrCodeStatus::Waiting)
             }
         }
@@ -409,10 +844,20 @@ impl AuthSource for NeteaseSource {
     async fn login_with_cookie(&self, cookie: &str) -> Result<()> {
         // 简单校验：网易云登录态核心是 MUSIC_U
         if !cookie.contains("MUSIC_U") && !cookie.contains("music_u") {
-            return Err(orange_core::CoreError::AuthFailed("Cookie 缺少 MUSIC_U，请确认从 music.163.com 复制完整 Cookie".into()));
+            return Err(orange_core::CoreError::AuthFailed(
+                "Cookie 缺少 MUSIC_U，请确认从 music.163.com 复制完整 Cookie".into(),
+            ));
         }
         *self.cookie.write().await = Some(cookie.to_string());
         self.logged_in.store(true, Ordering::Relaxed);
+        // 加密持久化
+        if let Err(e) = self
+            .auth_store
+            .save(AUTH_SOURCE_KEY, cookie.to_string())
+            .await
+        {
+            tracing::warn!("网易云 cookie 持久化失败: {}", e);
+        }
         tracing::info!("网易云账号已登录（Cookie）");
         Ok(())
     }
@@ -420,12 +865,17 @@ impl AuthSource for NeteaseSource {
     async fn logout(&self) -> Result<()> {
         *self.cookie.write().await = None;
         self.logged_in.store(false, Ordering::Relaxed);
+        if let Err(e) = self.auth_store.clear(AUTH_SOURCE_KEY).await {
+            tracing::warn!("网易云 cookie 清除失败: {}", e);
+        }
         Ok(())
     }
 
     async fn current_user(&self) -> Result<Option<UserInfo>> {
         let cookie = self.cookie_str().await;
-        if cookie.is_none() { return Ok(None); }
+        if cookie.is_none() {
+            return Ok(None);
+        }
         // 简化：从 cookie 提取 uid（MUSIC_U 解码复杂，暂返回占位）
         Ok(Some(UserInfo {
             uid: "已登录".into(),
@@ -437,5 +887,10 @@ impl AuthSource for NeteaseSource {
 }
 
 impl Default for NeteaseSource {
-    fn default() -> Self { Self::new() }
+    /// 仅用于 trait/object 默认构造 —— 不含持久化，请通过 [`NeteaseSource::new`] 注入 AuthStore。
+    fn default() -> Self {
+        let tmp = std::env::temp_dir().join("orangeradio-default-auth");
+        let store = AuthStore::new(tmp);
+        Self::without_event_sink(store)
+    }
 }

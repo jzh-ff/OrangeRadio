@@ -8,12 +8,14 @@
 //! - AI DJ 无缝混音（BPM 对齐、节拍匹配、crossfade）
 //! - 音频可视化数据输出（FFT 频谱 → 传给前端 Three.js）
 
+pub mod beatmap;
 pub mod decoder;
 pub mod dsp;
 pub mod mixer;
 pub mod spectrum;
 
-pub use decoder::{Decoder, DecodedAudio};
-pub use dsp::{DspChain, Equalizer, SpatialAudio, LoudnessNormalizer};
-pub use mixer::{DjMixer, CrossfadeConfig};
+pub use beatmap::{analyze as analyze_beatmap, BeatCombo, BeatHit, Beatmap};
+pub use decoder::{decode_file, DecodedAudio, Decoder};
+pub use dsp::{DspChain, Equalizer, LoudnessNormalizer, SpatialAudio};
+pub use mixer::{CrossfadeConfig, DjMixer};
 pub use spectrum::{SpectrumAnalyzer, SpectrumData};

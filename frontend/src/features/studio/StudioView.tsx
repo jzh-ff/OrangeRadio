@@ -1,15 +1,9 @@
-import { useState, type PointerEvent } from "react";
+import { useEffect, type PointerEvent } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { useStudioStore } from "../../stores/studioStore";
+import { getStudioConfig } from "../../lib/studio";
+import type { ToastKind } from "../../components/Toast";
 import "../../styles/studio.css";
-
-const STUDIO_STEPS = [
-  { num: 1, title: "灵感输入", desc: "对话 / 哼唱 / 描述风格", icon: "IDEA" },
-  { num: 2, title: "AI 写词", desc: "MiniMax LLM 生成结构化歌词", icon: "LYR" },
-  { num: 3, title: "AI 作曲编曲", desc: "风格化生成 + STEM 分轨", icon: "ARR" },
-  { num: 4, title: "AI 演唱", desc: "音色选择或克隆你的声音", icon: "VOX" },
-  { num: 5, title: "多轨编辑", desc: "DAW 时间线 / 钢琴卷帘 / 混音台", icon: "DAW" },
-  { num: 6, title: "混音母带", desc: "AI 母带 + 响度归一", icon: "MIX" },
-  { num: 7, title: "发布", desc: "社区 / 分享 / 商用授权", icon: "PUB" },
-];
 
 const PROMPTS = [
   "深夜电台感的 synthwave，BPM 108，女声，副歌有城市霓虹的画面。",
@@ -23,17 +17,83 @@ const setSpotlight = (event: PointerEvent<HTMLElement>) => {
   event.currentTarget.style.setProperty("--my", `${event.clientY - rect.top}px`);
 };
 
-export function StudioView() {
-  const [prompt, setPrompt] = useState("");
+interface StudioViewProps {
+  pushToast?: (msg: string, kind?: ToastKind, ttl?: number) => void;
+}
+
+export function StudioView({ pushToast }: StudioViewProps) {
+  const {
+    prompt,
+    lyrics,
+    lyricsText,
+    audioPath,
+    stems,
+    generatingLyrics,
+    generatingMusic,
+    separating,
+    error,
+    setPrompt,
+    setLyricsText,
+    clearError,
+    doGenerateLyrics,
+    doGenerateMusic,
+    doSeparateVocal,
+  } = useStudioStore();
+
+  // 错误 → Toast
+  useEffect(() => {
+    if (error) {
+      pushToast?.(error, "error", 8000);
+      clearError();
+    }
+  }, [error, pushToast, clearError]);
+
+  const hasKey = Boolean(getStudioConfig().apiKey);
+
+  const onGenerateLyrics = async () => {
+    if (!hasKey) {
+      pushToast?.("请先在设置中配置 MiniMax API Key", "warning", 6000);
+      return;
+    }
+    await doGenerateLyrics();
+  };
+
+  const onGenerateMusic = async () => {
+    if (!hasKey) {
+      pushToast?.("请先在设置中配置 MiniMax API Key", "warning", 6000);
+      return;
+    }
+    pushToast?.("开始生成音乐，约需 30-90 秒…", "info", 5000);
+    await doGenerateMusic(false);
+    if (useStudioStore.getState().audioPath) {
+      pushToast?.("音乐生成完成 🎵", "info", 4000);
+    }
+  };
+
+  const onSeparate = async () => {
+    if (!hasKey) {
+      pushToast?.("请先在设置中配置 MiniMax API Key", "warning", 6000);
+      return;
+    }
+    if (!confirm("人声/伴奏分轨会调用 MiniMax 两次（消耗双倍额度），且两次生成的旋律会有差异。继续？")) {
+      return;
+    }
+    pushToast?.("开始分轨生成，约需 1-3 分钟…", "info", 5000);
+    await doSeparateVocal();
+    if (useStudioStore.getState().stems) {
+      pushToast?.("分轨完成 🎤🎸", "info", 4000);
+    }
+  };
 
   return (
     <div className="studio-view">
       <header className="studio-view__header" onPointerMove={setSpotlight}>
         <div className="studio-view__copy">
-          <span className="studio-view__badge">OrangeStudio / v0.6 preview</span>
+          <span className="studio-view__badge">OrangeStudio / MiniMax music-2.6</span>
           <h1 className="studio-view__title">把一句灵感推上母带轨</h1>
           <p className="studio-view__subtitle">
-            这里先把 AI 创作流程做成可感知的控制台：提示词、分轨、频谱、时间线都在同一块面板里等待接入。
+            输入一句风格描述，AI 帮你写词、生成带唱完整歌曲、分离人声与伴奏。
+            接入 MiniMax music_generation，所有生成结果缓存到本地可反复回放。
           </p>
         </div>
         <div className="studio-view__scope" aria-hidden="true">
@@ -45,9 +105,9 @@ export function StudioView() {
         </div>
       </header>
 
-      {/* AI 创作对话框 */}
+      {/* 步骤 1：提示词输入 */}
       <section className="studio-prompt" onPointerMove={setSpotlight}>
-        <div className="studio-prompt__label">描述你想要的歌</div>
+        <div className="studio-prompt__label">① 描述你想要的歌</div>
         <div className="studio-prompt__input-wrap">
           <textarea
             className="studio-prompt__input"
@@ -56,7 +116,13 @@ export function StudioView() {
             onChange={(e) => setPrompt(e.target.value)}
             rows={3}
           />
-          <button className="studio-prompt__btn">开始创作</button>
+          <button
+            className="studio-prompt__btn"
+            onClick={onGenerateMusic}
+            disabled={generatingMusic || !prompt.trim()}
+          >
+            {generatingMusic ? "生成中…" : "开始创作"}
+          </button>
         </div>
         <div className="studio-prompt__chips">
           {PROMPTS.map((item) => (
@@ -65,44 +131,99 @@ export function StudioView() {
             </button>
           ))}
         </div>
-        <div className="studio-prompt__hint">将在 v0.6 上线 · 接入 MiniMax 音乐生成</div>
-      </section>
-
-      {/* 创作流程 */}
-      <h2 className="section-title">全流程 AI 创作</h2>
-      <section className="studio-steps">
-        {STUDIO_STEPS.map((step) => (
-          <div key={step.num} className="studio-step" onPointerMove={setSpotlight}>
-            <div className="studio-step__num">{step.num}</div>
-            <div className="studio-step__icon">{step.icon}</div>
-            <h3 className="studio-step__title">{step.title}</h3>
-            <p className="studio-step__desc">{step.desc}</p>
+        {!hasKey && (
+          <div className="studio-prompt__hint" style={{ color: "var(--amber)" }}>
+            ⚠ 未配置 MiniMax API Key，请先点击左下角齿轮设置
           </div>
-        ))}
+        )}
       </section>
 
-      {/* DAW 预览区（v0.6 完整实现）*/}
-      <h2 className="section-title">多轨编辑器预览</h2>
-      <section className="daw-preview">
-        <div className="daw-ruler">
-          {["00", "04", "08", "12", "16", "20", "24", "28"].map((tick) => (
-            <span key={tick}>{tick}</span>
-          ))}
+      {/* 步骤 2：AI 写词 */}
+      <h2 className="section-title">② AI 写词</h2>
+      <section className="studio-step studio-step--panel" onPointerMove={setSpotlight}>
+        <div className="studio-step__head">
+          <div>
+            <h3 className="studio-step__title">用 LLM 生成结构化歌词</h3>
+            <p className="studio-step__desc">
+              {lyrics
+                ? `主题：${lyrics.theme}${lyrics.rhyme_scheme ? ` · 押韵：${lyrics.rhyme_scheme}` : ""}`
+                : "点击下方按钮，AI 会根据你的提示词写一版主歌/副歌/桥段结构歌词。可手动编辑后再生成音乐。"}
+            </p>
+          </div>
+          <button
+            className="studio-prompt__btn studio-prompt__btn--ghost"
+            onClick={onGenerateLyrics}
+            disabled={generatingLyrics || !prompt.trim()}
+          >
+            {generatingLyrics ? "写词中…" : lyrics ? "重新写词" : "AI 写词"}
+          </button>
         </div>
-        <div className="daw-preview__tracks">
-          {["VOX 人声", "DRM 鼓组", "BAS 贝斯", "KEY 和声", "FX 其他"].map((t, i) => (
-            <div key={t} className="daw-track">
-              <div className="daw-track__label">{t}</div>
-              <div className="daw-track__lane">
-                <div
-                  className="daw-clip"
-                  style={{ marginLeft: `${i * 20}px`, width: `${200 - i * 15}px`, opacity: 0.4 + i * 0.12 }}
-                />
-              </div>
+        {lyricsText && (
+          <textarea
+            className="studio-lyrics-editor"
+            value={lyricsText}
+            onChange={(e) => setLyricsText(e.target.value)}
+            rows={10}
+            placeholder="[Verse]\n歌词一行一行写在这里...\n\n[Chorus]\n副歌..."
+          />
+        )}
+      </section>
+
+      {/* 步骤 3：生成结果回放 */}
+      <h2 className="section-title">③ 生成结果</h2>
+      <section className="studio-step studio-step--panel" onPointerMove={setSpotlight}>
+        {generatingMusic ? (
+          <div className="studio-loading">
+            <div className="studio-loading__spinner" />
+            <p>MiniMax 正在生成音乐，约需 30-90 秒，请稍候…</p>
+          </div>
+        ) : audioPath ? (
+          <div className="studio-result">
+            <audio
+              className="studio-result__audio"
+              src={convertFileSrc(audioPath)}
+              controls
+              autoPlay
+            />
+            <p className="studio-result__path">本地缓存：{audioPath}</p>
+          </div>
+        ) : (
+          <p className="studio-step__desc">
+            还没有生成结果。回到顶部输入提示词，点「开始创作」即可生成带词带唱的完整歌曲。
+          </p>
+        )}
+      </section>
+
+      {/* 步骤 4：人声/伴奏分轨 */}
+      <h2 className="section-title">④ 人声 / 伴奏分轨</h2>
+      <section className="studio-step studio-step--panel" onPointerMove={setSpotlight}>
+        <div className="studio-step__head">
+          <div>
+            <h3 className="studio-step__title">分离人声与纯伴奏</h3>
+            <p className="studio-step__desc">
+              调用 MiniMax 两次（带唱 + 纯伴奏），消耗双倍额度。两次生成旋律会有随机差异，适合试听用途。
+            </p>
+          </div>
+          <button
+            className="studio-prompt__btn studio-prompt__btn--ghost"
+            onClick={onSeparate}
+            disabled={separating || !prompt.trim()}
+          >
+            {separating ? "分轨中…" : stems ? "重新分轨" : "生成分轨"}
+          </button>
+        </div>
+        {stems && (
+          <div className="studio-stems">
+            <div className="studio-stems__track">
+              <div className="studio-stems__label">🎤 人声版（带唱）</div>
+              <audio src={convertFileSrc(stems.vocals)} controls />
             </div>
-          ))}
-        </div>
-        <div className="daw-preview__note">DAW 多轨编辑器 · v0.6 完整上线</div>
+            <div className="studio-stems__track">
+              <div className="studio-stems__label">🎸 纯伴奏版（instrumental）</div>
+              <audio src={convertFileSrc(stems.instrumental)} controls />
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

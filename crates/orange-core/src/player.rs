@@ -61,7 +61,10 @@ pub enum PlayerEvent {
     /// 曲目开始播放
     Started { track_id: crate::track::TrackId },
     /// 进度更新
-    Progress { position_secs: f64, duration_secs: f64 },
+    Progress {
+        position_secs: f64,
+        duration_secs: f64,
+    },
     /// 曲目播放结束
     Ended { track_id: crate::track::TrackId },
     /// 暂停
