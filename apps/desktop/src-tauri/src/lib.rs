@@ -72,12 +72,13 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::default().build(),
         )
         .register_asynchronous_uri_scheme_protocol("orangeradio", |ctx, request, responder| {
-            // handler 是同步的，但 reqwest 拉流是异步的 → tokio::spawn 异步执行
-            // Tauri 2 该闭包第一参数是 UriSchemeContext<'_, R>（非 &AppHandle），
-            // 通过其 .app_handle() 拿到 &AppHandle<R>。克隆一份 owned handle 才能
-            // move 进 'static 的 tokio task。
+            // handler 是同步闭包，且 WebView2 的 WebResourceRequested 回调在 main thread
+            // （无 Tokio runtime context）→ tokio::spawn 会 panic（与 commands.rs:1472 同坑）。
+            // 必须用 tauri::async_runtime::spawn（内部 RUNTIME.get_or_init，任意线程可调）。
+            // Tauri 2 该闭包第一参数是 UriSchemeContext<'_, R>，.app_handle() 拿 &AppHandle<R>，
+            // 克隆 owned handle 才能 move 进 'static task。
             let app = ctx.app_handle().clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 let response = handle_orangeradio_protocol(&app, request).await;
                 responder.respond(response);
             });
