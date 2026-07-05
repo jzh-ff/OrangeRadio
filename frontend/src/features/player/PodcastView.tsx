@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
+import { VirtualTrackList } from "../../components/TrackRow";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
@@ -16,7 +17,7 @@ export function PodcastView() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
@@ -100,20 +101,13 @@ export function PodcastView() {
             <span className="col-dur">时长</span>
           </div>
           <div className="lib-rows">
-            {tracks.map((t, i) => {
-              const active = currentIndex === i;
-              return (
-                <div key={t.id} className={`lib-row ${active ? "lib-row--active" : ""}`} onDoubleClick={() => handlePlay(t, i)}>
-                  <span className="col-i">
-                    {active && isPlaying ? (
-                      <span className="eq-bars"><i></i><i></i><i></i></span>
-                    ) : (
-                      <>
-                        <span className="idx">{i + 1}</span>
-                        <svg className="play-hover" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                      </>
-                    )}
-                  </span>
+            <VirtualTrackList
+              tracks={tracks}
+              activeId={currentTrack?.id}
+              isPlaying={isPlaying}
+              onPlay={handlePlay}
+              renderRow={(t, i) => (
+                <>
                   <span className="col-title" onClick={() => handlePlay(t, i)}>
                     <span className="col-title__txt">{t.meta.title}</span>
                     <span className="q-badge q-std">POD</span>
@@ -121,9 +115,9 @@ export function PodcastView() {
                   <span className="col-artist">{t.meta.artist}</span>
                   <span className="col-album">{t.meta.album || "—"}</span>
                   <span className="col-dur">{fmt(t.meta.duration_secs)}</span>
-                </div>
-              );
-            })}
+                </>
+              )}
+            />
           </div>
         </div>
       )}

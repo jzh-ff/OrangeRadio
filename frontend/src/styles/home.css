@@ -14,28 +14,44 @@
 }
 
 /* =====================================================================
-   Hero —— 杂志封面（双栏 + 黑胶叠影 + 角标 + 频谱呼吸）
+   Hero —— 杂志封面（双栏 + 黑胶叠影 + 角标 + 频谱呼吸 + 入场动画）
    ===================================================================== */
 .home-hero {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 32px;
-  padding: 80px 48px 48px;  /* top 加大给频谱条让位（频谱条高 64px） */
-  border-radius: 28px;
+  gap: 28px;
+  padding: 64px 32px 32px;  /* top 给频谱条让位（频谱条高 56px） */
+  border-radius: 24px;
   background:
     linear-gradient(118deg, rgba(20, 22, 36, 0.94) 0%, rgba(10, 12, 22, 0.85) 50%, rgba(192, 67, 24, 0.08) 100%);
   border: 1px solid rgba(244, 210, 138, 0.08);
   box-shadow:
-    0 30px 80px rgba(0, 0, 0, 0.5),
+    0 20px 56px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -32px 80px rgba(0, 0, 0, 0.22);
+    inset 0 -24px 64px rgba(0, 0, 0, 0.18);
   overflow: hidden;
   isolation: isolate;
+  /* 入场：fade-up + 缩放回弹 */
+  animation: hero-rise 0.7s var(--ease) both;
 }
 
-/* Hero 装饰：右上角暖白光斑 */
+/* Hero 呼吸：内侧暖色光斑缓慢漂移，避免静态 */
+@keyframes hero-breathe {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(-2%, 1%, 0) scale(1.05); }
+}
+@keyframes hero-rise {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes hero-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+/* Hero 装饰：右上角暖白光斑（轻微漂移，制造"呼吸"感） */
 .home-hero::before {
   content: "";
   position: absolute;
@@ -46,6 +62,7 @@
   background: radial-gradient(ellipse at center, rgba(255, 157, 69, 0.18), transparent 55%);
   pointer-events: none;
   z-index: 0;
+  animation: hero-breathe 14s ease-in-out infinite;
 }
 /* Hero 装饰：杂志 hairline 顶边 */
 .home-hero::after {
@@ -62,10 +79,10 @@
 /* ===== Hero Live 频谱条（Web Audio AnalyserNode FFT 驱动） ===== */
 .hero-spectrum {
   position: absolute;
-  left: 48px;
-  right: 48px;
+  left: 32px;
+  right: 32px;
   top: 0;
-  height: 64px;
+  height: 56px;
   z-index: 2;
   overflow: hidden;
   border-bottom: 1px solid rgba(244, 210, 138, 0.12);
@@ -164,13 +181,13 @@
    注：em 用 inherit + font-style: normal —— 中文字符没有真正的 italic，伪斜体效果差 */
 .home-hero__title {
   font-family: "Noto Serif SC", "Fraunces", "Cormorant Garamond", "Songti SC", "Source Han Serif SC", serif;
-  font-size: clamp(40px, 5.6vw, 72px);
+  font-size: clamp(32px, 4.2vw, 52px);
   font-weight: 600;
-  line-height: 1.05;
+  line-height: 1.08;
   letter-spacing: -0.025em;
   color: var(--text);
   margin: 0;
-  max-width: 14ch;
+  max-width: 16ch;
   font-feature-settings: "kern" 1, "liga" 1;
   /* 中文衬线字体内启用平滑字形（Noto Serif SC 700/900 weight 下笔画饱满） */
   -webkit-font-smoothing: antialiased;
@@ -181,21 +198,24 @@
   font-style: normal;        /* 中文不用 italic，避免伪斜体 */
   font-weight: 700;
   background: linear-gradient(120deg, var(--orange-2) 0%, var(--gold) 45%, var(--jade) 100%);
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
   display: inline-block;
   letter-spacing: -0.02em;
+  /* 标题 accent 慢节奏漂移，给静态文字加呼吸 */
+  animation: hero-shimmer 9s ease-in-out infinite;
 }
 
 /* Lead 副标：混排中文衬线 + 微微 leading 提升 */
 .home-hero__lead {
-  margin-top: 20px;
+  margin-top: 14px;
   font-family: var(--font-zh-serif);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.85;
+  line-height: 1.7;
   color: var(--text-2);
   max-width: 38ch;
   letter-spacing: 0.02em;
@@ -205,8 +225,8 @@
 .home-hero__actions {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-top: 28px;
+  gap: 14px;
+  margin-top: 20px;
 }
 
 /* 主按钮：胶囊 + 烧橙渐变 + 内部光斑 */
@@ -271,13 +291,103 @@
 }
 .home-hero__status.is-live { color: var(--orange-2); }
 
+/* ===== Hero Right Stage —— wave（声波瀑布） + vinyl（黑胶） 并排 ===== */
+.home-hero__stage {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 16px;
+  height: 100%;
+  z-index: 3;
+  min-height: 180px;
+}
+
+/* 声波瀑布：从右往左的实时频谱（canvas 渲染，spectrum 数据驱动） */
+.home-hero__wave {
+  position: relative;
+  width: 280px;
+  height: clamp(160px, 22vh, 200px);
+  align-self: center;
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse 80% 100% at 100% 50%, rgba(255, 107, 26, 0.08), transparent 70%),
+    linear-gradient(135deg, rgba(8, 10, 18, 0.55), rgba(8, 10, 18, 0.2));
+  border: 1px solid rgba(244, 210, 138, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 30px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+  isolation: isolate;
+  /* 入场：从右侧滑入 + 淡入，对应 hero 整体入场延时 80ms */
+  animation: wave-slide 0.9s var(--ease) 0.08s both;
+}
+/* 流光 haze：右上→左下 的微光，让"流出"的能量有清晰的方向感 */
+.home-hero__wave::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    rgba(0, 245, 212, 0.06) 0%,
+    transparent 35%,
+    transparent 65%,
+    rgba(255, 107, 26, 0.12) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+/* 顶部 hairline + 底部 hairline，强化"频道仪表"质感 */
+.home-hero__wave::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 0;
+  bottom: 0;
+  border-top: 1px solid rgba(244, 210, 138, 0.1);
+  border-bottom: 1px solid rgba(244, 210, 138, 0.1);
+  pointer-events: none;
+  z-index: 1;
+}
+.home-hero__wave-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 2;
+}
+.home-hero__wave-label {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  z-index: 3;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--champagne);
+  opacity: 0.7;
+  pointer-events: none;
+}
+@keyframes wave-slide {
+  from { opacity: 0; transform: translate3d(28px, 0, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
 /* 黑胶叠影：双层（后层模糊叠影 + 前层主盘 + FOLIO 角标） */
 .home-hero__vinyl {
   position: relative;
-  width: clamp(180px, 22vw, 240px);
+  width: clamp(120px, 13vw, 150px);
   aspect-ratio: 1;
   flex-shrink: 0;
+  align-self: center;
   z-index: 3;
+  /* 入场：左侧飞入 + 旋转，对应 hero 整体入场延时 120ms */
+  animation: vinyl-fly 0.9s var(--ease) 0.12s both;
+}
+@keyframes vinyl-fly {
+  from { opacity: 0; transform: translate3d(-18px, 0, 0) rotate(-4deg); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg); }
 }
 .home-hero__vinyl-shadow {
   position: absolute;
@@ -350,8 +460,8 @@
   gap: 8px;
 }
 .home-hero__corner--br {
-  right: 48px;
-  bottom: 16px;
+  right: 32px;
+  bottom: 12px;
 }
 .home-hero__corner--br::before {
   content: "";
@@ -721,16 +831,18 @@
   .home-queue__track { grid-template-columns: 1fr; }
   .home-queue__item:nth-child(even) { border-right: 1px solid rgba(244, 210, 138, 0.08); }
   .home-queue__item:last-child { border-bottom: 1px solid rgba(244, 210, 138, 0.08); }
-  .home-hero__vinyl { width: 160px; }
+  .home-hero__vinyl { width: 140px; }
+  .home-hero__wave { height: 140px; }
 }
 @media (max-width: 760px) {
   .home-hero {
     grid-template-columns: 1fr;
-    padding: 28px 24px;
-    gap: 20px;
+    padding: 56px 20px 24px;
+    gap: 16px;
   }
-  .home-hero__vinyl { width: 120px; margin: 0 auto; }
+  .home-hero__vinyl { width: 110px; margin: 0 auto; }
   .home-hero__vinyl-folio { display: none; }
+  .home-hero__wave { width: 100%; height: 88px; }
   .home-bento { grid-template-columns: repeat(2, 1fr); }
   .home-card--featured { grid-column: span 2; }
   .home-queue__item {
@@ -745,4 +857,9 @@
 @media (prefers-reduced-motion: reduce) {
   .home-hero__signal-bar.is-live,
   .home-hero__vinyl-disc { animation: none; }
+  .home-hero,
+  .home-hero::before,
+  .home-hero__title em,
+  .home-hero__wave,
+  .home-hero__wave-bar { animation: none !important; }
 }

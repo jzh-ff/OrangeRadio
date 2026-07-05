@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import QRCode from "qrcode";
@@ -6,6 +6,8 @@ import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { getCoverUrl } from "./useCover";
 import { TrackActions } from "./TrackActions";
+import { VirtualTrackList } from "../../components/TrackRow";
+import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
@@ -54,7 +56,9 @@ export function NeteaseView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [coverErrors, setCoverErrors] = useState<Record<string, boolean>>({});
-  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const [page, setPage] = useState(1);       // 搜索分页（仅 search 视图）
+  const [hasMore, setHasMore] = useState(false);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
@@ -145,13 +149,33 @@ export function NeteaseView() {
   const doSearch = async () => {
     if (!keyword.trim()) return;
     setLoading(true); setError(""); setView("search");
+    setPage(1); setHasMore(true);
     try {
-      const list = await invoke<Track[]>("netease_search", { keyword });
-      if (list.length === 0) setError("搜索无结果");
+      const list = await invoke<Track[]>("netease_search", { keyword, page: 1 });
+      if (list.length === 0) { setError("搜索无结果"); setHasMore(false); }
       setTracks(list); setQueue(list);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
   };
+
+  /** 加载下一页搜索结果（追加，不覆盖队列原内容） */
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore || view !== "search") return;
+    const next = page + 1;
+    setLoading(true);
+    try {
+      const list = await invoke<Track[]>("netease_search", { keyword, page: next });
+      if (list.length === 0) setHasMore(false);
+      else {
+        setTracks((prev) => [...prev, ...list]);
+        usePlayerStore.getState().addManyToQueue(list);
+        setPage(next);
+      }
+    } catch { /* 静默失败，保留已加载 */ }
+    finally { setLoading(false); }
+  }, [page, hasMore, loading, keyword, view]);
+
+  const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
 
   const loadPlaylists = async () => {
     setLoading(true); setError(""); setView("playlists"); setCoverErrors({});
@@ -240,11 +264,35 @@ export function NeteaseView() {
   // ===== 已登录 =====
   return (
     <div className="library">
-      {/* 导航栏 */}
+      {/* 导航栏（零 emoji，全部 SVG icon，对标 MineRadio #controls-cluster） */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <button className={`nav-pill ${view === "playlists" ? "nav-pill--active" : ""}`} onClick={loadPlaylists}>🎵 我的歌单</button>
-        <button className="nav-pill nav-pill--green" onClick={loadDaily}>📅 每日推荐</button>
-        <button className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`} onClick={() => setView("search")}>🔍 搜索</button>
+        <button className={`nav-pill ${view === "playlists" ? "nav-pill--active" : ""}`} onClick={loadPlaylists}>
+          <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 6h13" />
+            <path d="M3 12h13" />
+            <path d="M3 18h9" />
+            <path d="M17 14v6" />
+            <path d="M14 17h6" />
+          </svg>
+          我的歌单
+        </button>
+        <button className="nav-pill nav-pill--green" onClick={loadDaily}>
+          <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <path d="M3 9h18" />
+            <path d="M8 3v4" />
+            <path d="M16 3v4" />
+            <path d="M8 14l2 2 4-4" />
+          </svg>
+          每日推荐
+        </button>
+        <button className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`} onClick={() => setView("search")}>
+          <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          搜索
+        </button>
         <div style={{ flex: 1 }} />
         <button className="nav-pill nav-pill--ghost" onClick={async () => { await invoke("netease_logout"); setLoggedIn(false); }}>退出</button>
       </div>
@@ -329,12 +377,14 @@ export function NeteaseView() {
             <div className="lib-header"><span className="col-i">#</span><span className="col-title">标题</span>
               <span className="col-artist">艺术家</span><span className="col-album">{view === "playlist" ? "专辑" : "专辑"}</span><span className="col-dur">操作</span></div>
             <div className="lib-rows">
-              {tracks.map((t, i) => {
-                const active = currentIndex === i;
-                const d = t.meta.duration_secs;
-                return (
-                  <div key={t.id} className={`lib-row ${active ? "lib-row--active" : ""}`} onDoubleClick={() => handlePlay(t, i)}>
-                    <span className="col-i">{active && isPlaying ? <span className="eq-bars"><i></i><i></i><i></i></span> : <><span className="idx">{i + 1}</span><svg className="play-hover" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></>}</span>
+              <VirtualTrackList
+                tracks={tracks}
+                activeId={currentTrack?.id}
+                isPlaying={isPlaying}
+                onPlay={handlePlay}
+                onItemsRendered={view === "search" ? onItemsRendered : undefined}
+                renderRow={(t, i) => (
+                  <>
                     <span className="col-title" onClick={() => handlePlay(t, i)}>
                       {coverOf(t) && <img src={coverOf(t)!} alt="" className="col-title__cover" loading="lazy" />}
                       <span className="col-title__txt">{t.meta.title}</span>
@@ -345,9 +395,9 @@ export function NeteaseView() {
                     <span className="col-dur">
                       <TrackActions track={t} />
                     </span>
-                  </div>
-                );
-              })}
+                  </>
+                )}
+              />
             </div>
           </div>
         </>

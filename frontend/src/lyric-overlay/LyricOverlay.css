@@ -1,147 +1,484 @@
-/* 桌面歌词悬浮窗（对标 MineRadio desktop-lyrics.html）
- * 卡拉 OK 四色渐变 + 描边字重 900 + 节拍震动。
- * 透明窗口在 Windows dev 模式可能不生效 → 用半透明深色背景兜底保证可读。 */
+/* 桌面歌词悬浮窗 v2（对标 MineRadio desktop-lyrics.html 但更现代）
+ * 设计：
+ *  - 背景完全透明（透出桌面，只显示歌词文字 + 文字阴影）
+ *  - 5 行上下文（上下各 2 行 + 当前行），对标专业桌面歌词（Q音/网易云桌面歌词）
+ *  - 当前行：超大号 + 5 段 CSS 渐变扫光（MineRadio body.highlight .line）
+ *  - 上下文行：小号淡灰，向上/向下字号递变
+ *  - 行切换重播 lyr-in 入场（3D rotateX/Y + blur → 0）
+ *  - 控件：prev/play/next + 设置 + 锁 + 关闭，全部 SVG，无 emoji
+ *  - 设置面板：字号 / 不透明度 / 翻译 / 主题（默认/暖橙/冷蓝/纯白）
+ */
+
+:root {
+  /* 主题色卡（运行时由 JS 写入） */
+  --lyric-primary: #f6fdff;
+  --lyric-secondary: rgba(246, 253, 255, 0.42);
+  --lyric-highlight: #ffd9a8;
+  --lyric-glow: #9cffdf;
+  /* 扫光羽化带 */
+  --lyric-feather: 5.5%;
+  --lyric-progress: 0%;
+  --lyric-beat-scale: 1;
+  --lyric-scale: 1;
+  --lyric-opacity: 0.95;
+  /* 当前行字号基线（乘 --lyric-scale） */
+  --lyric-cur-size: 36px;
+  --lyric-cur-trans-size: 15px;
+  --lyric-ctx-size: 17px;
+}
 
 .lyric-overlay {
   position: fixed;
   inset: 0;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  background: rgba(18, 18, 26, 0.55);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-radius: 14px;
-  color: #fff;
+  /* 背景完全透明 —— 透出桌面 */
+  background: transparent;
+  color: var(--lyric-primary);
   font-family: "Inter", "Noto Sans SC", -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   user-select: none;
-  overflow: hidden;
+  overflow: visible;
+  opacity: var(--lyric-opacity);
+  transform-style: preserve-3d;
 }
 
-.lyric-overlay__drag {
-  flex: 1;
+/* ====== 主体舞台（拖动区） ====== */
+.lyric-overlay__stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: 28px 32px 36px;
   cursor: move;
-  padding: 0 28px;
-  /* 节拍震动（对标 MineRadio applyStageMotion：sin 漂浮 + 亮度脉冲）
-   * 这里用 CSS 轻量震动，beat 脉冲由 JS 写 --beat-pulse 变量（后续 P11 接入） */
-  animation: lyric-float 6s ease-in-out infinite;
 }
 
-@keyframes lyric-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+/* 拖拽手柄 + 锁定状态指示（hover 才显，平时几乎不可见） */
+.lyric-overlay__drag-handle {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: rgba(8, 10, 14, 0.42);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+.lyric-overlay:hover .lyric-overlay__drag-handle,
+.lyric-overlay:focus-within .lyric-overlay__drag-handle {
+  opacity: 0.92;
+}
+.lyric-overlay__drag-dots {
+  display: inline-flex;
+  color: rgba(255, 255, 255, 0.55);
 }
 
+/* ====== 5 行歌词容器 ====== */
 .lyric-overlay__lines {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: calc(8px * var(--lyric-scale));
   text-align: center;
+  width: 100%;
   max-width: 100%;
+  /* 边缘 mask 渐隐（对标 MineRadio mask-image） */
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 64px,
+    #000 calc(100% - 64px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 64px,
+    #000 calc(100% - 64px),
+    transparent 100%
+  );
 }
 
 .lyric-line {
-  line-height: 1.3;
-  transition: opacity 0.3s;
   position: relative;
-}
-
-/* 当前行：卡拉 OK 双层（bg 灰底 + fill 四色渐变裁切宽度） */
-.lyric-line--cur {
-  font-size: 32px;
-  font-weight: 900;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   line-height: 1.25;
-  -webkit-text-stroke: 0.18px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+
+/* ====== 当前行：超大 + 5 段扫光 ====== */
+.lyric-line--cur {
+  font-size: calc(var(--lyric-cur-size) * var(--lyric-scale));
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  -webkit-text-stroke: 0.22px rgba(255, 255, 255, 0.82);
   paint-order: stroke fill;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 18px rgba(255, 140, 60, 0.4);
-  filter: drop-shadow(0 0 12px rgba(244, 210, 138, 0.2));
+  filter: drop-shadow(0 2px 4px rgba(4, 6, 12, 0.62))
+    drop-shadow(0 0 6px rgba(4, 6, 12, 0.36));
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.42),
+    0 0 8px rgba(255, 217, 168, 0.36),
+    0 0 18px rgba(156, 255, 223, 0.22);
+  transform: scale(var(--lyric-beat-scale, 1));
+  transition: transform 0.12s ease-out;
 }
 
-/* 灰底字（未唱） */
-.lyric-line--cur .lyric-line__bg {
-  color: rgba(255, 255, 255, 0.32);
+.lyric-line__bg,
+.lyric-line__fill {
+  display: inline-block;
+  position: relative;
+  background-clip: text;
+  -webkit-background-clip: text;
 }
 
-/* 已唱字：四色渐变（橙→香槟金→薄荷绿→冷色），用 background-clip:text 裁切 */
-.lyric-line--cur .lyric-line__fill {
+.lyric-line__bg {
+  color: var(--lyric-secondary);
+}
+
+/* 已唱字：5 段 CSS 渐变扫光（覆盖在 bg 上层，-webkit-text-fill-color: transparent 让渐变透出） */
+.lyric-line__fill {
   position: absolute;
   inset: 0;
-  display: inline-block;
-  white-space: nowrap;
-  overflow: hidden;
-  background: linear-gradient(90deg, var(--orange), var(--champagne), var(--mint), var(--chill-cyan));
-  -webkit-background-clip: text;
-  background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 22px rgba(244, 210, 138, 0.5), 0 0 36px rgba(0, 245, 212, 0.25);
-  transition: width 0.08s linear;
+  background-image: linear-gradient(
+    90deg,
+    var(--lyric-highlight) 0%,
+    var(--lyric-highlight) max(0%, calc(var(--lyric-progress) - var(--lyric-feather))),
+    var(--lyric-glow) calc(var(--lyric-progress) + 1.2%),
+    var(--lyric-primary) calc(var(--lyric-progress) + var(--lyric-feather)),
+    var(--lyric-primary) 100%
+  );
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  text-shadow: 0 0 22px rgba(244, 210, 138, 0.5),
+    0 0 36px rgba(0, 245, 212, 0.25);
+  transition: background-position 0.08s linear;
 }
 
-.lyric-line--cur.is-empty .lyric-line__fill {
-  display: none;
-}
-.lyric-line--cur.is-empty {
-  color: #9a9ab0;
-  font-weight: 500;
-  font-size: 20px;
-  text-shadow: none;
-  -webkit-text-stroke: 0;
-}
-
-.lyric-line--next {
-  font-size: 18px;
+/* 当前行翻译 */
+.lyric-line__trans--cur {
+  margin-top: calc(6px * var(--lyric-scale));
+  font-size: calc(var(--lyric-cur-trans-size) * var(--lyric-scale));
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  -webkit-text-stroke: 0.12px rgba(0, 0, 0, 0.5);
-  paint-order: stroke fill;
+  color: var(--lyric-primary);
+  opacity: 0.78;
+  -webkit-text-stroke: 0.10px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
-/* 控件：默认隐藏，hover 浮现 */
+/* 行切换重播入场动画（对标 MineRadio lyr-in 820ms cubic-bezier） */
+.lyric-line--in {
+  animation: lyr-in 820ms cubic-bezier(0.16, 0.84, 0.32, 1.02) both;
+}
+
+@keyframes lyr-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 22px, -120px) rotateX(24deg) rotateY(-18deg) scale(0.82);
+    filter: blur(12px);
+  }
+  58% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* ====== 上下文行（小字淡灰，按 offset 字号递变 + 透明度递变） ====== */
+.lyric-line--ctx {
+  font-size: calc(var(--lyric-ctx-size) * var(--lyric-scale));
+  font-weight: 600;
+  color: rgba(246, 253, 255, 0.4);
+  -webkit-text-stroke: 0.10px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  letter-spacing: 0.3px;
+  transition: opacity 0.3s ease, filter 0.3s ease, transform 0.3s ease;
+}
+.lyric-line--offset--2,
+.lyric-line--offset-2 {
+  font-size: calc(var(--lyric-ctx-size) * var(--lyric-scale) * 0.82);
+  opacity: 0.32;
+  filter: blur(0.5px);
+}
+.lyric-line--offset--1,
+.lyric-line--offset-1 {
+  font-size: calc(var(--lyric-ctx-size) * var(--lyric-scale) * 0.92);
+  opacity: 0.55;
+  filter: blur(0.2px);
+}
+.lyric-line__trans {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.32);
+  opacity: 0.72;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 空态 */
+.lyric-line--empty {
+  font-size: 18px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  animation: none;
+}
+
+/* ====== 控件条（hover 浮现） ====== */
 .lyric-overlay__controls {
   position: absolute;
-  top: 6px;
-  right: 8px;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
+  align-items: center;
   gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(8, 10, 14, 0.42);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   opacity: 0;
-  transition: opacity 0.18s;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+  z-index: 6;
+  -webkit-app-region: no-drag;
 }
-
-.lyric-overlay:hover .lyric-overlay__controls {
+.lyric-overlay:hover .lyric-overlay__controls,
+.lyric-overlay:focus-within .lyric-overlay__controls {
   opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(-2px);
 }
 
 .lyric-btn {
   width: 26px;
   height: 26px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
   cursor: pointer;
-  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition: background 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+  -webkit-app-region: no-drag;
 }
-
 .lyric-btn:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: scale(1.06);
+}
+.lyric-btn:active {
+  transform: scale(0.94);
+}
+.lyric-btn--play {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #ff8c44, #ff5b1a);
+  border-color: rgba(255, 140, 68, 0.4);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(255, 91, 26, 0.45);
+}
+.lyric-btn--play:hover {
+  background: linear-gradient(135deg, #ffa260, #ff7128);
+  border-color: rgba(255, 162, 96, 0.6);
+  box-shadow: 0 6px 18px rgba(255, 113, 40, 0.55);
+}
+.lyric-btn-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
 }
 
-/* 锁定态：减弱震动，保持可读 */
-.lyric-overlay--locked .lyric-overlay__drag {
+/* ====== 设置面板（齿轮触发） ====== */
+.lyric-overlay__settings {
+  position: absolute;
+  bottom: 48px;
+  right: 18px;
+  width: 280px;
+  padding: 14px 16px;
+  background: rgba(14, 16, 22, 0.78);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  z-index: 7;
+  -webkit-app-region: no-drag;
+  animation: settings-pop 200ms cubic-bezier(0.16, 0.84, 0.32, 1.02) both;
+}
+
+@keyframes settings-pop {
+  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.lyric-setting {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.86);
+}
+.lyric-setting__label {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+  letter-spacing: 0.3px;
+}
+.lyric-setting__value {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+  min-width: 36px;
+  text-align: right;
+}
+.lyric-setting__range {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.10);
+  outline: none;
+  cursor: pointer;
+}
+.lyric-setting__range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(255, 107, 26, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+.lyric-setting__range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(255, 107, 26, 0.5);
+  cursor: pointer;
+}
+.lyric-setting__toggle {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.lyric-setting__toggle.is-on {
+  background: linear-gradient(135deg, #ff8c44, #ff5b1a);
+  border-color: rgba(255, 140, 68, 0.5);
+  color: #fff;
+}
+.lyric-setting__themes {
+  display: flex;
+  gap: 6px;
+  grid-column: 2 / -1;
+}
+.lyric-setting__theme {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.lyric-setting__theme:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.lyric-setting__theme.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 0 0 2px rgba(255, 107, 26, 0.32);
+}
+.lyric-setting__theme-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ====== 锁定态 ====== */
+.lyric-overlay--locked .lyric-overlay__stage {
+  cursor: default;
+}
+.lyric-overlay--locked:hover .lyric-overlay__controls {
+  opacity: 0;
+  pointer-events: none;
+}
+.lyric-overlay--locked .lyric-overlay__drag-handle {
+  opacity: 0.7;
+}
+
+/* ====== 暂停态 ====== */
+.lyric-overlay--paused .lyric-line--cur {
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.6));
+  opacity: 0.94;
+}
+.lyric-overlay--paused .lyric-line--in {
   animation: none;
 }
 
+/* ====== 主题差异（防止纯白主题扫光看不清） ====== */
+.lyric-overlay--theme-mono .lyric-line__fill {
+  background-image: linear-gradient(
+    90deg,
+    #fff 0%,
+    #fff max(0%, calc(var(--lyric-progress) - var(--lyric-feather))),
+    rgba(255, 255, 255, 0.92) calc(var(--lyric-progress) + var(--lyric-feather)),
+    rgba(255, 255, 255, 0.5) calc(var(--lyric-progress) + var(--lyric-feather) + 3%),
+    rgba(255, 255, 255, 0.5) 100%
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .lyric-overlay__drag { animation: none; }
-  .lyric-line--cur .lyric-line__fill { transition: none; }
+  .lyric-line--in {
+    animation: none;
+  }
+  .lyric-line--cur {
+    transition: none;
+    transform: none !important;
+  }
 }

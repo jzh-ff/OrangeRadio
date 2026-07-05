@@ -382,37 +382,66 @@ impl NeteaseSource {
         }
         let sid = song_id.trim();
 
-        // 1. 获取用户 ID
+        // 1+2. 获取「我喜欢的音乐」歌单 ID
+        let pid = self.fetch_liked_playlist_id().await?;
+
+        // 3. 添加歌曲到歌单
+        self.manipulate_track(pid, sid, "add").await
+    }
+
+    /// 添加网易云歌曲到任意指定歌单（用户自建/收藏的远端歌单）
+    ///
+    /// playlist_id 来自 `user_playlists()` 返回的第一个之后的项；
+    /// like_track 已封装为「我喜欢的音乐」这个特殊 PID 的快捷方式。
+    pub async fn add_track_to_playlist(&self, playlist_id: i64, song_id: &str) -> Result<bool> {
+        if playlist_id <= 0 {
+            return Err(orange_core::CoreError::Unsupported("歌单 ID 无效".into()));
+        }
+        if song_id.trim().is_empty() || !song_id.trim().chars().all(|c| c.is_ascii_digit()) {
+            return Err(orange_core::CoreError::Unsupported("歌曲 ID 无效".into()));
+        }
+        self.manipulate_track(playlist_id, song_id.trim(), "add").await
+    }
+
+    /// 调 /weapi/w/nuser/account/get + /weapi/user/playlist 获取「我喜欢的音乐」歌单 ID
+    /// （网易云约定：用户的第一个歌单永远是「我喜欢的音乐」）
+    async fn fetch_liked_playlist_id(&self) -> Result<i64> {
         let account = self
             .weapi_post("/weapi/w/nuser/account/get", r#"{"csrf_token":""}"#)
             .await?;
         let uid = account["account"]["id"]
             .as_i64()
             .ok_or_else(|| orange_core::CoreError::AuthFailed("无法获取用户ID".into()))?;
-
-        // 2. 获取用户歌单，第一个是「我喜欢的音乐」
         let payload = format!(r#"{{"uid":{},"limit":1,"offset":0,"csrf_token":""}}"#, uid);
         let resp = self.weapi_post("/weapi/user/playlist", &payload).await?;
-        let pid = resp["playlist"]
+        resp["playlist"]
             .get(0)
             .and_then(|p| p["id"].as_i64())
             .ok_or_else(|| {
                 orange_core::CoreError::AuthFailed("无法获取「我喜欢的音乐」歌单ID".into())
-            })?;
-        tracing::info!("网易云「我喜欢的音乐」歌单 ID: {}", pid);
+            })
+    }
 
-        // 3. 添加歌曲到歌单
+    /// 通用添加/移除歌曲到歌单的底层调用
+    /// op: "add" | "del"
+    async fn manipulate_track(&self, pid: i64, song_id: &str, op: &str) -> Result<bool> {
         let add_payload = format!(
-            r#"{{"op":"add","pid":{},"tracks":"{}","trackIds":"[{{\"id\":{}}}]","csrf_token":""}}"#,
-            pid, sid, sid
+            r#"{{"op":"{}","pid":{},"tracks":"{}","trackIds":"[{{\"id\":{}}}]","csrf_token":""}}"#,
+            op, pid, song_id, song_id
         );
         let result = self
             .weapi_post("/weapi/playlist/manipulate/tracks", &add_payload)
             .await?;
         let code = result["body"]["code"].as_i64().unwrap_or(0);
-        tracing::info!("网易云收藏结果 code={} song_id={}", code, sid);
-        // 200=成功，512=已在歌单中（也算成功）
-        Ok(code == 200 || code == 512 || code == 200)
+        tracing::info!(
+            "网易云歌单操作 op={} pid={} song_id={} code={}",
+            op,
+            pid,
+            song_id,
+            code
+        );
+        // 200=成功，512=已在歌单中（add 时算成功）
+        Ok(code == 200 || code == 512)
     }
 }
 

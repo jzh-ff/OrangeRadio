@@ -9,7 +9,8 @@ use orange_ai::AiRecommendationEngine;
 use orange_core::{AuthEventSink, AuthExpiredPayload};
 use orange_library::LibraryDb;
 use orange_sources::{
-    AuthStore, NeteaseSource, PodcastSource, QqMusicSource, SpotifySource, WebRadioSource,
+    AuthStore, GequbaoSource, NeteaseSource, PodcastSource, QqMusicSource, SpotifySource,
+    WebRadioSource,
 };
 use parking_lot::Mutex;
 use std::path::PathBuf;
@@ -59,6 +60,7 @@ pub struct AppState {
     pub podcast: Arc<PodcastSource>,
     pub qqmusic: Arc<QqMusicSource>,
     pub spotify: Arc<SpotifySource>,
+    pub gequbao: Arc<GequbaoSource>,
     pub auth_store: Arc<AuthStore>,
     /// 鉴权过期事件 sink —— 暴露给 orange-tauri::commands 注册 IPC 命令用
     pub auth_sink: Arc<TauriAuthSink>,
@@ -119,6 +121,7 @@ impl Default for AppState {
             podcast: Arc::new(PodcastSource::new()),
             qqmusic,
             spotify,
+            gequbao: Arc::new(GequbaoSource::new()),
             auth_store,
             auth_sink,
             recommender,
