@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::http::{Request, Response};
+use tauri::Manager;
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
@@ -70,10 +71,14 @@ pub fn run() {
             // 触发时由前端 callback 直接执行动作（播放/上下曲/音量/全屏/桌面歌词）
             tauri_plugin_global_shortcut::Builder::default().build(),
         )
-        .register_asynchronous_uri_scheme_protocol("orangeradio", |_ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("orangeradio", |ctx, request, responder| {
             // handler 是同步的，但 reqwest 拉流是异步的 → tokio::spawn 异步执行
+            // Tauri 2 该闭包第一参数是 UriSchemeContext<'_, R>（非 &AppHandle），
+            // 通过其 .app_handle() 拿到 &AppHandle<R>。克隆一份 owned handle 才能
+            // move 进 'static 的 tokio task。
+            let app = ctx.app_handle().clone();
             tokio::spawn(async move {
-                let response = handle_orangeradio_protocol(request).await;
+                let response = handle_orangeradio_protocol(&app, request).await;
                 responder.respond(response);
             });
         });
@@ -91,13 +96,19 @@ pub fn run() {
 /// 支持的 path：
 /// - `/qqstream?url=<encoded upstream URL>&referer=<...>`
 ///   远端拉流转发（带 Referer / UA / Range），解决 QQ 音乐 CDN 的 CORS
-async fn handle_orangeradio_protocol(request: Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
+/// - `/wefile?path=<abs>` 读取 Wallpaper Engine Workshop 目录下文件（图片/视频）
+///   仅允许落在 AppState.we_roots 登记根目录之下的路径（防 `..` 穿越）
+async fn handle_orangeradio_protocol(
+    app: &tauri::AppHandle,
+    request: Request<Vec<u8>>,
+) -> Response<Cow<'static, [u8]>> {
     let uri = request.uri();
     let path = uri.path().to_string();
     let query: HashMap<String, String> = uri.query().map(|q| parse_query(q)).unwrap_or_default();
 
     match path.as_str() {
         "/qqstream" => handle_qq_stream(&request, &query).await,
+        "/wefile" => handle_we_file(app, &request, &query).await,
         _ => bad_request(format!("unknown path: {}", path)),
     }
 }
@@ -183,6 +194,126 @@ fn bad_request(msg: String) -> Response<Cow<'static, [u8]>> {
         .header("Content-Type", "text/plain; charset=utf-8")
         .body(Cow::Borrowed(body))
         .unwrap()
+}
+
+/// `orangeradio://wefile?path=<abs>`：读取 Wallpaper Engine Workshop 目录下文件。
+///
+/// 安全校验：path 经 canonicalize 后必须落在 AppState.we_roots 登记的根目录之下，
+/// 否则 403（防 `..` 穿越、防读任意系统文件）。支持 Range（视频拖动）。
+async fn handle_we_file(
+    app: &tauri::AppHandle,
+    request: &Request<Vec<u8>>,
+    query: &HashMap<String, String>,
+) -> Response<Cow<'static, [u8]>> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let path_str = match query.get("path") {
+        Some(p) if !p.is_empty() => p.clone(),
+        _ => return bad_request("missing path param".into()),
+    };
+    let path = std::path::PathBuf::from(&path_str);
+
+    // 安全校验：必须在已登记 Workshop 根目录之下
+    // fail-closed：we_roots 为空（未扫描）时 is_within_roots 返回 false → 全部拒绝
+    let state = app.state::<orange_tauri::AppState>();
+    let roots = state.we_roots.read().clone();
+    if !orange_tauri::wallpaper_engine::is_within_roots(&path, &roots) {
+        tracing::warn!("wefile 拒绝越界路径: {}", path.display());
+        return Response::builder()
+            .status(403)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(Cow::Borrowed(&b"forbidden"[..]))
+            .unwrap_or_else(|_| bad_request("forbidden".into()));
+    }
+
+    let metadata = match std::fs::metadata(&path) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!("wefile 读取元数据失败 {}: {}", path.display(), e);
+            return bad_request("file not found".into());
+        }
+    };
+    let total = metadata.len();
+    let content_type = we_content_type(&path);
+
+    // 解析 Range 头（形如 "bytes=0-1023" 或 "bytes=0-"）
+    let (start, end, status) = match request
+        .headers()
+        .get("range")
+        .and_then(|r| r.to_str().ok())
+    {
+        Some(r) if r.starts_with("bytes=") => {
+            let spec = &r[6..];
+            let (s, e) = spec.split_once('-').unwrap_or((spec, ""));
+            let start: u64 = s.parse().unwrap_or(0);
+            let end: u64 = if e.is_empty() {
+                total.saturating_sub(1)
+            } else {
+                e.parse().unwrap_or(total.saturating_sub(1))
+            };
+            (start, end.min(total.saturating_sub(1)), 206)
+        }
+        _ => (0, total.saturating_sub(1), 200),
+    };
+
+    if start > end || start >= total {
+        return Response::builder()
+            .status(416)
+            .header("Content-Range", format!("bytes */{}", total))
+            .body(Cow::Borrowed(&b"range not satisfiable"[..]))
+            .unwrap_or_else(|_| bad_request("range error".into()));
+    }
+
+    let len = end - start + 1;
+    let mut buf = vec![0u8; len as usize];
+    let read_result = std::fs::File::open(&path).and_then(|mut f| {
+        f.seek(SeekFrom::Start(start))?;
+        f.read_exact(&mut buf)?;
+        Ok(())
+    });
+    if let Err(e) = read_result {
+        tracing::warn!("wefile 读取文件失败 {}: {}", path.display(), e);
+        return bad_request("read error".into());
+    }
+
+    let mut builder = Response::builder()
+        .status(status)
+        .header("Content-Type", content_type);
+    if status == 206 {
+        builder = builder
+            .header(
+                "Content-Range",
+                format!("bytes {}-{}/{}", start, end, total),
+            )
+            .header("Accept-Ranges", "bytes");
+    }
+    builder = builder
+        .header("Content-Length", len.to_string())
+        .header("Access-Control-Allow-Origin", "*");
+    builder
+        .body(Cow::Owned(buf))
+        .unwrap_or_else(|_| bad_request("response build failed".into()))
+}
+
+/// 按后缀推断 wefile 的 Content-Type（覆盖 Wallpaper Engine 常见格式）。
+fn we_content_type(path: &std::path::Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("png") => "image/png",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("mp4") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("mov") => "video/quicktime",
+        Some("mkv") => "video/x-matroska",
+        _ => "application/octet-stream",
+    }
 }
 
 /// 手动解析 query string（避免引入 url crate）
