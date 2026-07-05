@@ -126,9 +126,8 @@ fn parse_rss(xml: &str, source_id: SourceId) -> Result<Vec<Track>> {
                             .or_else(|| item_fields.get("creator"))
                             .cloned()
                             .unwrap_or_else(|| channel_title.clone());
-                        let duration_secs = item_fields
-                            .get("duration")
-                            .and_then(|d| parse_duration(d));
+                        let duration_secs =
+                            item_fields.get("duration").and_then(|d| parse_duration(d));
                         let mut track = Track::new(
                             source_id,
                             url.clone(),

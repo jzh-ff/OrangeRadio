@@ -33,6 +33,8 @@ impl DeviceCaster {
     /// 投放当前播放到设备
     /// v0.8 实现
     pub async fn cast(&self, _device: &CastDevice) -> orange_core::Result<()> {
-        Err(orange_core::CoreError::Unsupported("投屏尚未实现 (v0.8)".into()))
+        Err(orange_core::CoreError::Unsupported(
+            "投屏尚未实现 (v0.8)".into(),
+        ))
     }
 }

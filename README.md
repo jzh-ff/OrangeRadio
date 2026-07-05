@@ -1,92 +1,82 @@
 # 🍊 OrangeRadio
 
-> **你的智能音乐宇宙** — AI 驱动、跨平台、沉浸式、可扩展的下一代音乐伴侣 + 创作工作站
+> **你的智能音乐宇宙** — 跨平台、沉浸式、多音源聚合的音乐播放器
 >
-> 全方位超越 Mineradio：更轻（Rust 而非 Electron）、跨平台（×5）、Hi-Res 发烧音质、AI 智能引擎、可编程视觉、社交协作，以及 Mineradio 完全没有的 **AI 音乐创作工作室**。
+> 基于 Tauri 2 + Rust，比 Electron 更轻量。多音源聚合搜索、节奏粒子视觉、跨源歌单收藏、全屏沉浸播放。
 
-[![Version](https://img.shields.io/badge/version-0.1.0-orange)]()
-[![Stage](https://img.shields.io/badge/stage-v0.1%20地基-blue)]()
+[![Version](https://img.shields.io/badge/version-0.3.0-orange)]()
+[![Stage](https://img.shields.io/badge/stage-v0.3%20音源生态%20✅-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
+[![Rust](https://img.shields.io/badge/Rust-7900行-orange)]()
+[![React](https://img.shields.io/badge/React%2BTS-4400行-blue)]()
 
-OrangeRadio 是一款基于 **Tauri 2 + Rust** 的桌面应用，融合了沉浸式音乐播放、Hi-Res 高保真音质、AI 智能推荐、社交协作，以及由 **MiniMax** 驱动的专业级 **AI 音乐创作工作站（OrangeStudio）**。
+## ✨ 核心功能
 
-## ✨ 核心能力
+### 🎵 多音源聚合
+- **本地音乐**：FLAC/WAV/ALAC/MP3，lofty 元数据 + 封面提取
+- **网易云音乐**：扫码/Cookie 登录、搜索、歌单、歌词（含翻译）、热门评论、远端收藏
+- **QQ 音乐**：扫码（ptlogin2 四步换证）/Cookie、搜索、歌单、歌词、评论
+- **Spotify**：OAuth2 + 30 秒试听
+- **网络电台**：RadioBrowser 4 万+ 全球电台
+- **播客**：RSS 订阅
+- **聚合搜索**：一次搜索全网，混合列表 + 来源标签
 
-| 能力 | 说明 | 上线版本 |
-|------|------|---------|
-| 🎧 Hi-Res 高保真 | FLAC/WAV/ALAC/DSD 无损解码 + 专业 DSP | v0.2 |
-| 🌌 沉浸式视觉 | Three.js 粒子/频谱/3D 歌单架/歌词舞台 | v0.4 |
-| 🧠 懂你模式 | AI 行为画像驱动的智能推荐 | v0.5 |
-| 📝 AI 歌词译注 | 实时翻译 + 典故/创作背景标注 | v0.5 |
-| 🎹 AI 音乐创作 | MiniMax 写词/作曲/演唱 + STEM 分轨 + DAW 编辑 | v0.6 |
-| 🎚️ AI DJ 混音 | BPM 对齐、无缝接歌 | v0.7 |
-| 👥 一起听 | 异地同步听歌 + 实时互动 | v0.7 |
-| 💡 智能光效 | Hue/RGB 灯随音乐律动 | v0.8 |
+### 🎨 沉浸式视觉
+- **节奏粒子**：Three.js ShaderMaterial + UnrealBloomPass，低频爆发/高频闪烁/节拍推拉
+- **全屏播放页**：4 种布局（电影粒子/沉浸双栏/歌词流/三栏）
+- **动态歌词**：LRC 解析 + 自动滚动 + 翻译
+- **真实封面**：网络 URL + 本地内嵌提取
+- **视觉控制台**：灵敏度/粒子数/Bloom/颜色主题（橙焰/电紫/深海/极光）
 
-## 🏗️ 技术栈
+### 📋 歌单与收藏
+- **本地歌单系统**：新建/添加/删除，支持跨源收藏（网易云歌曲加入本地歌单）
+- **智能收藏**：网易云→远端歌单，本地→本地收藏
+- **播放队列**：右侧滑出面板
 
-- **核心**：Rust（Tauri 2 桌面壳 + 9 个 workspace crate）
-- **前端**：React 18 + TypeScript + Vite + Three.js + Web Audio API
-- **后端**：Rust Axum + WebSocket（社交/协作/一起听）
-- **AI**：云端大模型（播放侧）+ MiniMax（创作侧）
-- **扩展**：Manifest V3 浏览器扩展
-
-## 📁 项目结构
-
-```
-OrangeRadio/
-├── apps/desktop/      # Tauri 2 桌面应用
-├── crates/            # Rust 核心（9 个模块）
-├── frontend/          # React + Three.js 前端
-├── server/            # Axum 社交后端
-├── extension/         # 浏览器识歌扩展
-└── docs/              # 技术文档（7 份）
-```
-
-详见 [docs/01-技术架构.md](docs/01-技术架构.md)。
+### 🔧 工程质量
+- **50 个 IPC 命令**，11 个 Rust crate
+- **竞态防护**：请求序号 + 防抖锁
+- **登录态持久化**：AES-256-GCM 加密 + keyring
+- **QQ 音乐 CORS 代理**：`orangeradio://` 自定义协议
 
 ## 🚀 快速开始
 
-### 前置要求
-- Rust (stable) + Cargo
-- Node.js 18+
-- 系统依赖（见开发文档）
-
-### 启动桌面应用（开发模式）
-
 ```bash
-# 安装前端依赖
-cd frontend
-npm install
-
-# 通过 Tauri 启动（自动编译 Rust + 启动前端 dev server）
-cd ../apps/desktop/src-tauri
-cargo tauri dev
+# 需要 Rust + Node.js
+./run.ps1
 ```
 
-### 启动社交后端
+详见 [使用手册](docs/02-使用手册.md)
 
-```bash
-cd server
-cargo run
-# 访问 http://localhost:3847
-```
+## 📖 文档
 
-## 📚 文档
-
-| 文档 | 内容 |
+| 文档 | 说明 |
 |------|------|
-| [快速上手] | `.\run.ps1` 一键启动（详见 [03-开发文档](docs/03-开发文档.md)） |
-| [08 - 产品规划](docs/08-产品规划.md) | 竞品分析 / 用户画像 / 八大超越维度 |
-| [09 - 开发计划](docs/09-开发计划.md) | 任务拆解 / 优先级 / 依赖关系 |
-| [01 - 技术架构](docs/01-技术架构.md) | 架构总览 / 关键技术决策（含踩坑记录） |
-| [02 - 使用手册](docs/02-使用手册.md) | 界面导览 / 播放操作 |
-| [03 - 开发文档](docs/03-开发文档.md) | 环境搭建 / 一键启动 / 报错排查 |
-| [04 - API 设计](docs/04-API设计.md) | IPC 命令 + 后端 REST API |
-| [05 - 音源插件开发指南](docs/05-音源插件开发指南.md) | 自定义音源开发 |
-| [06 - 创作工作室指南](docs/06-创作工作室指南.md) | OrangeStudio AI 创作 |
-| [07 - Roadmap](docs/07-Roadmap.md) | 版本规划 / 已知限制 |
+| [01-技术架构](docs/01-技术架构.md) | 系统架构、模块职责、关键技术决策 |
+| [02-使用手册](docs/02-使用手册.md) | 功能介绍、操作指南 |
+| [03-开发文档](docs/03-开发文档.md) | 开发环境搭建、构建流程 |
+| [07-Roadmap](docs/07-Roadmap.md) | 版本路线图 |
+| [09-开发计划](docs/09-开发计划.md) | 各版本任务进度 |
 
-## 📄 License
+## 🏗️ 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 桌面壳 | Tauri 2 |
+| 核心 | Rust（stable-msvc）|
+| 前端 | React 18 + TypeScript + Vite |
+| 视觉 | Three.js + @react-three/fiber |
+| 状态 | Zustand |
+| 数据库 | SQLite (rusqlite) |
+| 元数据 | lofty 0.21 |
+
+## 📊 项目规模
+
+- **Rust**：~7900 行（52 文件）
+- **前端 TS/TSX**：~4400 行（33 文件）
+- **CSS**：~2800 行（9 文件）
+- **总计**：~15000 行
+
+## 📜 License
 
 MIT

@@ -41,7 +41,12 @@ pub struct BpmPreference {
 
 impl Default for BpmPreference {
     fn default() -> Self {
-        Self { slow: 0.25, medium: 0.35, fast: 0.25, very_fast: 0.15 }
+        Self {
+            slow: 0.25,
+            medium: 0.35,
+            fast: 0.25,
+            very_fast: 0.15,
+        }
     }
 }
 
@@ -60,6 +65,10 @@ pub struct RecommendContext {
     pub recent_track_ids: Vec<String>,
     /// 期望数量
     pub limit: u32,
+    /// 候选曲目池（由调用方注入，如本地库 + 跨源收藏）；引擎从中打分挑选，
+    /// 避免 ai crate 反向依赖 library
+    #[serde(default)]
+    pub candidates: Vec<Track>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,13 +81,27 @@ pub struct WeatherMood {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mood {
-    Happy, Sad, Calm, Energetic, Focused, Romantic, Nostalgic, Melancholy,
+    Happy,
+    Sad,
+    Calm,
+    Energetic,
+    Focused,
+    Romantic,
+    Nostalgic,
+    Melancholy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Scene {
-    Work, Study, Workout, Commute, Sleep, Party, Relax, Driving,
+    Work,
+    Study,
+    Workout,
+    Commute,
+    Sleep,
+    Party,
+    Relax,
+    Driving,
 }
 
 /// 推荐引擎 trait
@@ -94,6 +117,7 @@ pub trait RecommendationEngine: Send + Sync {
     async fn next_understand_you(
         &self,
         profile: &UserProfile,
+        ctx: &RecommendContext,
         current: Option<&Track>,
         feedback: &ListenFeedback,
     ) -> Result<Track>;

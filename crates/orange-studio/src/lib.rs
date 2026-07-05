@@ -23,20 +23,20 @@
 //! - [`render`] —— 混音 / 母带渲染
 //! - [`minimax`] —— MiniMax 官方对接
 
-pub mod provider;
-pub mod lyrics;
 pub mod composition;
+pub mod lyrics;
+pub mod minimax;
+pub mod project;
+pub mod provider;
+pub mod render;
 pub mod stems;
 pub mod vocal;
-pub mod project;
-pub mod render;
-pub mod minimax;
 
-pub use provider::{AudioAIProvider, GenerationRequest, GenerationResult};
-pub use lyrics::{LyricsGenerator, LyricsDraft, SongSection};
-pub use composition::{Composer, CompositionStyle, CompositionResult};
-pub use stems::{StemSeparator, Stems, StemKind};
-pub use vocal::{VocalSynth, VoiceProfile};
-pub use project::{StudioProject, ProjectTrack, ProjectClip};
-pub use render::{ProjectRenderer, RenderOptions};
+pub use composition::{Composer, CompositionResult, CompositionStyle};
+pub use lyrics::{LyricsDraft, LyricsGenerator, LyricsRequest, SongSection};
 pub use minimax::MiniMaxProvider;
+pub use project::{ProjectClip, ProjectTrack, StudioProject};
+pub use provider::{AudioAIProvider, GenerationRequest, GenerationResult, GenerationStatus};
+pub use render::{ProjectRenderer, RenderOptions};
+pub use stems::{StemKind, StemSeparator, Stems};
+pub use vocal::{VocalSynth, VoiceProfile};

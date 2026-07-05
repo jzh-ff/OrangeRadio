@@ -78,7 +78,9 @@ impl WebRadioSource {
                     None
                 } else {
                     Some(Artwork {
-                        source: ArtworkSource::Url { url: st.favicon.clone() },
+                        source: ArtworkSource::Url {
+                            url: st.favicon.clone(),
+                        },
                         dominant_color: None,
                         palette: vec![],
                     })

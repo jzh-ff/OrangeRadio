@@ -21,9 +21,18 @@ pub struct EqBand {
 impl Default for Equalizer {
     fn default() -> Self {
         // 默认 10 段 EQ
-        let freqs = [31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
+        let freqs = [
+            31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+        ];
         Self {
-            bands: freqs.iter().map(|&f| EqBand { freq: f, gain_db: 0.0, q: 1.0 }).collect(),
+            bands: freqs
+                .iter()
+                .map(|&f| EqBand {
+                    freq: f,
+                    gain_db: 0.0,
+                    q: 1.0,
+                })
+                .collect(),
             enabled: false,
         }
     }
@@ -49,7 +58,11 @@ pub enum SpatialMode {
 
 impl Default for SpatialAudio {
     fn default() -> Self {
-        Self { enabled: false, mode: SpatialMode::Stereo, width: 0.5 }
+        Self {
+            enabled: false,
+            mode: SpatialMode::Stereo,
+            width: 0.5,
+        }
     }
 }
 
@@ -63,7 +76,10 @@ pub struct LoudnessNormalizer {
 
 impl Default for LoudnessNormalizer {
     fn default() -> Self {
-        Self { enabled: true, target_lufs: -14.0 }
+        Self {
+            enabled: true,
+            target_lufs: -14.0,
+        }
     }
 }
 
