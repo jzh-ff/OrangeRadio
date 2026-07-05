@@ -97,7 +97,7 @@ export function WallpaperEngineGrid() {
 
 /** 单卡片:预览图懒加载 + 名字 + 格式色标 + 大小 */
 function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () => void }) {
-  const ref = useRef<HTMLImageElement | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -117,7 +117,7 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
 
   return (
     <button type="button" className="we-card" onClick={onApply} title={entry.title}>
-      <div className="we-card__cover" ref={ref as React.RefObject<HTMLDivElement>}>
+      <div className="we-card__cover" ref={ref}>
         {visible && imgSrc ? (
           <img src={imgSrc} alt={entry.title} loading="lazy" />
         ) : (

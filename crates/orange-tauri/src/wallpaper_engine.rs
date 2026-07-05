@@ -208,7 +208,10 @@ pub async fn scan(dirs: Option<Vec<String>>) -> WallpaperEngineScanResult {
         Some(v) if !v.is_empty() => v.into_iter().map(PathBuf::from).collect(),
         _ => tokio::task::spawn_blocking(discover_dirs)
             .await
-            .unwrap_or_default(),
+            .unwrap_or_else(|e| {
+                tracing::error!("wallpaper scan (discover_dirs) 任务失败: {e}");
+                Vec::new()
+            }),
     };
     let roots_for_size = roots.clone();
     let entries = tokio::task::spawn_blocking(move || -> Vec<WallpaperEngineEntry> {
@@ -224,7 +227,10 @@ pub async fn scan(dirs: Option<Vec<String>>) -> WallpaperEngineScanResult {
         all
     })
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("wallpaper scan (scan_dir) 任务失败: {e}");
+        Vec::new()
+    });
     WallpaperEngineScanResult {
         entries,
         discovered_dirs: roots
