@@ -274,10 +274,28 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
               </div>
             )}
           </div>
+          {/* ★ 主视觉大字锚点：对标 Mineradio 中央大字标题"标题 · 歌手" */}
+          <div className="fp-cinema-hero">
+            <div className="fp-cinema-hero__title">{title}</div>
+            <div className="fp-cinema-hero__sep">·</div>
+            <div className="fp-cinema-hero__artist">{artist}</div>
+          </div>
           {/* 3D 歌词舞台（shader 化当前行主词，叠加在粒子背景之上，对标 MineRadio stageLyrics） */}
           {lines.length > 0 && activeIndex >= 0 && (
             <LyricStage3D text={lines[activeIndex].text} progress={activeProgress} />
           )}
+          {/* ★ 数字年表装饰层：对标 Mineradio 下方发光数字"20051208" */}
+          {(() => {
+            const year = (currentTrack as { meta?: { year?: number; album?: string } })?.meta?.year;
+            const stamp = year ? `${year}` : (currentTrack as any)?.meta?.album || "未知";
+            return (
+              <div className="fp-cinema-year">
+                <span className="fp-cinema-year__label">RELEASE</span>
+                <span className="fp-cinema-year__sep">·</span>
+                <span className="fp-cinema-year__num">{stamp}</span>
+              </div>
+            );
+          })()}
           {/* 底部当前歌词（1~2 行，含时间戳 + 翻译/注解） */}
           <div className="fp-cinema-lyrics">
             {lines.length > 0 && activeIndex >= 0 ? (

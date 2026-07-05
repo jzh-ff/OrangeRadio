@@ -251,45 +251,37 @@ function ParticleCloud() {
   );
 }
 
-/** 电影镜头：相机轨道 + 节拍推拉 + 可选晃动 + 用户 DIY 拖拽/滚轮（对标 MineRadio orbit + scheduleBeatCamera） */
+/** 电影镜头：相机轨道 + 节拍推拉 + 可选晃动 + 用户 DIY 拖拽/滚轮（对标 MineRadio orbit + scheduleBeatCamera）
+ *  v2: BeatCam 5 通道 + ADSR 包络 + FOV punch（对标 Mineradio applyFreeCameraToCamera + updateCamera 5080-5088）
+ */
 function CinematicCamera() {
   const { camera } = useThree();
   const baseZ = 18;
+  const baseFOV = 60;
   const shakeOffset = useRef({ x: 0, y: 0 });
 
   useFrame((state) => {
+    const bc = usePlayerStore.getState().beatCam;
     const beat = usePlayerStore.getState().beat;
-    const { cameraShake } = usePlayerStore.getState().visualParams;
+    const vp = usePlayerStore.getState().visualParams;
+    const cameraShakeOn = vp.cameraShake;       // 旧布尔开关：是否随机晃动
+    const cinemaShakeAmt = Math.max(0, Math.min(1, vp.cinemaShake)); // 0~1，电影镜头幅度
     const t = state.clock.elapsedTime;
 
-    // combo 驱动的镜头冲击（对标 MineRadio scheduleBeatCamera：每拍 ADSR × combo）
-    let comboZoom = 0;
-    let comboShakeBoost = 0;
-    let comboY = 0;
-    if (beat.isBeat) {
-      const i = beat.intensity;
-      switch (beat.currentCombo) {
-        case "downbeat": comboZoom = i * 1.5; break;       // 强拍：径向推近
-        case "drop": comboZoom = i * 2.2; break;            // 坠落：更猛推近
-        case "accent": comboShakeBoost = i * 0.6; break;    // 重音：滚动晃动
-        case "rebound": comboY = i * 0.8; break;            // 回弹：上抬
-        case "push": comboZoom = i * 0.8; break;            // 推：轻推近
-      }
-    }
-
-    // 缓慢轨道旋转 + 用户 DIY 偏移（拖拽改 theta/phi，滚轮改 radius）
+    // ===== 1. 用户 DIY 轨道 + 缓速漂浮（保留旧行为） =====
     const orbitR = 5;
     const userTheta = orbit.userTheta;
     const userPhi = orbit.userPhi;
     const userRad = orbit.userRadius;
     let targetX = Math.sin(t * 0.1 + userTheta) * (orbitR + userPhi * 2);
-    let targetY = Math.cos(t * 0.07 + userPhi) * orbitR * 0.5 + 2 + comboY + userPhi * 3;
-    // 节拍推拉 + 用户缩放
-    const targetZ = baseZ - beat.intensity * 2.5 - comboZoom + userRad;
+    let targetY = Math.cos(t * 0.07 + userPhi) * orbitR * 0.5 + 2 + userPhi * 3;
 
-    // 镜头晃动（基于节拍强度 + 慢速噪声）
-    if (cameraShake) {
-      const shake = beat.intensity * 0.6 + comboShakeBoost;
+    // ===== 2. ★ BeatCam 5 通道径向推近（对标 Mineradio radiusKick × cameraShake × 0.52） =====
+    let targetZ = baseZ - bc.radiusKick * cinemaShakeAmt * 0.52 + userRad;
+
+    // ===== 3. 兜底：cameraShake 开关打开时附加随机晃动（向后兼容老视觉） =====
+    if (cameraShakeOn) {
+      const shake = beat.intensity * 0.6;
       shakeOffset.current.x = Math.sin(t * 13.0) * shake;
       shakeOffset.current.y = Math.cos(t * 11.0) * shake;
     } else {
@@ -299,11 +291,37 @@ function CinematicCamera() {
     targetX += shakeOffset.current.x;
     targetY += shakeOffset.current.y;
 
-    // 平滑插值（lerp 避免突变）
+    // 平滑插值
     camera.position.x += (targetX - camera.position.x) * 0.05;
     camera.position.y += (targetY - camera.position.y) * 0.05;
-    camera.position.z += (targetZ - camera.position.z) * 0.1;
+    camera.position.z += (targetZ - camera.position.z) * 0.10;
     camera.lookAt(0, 0, 0);
+
+    // ===== 4. ★ 5 通道旋转 + FOV punch（对标 Mineradio 3925-3939） =====
+    if (cinemaShakeAmt > 0) {
+      camera.rotation.order = "YXZ";
+      camera.rotation.x = bc.phiKick * cinemaShakeAmt * 0.45;
+      camera.rotation.y = bc.thetaKick * cinemaShakeAmt * 0.45;
+      camera.rotation.z = bc.rollKick * cinemaShakeAmt;
+      // FOV punch（透视相机才有 fov 字段）
+      const persp = camera as THREE.PerspectiveCamera;
+      if (persp.isPerspectiveCamera) {
+        const cameraPunch = (bc.punch * 0.54 + bc.radiusKick * 0.16) * cinemaShakeAmt;
+        const targetFov = baseFOV - cameraPunch * 1.75;
+        persp.fov = persp.fov + (targetFov - persp.fov) * (targetFov < persp.fov ? 0.24 : 0.12);
+        persp.updateProjectionMatrix();
+      }
+    } else {
+      // 关闭电影镜头：重置 rotation 和 FOV
+      if (camera.rotation.x !== 0) camera.rotation.x = 0;
+      if (camera.rotation.y !== 0) camera.rotation.y = 0;
+      if (camera.rotation.z !== 0) camera.rotation.z = 0;
+      const persp = camera as THREE.PerspectiveCamera;
+      if (persp.isPerspectiveCamera && Math.abs(persp.fov - baseFOV) > 0.001) {
+        persp.fov = baseFOV;
+        persp.updateProjectionMatrix();
+      }
+    }
   });
 
   return null;

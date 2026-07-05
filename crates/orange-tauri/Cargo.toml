@@ -20,6 +20,7 @@ thiserror.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+reqwest.workspace = true
 parking_lot.workspace = true
 chrono.workspace = true
 

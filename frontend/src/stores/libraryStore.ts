@@ -32,6 +32,8 @@ export interface Track {
     title: string;
     artist: string;
     album?: string;
+    /** 发行年份（Rust 端 TrackMeta.year，本地标签/netease/qq 解析得来） */
+    year?: number;
     duration_secs?: number;
     artwork?: Artwork | null;
   };
