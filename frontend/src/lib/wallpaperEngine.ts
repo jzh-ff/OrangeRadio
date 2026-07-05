@@ -1,4 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { extractVideoThumbnail } from "./wallpaperUpload";
+import type { Wallpaper } from "../stores/wallpaperStore";
 
 /** 与 Rust WallpaperEngineKind(serde snake_case)对齐 */
 export type WeKind =
@@ -49,4 +51,32 @@ export async function scanWallpaperEngine(
   dirs: string[] | null,
 ): Promise<WallpaperEngineScanResult> {
   return invoke<WallpaperEngineScanResult>("wallpaper_engine_scan", { dirs });
+}
+
+/** 把 WE 壁纸文件复制到本地 {data_dir}/wallpapers，返回可加入壁纸库的 Wallpaper（独立于 Steam）。
+ *  收藏后 Steam 卸载/路径变化不影响（本地有副本）。视频自动提首帧作 thumbnail。 */
+export async function importWeToLocal(entry: WallpaperEngineEntry): Promise<{ wallpaper: Wallpaper; destPath: string } | null> {
+  const dir = entry.source_dir.replace(/[\\/]+$/, "");
+  const file = entry.file.replace(/^[\\/]+/, "");
+  const absPath = `${dir}/${file}`;
+  const isVideo = /\.(mp4|webm|mov|mkv)$/i.test(file);
+  const destPath = await invoke<string>("wallpaper_save", {
+    srcPath: absPath,
+    name: `${entry.workshop_id}-${file}`,
+  });
+  const url = convertFileSrc(destPath);
+  const thumb = isVideo ? await extractVideoThumbnail(url) : undefined;
+  return {
+    destPath,
+    wallpaper: {
+      id: `we-local-${entry.workshop_id}`,
+      name: entry.title,
+      type: isVideo ? "video" : "image",
+      src: url,
+      thumbnail: thumb || (isVideo ? undefined : url),
+      builtin: false,
+      addedAt: Date.now(),
+      destPath,
+    },
+  };
 }
