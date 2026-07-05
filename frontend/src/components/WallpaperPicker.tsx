@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useWallpaperStore } from "../stores/wallpaperStore";
 import { uploadWallpaperPersistent, removeWallpaperFile } from "../lib/wallpaperUpload";
+import { WallpaperEngineGrid } from "./WallpaperEngineGrid";
 import "../styles/wallpaper-picker.css";
 
 /** 壁纸网格选择器（侧边栏壁纸页 + 全屏 VisualConsole 复用） */
@@ -9,6 +11,7 @@ export function WallpaperPicker({ compact = false }: { compact?: boolean }) {
   const setWallpaper = useWallpaperStore((s) => s.setActive);
   const addWallpaper = useWallpaperStore((s) => s.addWallpaper);
   const removeWallpaper = useWallpaperStore((s) => s.removeWallpaper);
+  const [showEngine, setShowEngine] = useState(false);
 
   const onUploadClick = async () => {
     try {
@@ -86,7 +89,17 @@ export function WallpaperPicker({ compact = false }: { compact?: boolean }) {
           <div className="wp-card__cover wp-card__upload">+</div>
           <span className="wp-card__name">上传</span>
         </button>
+        <button
+          type="button"
+          className="wp-card wp-card--upload"
+          onClick={() => setShowEngine((v) => !v)}
+          title="扫描本地 Wallpaper Engine 壁纸"
+        >
+          <div className="wp-card__cover wp-card__upload">WE</div>
+          <span className="wp-card__name">Wallpaper Engine</span>
+        </button>
       </div>
+      {showEngine && <WallpaperEngineGrid />}
     </div>
   );
 }
