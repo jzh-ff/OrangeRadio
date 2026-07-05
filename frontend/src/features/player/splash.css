@@ -1,0 +1,227 @@
+/* ===== 启动页 Splash（对标 MineRadio #splash） ===== */
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #010304;
+  cursor: default;
+  overflow: hidden;
+  box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.88);
+  transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 呼吸背景：橙→冷色斜向渐变 + 扫描线网格 */
+.splash-overlay::before {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  z-index: 0;
+  background:
+    linear-gradient(115deg, transparent 0%, rgba(255, 107, 26, 0.055) 24%, transparent 42%, rgba(244, 210, 138, 0.052) 62%, transparent 82%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 54px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 46px),
+    linear-gradient(180deg, #020606 0%, #050607 42%, #000 100%);
+  filter: blur(0.4px);
+  opacity: 0.9;
+  animation: splash-field-breathe 7s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+/* 四周暗角 */
+.splash-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.82), transparent 21%, transparent 79%, rgba(0, 0, 0, 0.82)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.68), transparent 32%, transparent 64%, rgba(0, 0, 0, 0.74));
+  pointer-events: none;
+}
+
+.splash-overlay--ready {
+  cursor: pointer;
+}
+
+.splash-overlay--exiting {
+  pointer-events: none;
+}
+
+@keyframes splash-field-breathe {
+  0% { opacity: 0.72; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1.035); }
+}
+
+/* SVG fractalNoise 纹理叠加（对标 MineRadio .splash-bg-noise） */
+.splash-noise {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0.038;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* 内容层 */
+.splash-content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  pointer-events: none;
+}
+
+/* Wordmark：Orange + i + Radio 三段 */
+.splash-wordmark {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  height: clamp(70px, 12vw, 136px);
+  min-width: min(74vw, 760px);
+  font-family: var(--font-display-serif);
+  font-size: clamp(52px, 8.8vw, 112px);
+  line-height: 0.92;
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  color: #f8f8f2;
+  text-shadow: 0 20px 82px rgba(0, 0, 0, 0.68), -2px 0 18px rgba(255, 107, 26, 0.16), 2px 0 18px rgba(0, 245, 212, 0.12);
+  isolation: isolate;
+  filter: drop-shadow(0 0 22px rgba(244, 210, 138, 0.075));
+}
+
+.splash-word {
+  position: relative;
+  white-space: nowrap;
+  will-change: opacity, clip-path, transform;
+}
+
+/* Orange：橙色品牌，实色 + 橙渐变描边光 */
+.splash-word--orange {
+  background: linear-gradient(94deg, #fff, var(--orange-2) 48%, var(--orange) 78%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: -2px 0 0 rgba(255, 107, 26, 0.24), 2px 0 0 rgba(0, 245, 212, 0.18), 0 22px 72px rgba(0, 0, 0, 0.58);
+}
+
+/* Radio：冷色辅助点（薄荷绿→香槟金→冷色渐变，对标 MineRadio splash-word-radio） */
+.splash-word--radio {
+  background: linear-gradient(94deg, rgba(255, 255, 255, 0.06), #fff 26%, var(--champagne) 48%, var(--mint) 68%, rgba(255, 255, 255, 0.82));
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: -2px 0 0 rgba(255, 107, 26, 0.16), 2px 0 0 rgba(0, 245, 212, 0.22), 0 0 34px rgba(0, 245, 212, 0.1);
+}
+
+/* 中间 i 字母的点装饰（对标 MineRadio splash-word-i） */
+.splash-word-i {
+  display: inline-block;
+  position: relative;
+  width: 0.24em;
+  height: 0.86em;
+  margin: 0 0.022em;
+  vertical-align: -0.015em;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.splash-word-i::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0.015em;
+  width: 0.108em;
+  height: 0.565em;
+  border-radius: 0.06em;
+  background: linear-gradient(180deg, #f8edd1 0%, var(--champagne-deep) 100%);
+  transform: translateX(-50%);
+  box-shadow: 0 0 14px rgba(244, 210, 138, 0.12);
+}
+.splash-word-i::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0.035em;
+  width: 0.142em;
+  height: 0.142em;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 16px rgba(244, 210, 138, 0.44), 0 0 36px rgba(255, 255, 255, 0.16);
+  transform: translate(-50%, 0.22em) scale(0.34);
+  opacity: 0;
+}
+
+/* 信号线（橙→白→冷色三段渐变 + blip 光点） */
+.splash-signal-line {
+  position: relative;
+  width: min(460px, 54vw);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 245, 212, 0.22), rgba(255, 255, 255, 0.78), var(--champagne), rgba(255, 107, 26, 0.22), transparent);
+  box-shadow: 0 0 18px rgba(244, 210, 138, 0.24), 0 0 34px rgba(0, 245, 212, 0.1);
+  transform-origin: center;
+}
+
+.splash-signal-blip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 24px rgba(244, 210, 138, 0.54);
+  transform: translate(-50%, -50%) scale(0.32);
+  opacity: 0;
+}
+
+.splash-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: rgba(255, 255, 255, 0.34);
+  text-transform: uppercase;
+}
+
+.splash-enter {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.62);
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(244, 210, 138, 0.24), 0 0 34px rgba(0, 245, 212, 0.12);
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.splash-overlay--ready .splash-enter {
+  animation: splash-enter-pulse 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes splash-enter-pulse {
+  0% {
+    opacity: 0.46;
+    text-shadow: 0 0 14px rgba(244, 210, 138, 0.16), 0 0 26px rgba(0, 245, 212, 0.08);
+  }
+  100% {
+    opacity: 0.78;
+    text-shadow: 0 0 22px rgba(244, 210, 138, 0.3), 0 0 42px rgba(0, 245, 212, 0.16);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-overlay::before { animation: none; }
+  .splash-overlay--ready .splash-enter { animation: none; opacity: 0.7; }
+}

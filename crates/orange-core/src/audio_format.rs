@@ -37,13 +37,20 @@ impl AudioFormat {
     pub fn is_lossless(&self) -> bool {
         matches!(
             self,
-            AudioFormat::Flac | AudioFormat::Wav | AudioFormat::Alac | AudioFormat::Ape | AudioFormat::Dsd
+            AudioFormat::Flac
+                | AudioFormat::Wav
+                | AudioFormat::Alac
+                | AudioFormat::Ape
+                | AudioFormat::Dsd
         )
     }
 
     /// 是否为 Hi-Res（高解析度）格式
     pub fn is_hires(&self) -> bool {
-        matches!(self, AudioFormat::Flac | AudioFormat::Wav | AudioFormat::Dsd | AudioFormat::Alac)
+        matches!(
+            self,
+            AudioFormat::Flac | AudioFormat::Wav | AudioFormat::Dsd | AudioFormat::Alac
+        )
     }
 
     /// 从文件扩展名推断

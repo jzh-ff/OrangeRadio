@@ -22,7 +22,9 @@ pub struct VoiceProfile {
 pub enum VoiceSource {
     Preset,
     /// 克隆自用户上传的参考音频
-    Cloned { reference_url: String },
+    Cloned {
+        reference_url: String,
+    },
 }
 
 /// 演唱合成器
@@ -43,11 +45,19 @@ impl VocalSynth {
         _lyrics: &str,
         _melody_hint: Option<&str>,
     ) -> orange_core::Result<String> {
-        Err(orange_core::CoreError::AiService("AI演唱尚未实现 (v0.6)".into()))
+        Err(orange_core::CoreError::AiService(
+            "AI演唱尚未实现 (v0.6)".into(),
+        ))
     }
 
     /// 克隆音色
-    pub async fn clone_voice(&self, _reference_audio_url: &str, _name: &str) -> orange_core::Result<VoiceProfile> {
-        Err(orange_core::CoreError::AiService("音色克隆尚未实现 (v0.6)".into()))
+    pub async fn clone_voice(
+        &self,
+        _reference_audio_url: &str,
+        _name: &str,
+    ) -> orange_core::Result<VoiceProfile> {
+        Err(orange_core::CoreError::AiService(
+            "音色克隆尚未实现 (v0.6)".into(),
+        ))
     }
 }

@@ -10,12 +10,12 @@
 //!
 //! 注意：创作侧 AI（MiniMax 写歌/作曲/演唱）在独立 crate `orange-studio`。
 
+pub mod lyrics;
 pub mod provider;
 pub mod recommend;
 pub mod voice;
-pub mod lyrics;
 
-pub use provider::{LlmProvider, LlmRequest, LlmResponse, CloudLlmProvider};
+pub use lyrics::{AnnotatedLyrics, LyricsTranslator};
+pub use provider::{CloudLlmProvider, LlmProvider, LlmRequest, LlmResponse, MinimaxProvider};
 pub use recommend::AiRecommendationEngine;
 pub use voice::{VoiceAssistant, VoiceCommand};
-pub use lyrics::{LyricsTranslator, AnnotatedLyrics};

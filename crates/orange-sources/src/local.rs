@@ -11,25 +11,41 @@ pub struct LocalSource {
 
 impl LocalSource {
     pub fn new() -> Self {
-        Self { id: SourceId(uuid::Uuid::new_v4()) }
+        Self {
+            id: SourceId(uuid::Uuid::new_v4()),
+        }
     }
 }
 
 #[async_trait]
 impl AudioSource for LocalSource {
-    fn id(&self) -> SourceId { self.id }
-    fn kind(&self) -> SourceKind { SourceKind::Local }
-    fn name(&self) -> &str { "本地音乐" }
+    fn id(&self) -> SourceId {
+        self.id
+    }
+    fn kind(&self) -> SourceKind {
+        SourceKind::Local
+    }
+    fn name(&self) -> &str {
+        "本地音乐"
+    }
 
     async fn search(&self, _query: &SearchQuery) -> Result<SearchResult> {
-        Ok(SearchResult { tracks: vec![], total: 0, has_more: false })
+        Ok(SearchResult {
+            tracks: vec![],
+            total: 0,
+            has_more: false,
+        })
     }
 
     async fn resolve_stream(&self, track: &Track) -> Result<StreamLocation> {
-        Ok(StreamLocation::File { path: track.source_track_id.clone() })
+        Ok(StreamLocation::File {
+            path: track.source_track_id.clone(),
+        })
     }
 }
 
 impl Default for LocalSource {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

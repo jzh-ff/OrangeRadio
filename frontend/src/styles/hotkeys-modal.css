@@ -1,0 +1,179 @@
+/* ===== 热键设置弹窗（对标 MineRadio #hotkey-modal） ===== */
+.hk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.hk-modal {
+  width: min(620px, calc(100vw - 40px));
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(28, 28, 36, 0.96), rgba(20, 20, 28, 0.96));
+  border: 1px solid var(--glass-border-soft);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+
+.hk-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.hk-modal__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+.hk-modal__desc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+  max-width: 460px;
+}
+.hk-modal__close {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.hk-modal__close:hover { color: #fff; }
+
+.hk-modal__tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.hk-tab {
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.hk-tab--active {
+  background: linear-gradient(135deg, var(--orange), var(--amber));
+  color: #fff;
+  border-color: transparent;
+}
+.hk-modal__hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+.hk-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+}
+.hk-category { margin-bottom: 18px; }
+.hk-category__title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.hk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.02);
+  margin-bottom: 6px;
+}
+.hk-row:hover { background: rgba(255, 255, 255, 0.04); }
+.hk-row__label {
+  flex: 1;
+  font-size: 13px;
+  color: #fff;
+}
+.hk-row__key {
+  min-width: 120px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+.hk-row__key:hover {
+  border-color: var(--orange);
+  background: var(--orange-soft);
+}
+.hk-row__key--capturing {
+  border-color: var(--mint);
+  background: var(--mint-soft);
+  color: var(--mint);
+  animation: hk-capture-pulse 1s ease-in-out infinite;
+}
+.hk-row__key--conflict {
+  border-color: rgba(255, 138, 138, 0.5);
+  background: rgba(255, 138, 138, 0.1);
+  color: #ff8a8a;
+}
+@keyframes hk-capture-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.hk-row__default {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.hk-row__default:hover {
+  background: var(--orange-soft);
+  color: var(--orange-2);
+}
+.hk-row__status {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 50px;
+  text-align: right;
+}
+.hk-row__status--ok { color: #4ec27c; }
+.hk-row__status--conflict { color: #ff8a8a; }
+
+.hk-global-empty {
+  padding: 40px 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.8;
+}

@@ -2,10 +2,27 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "OrangeRadio 默认权限",
-  "windows": ["main"],
+  "windows": ["main", "lyric-overlay"],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
     "shell:allow-open",
-    "dialog:default"
+    "dialog:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
   ]
 }

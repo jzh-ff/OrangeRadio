@@ -23,14 +23,18 @@ fn aes_encrypt(data: &str, key: &[u8; 16]) -> String {
     let pad_len = 16 - (plaintext.len() % 16);
     let mut buf = Vec::with_capacity(plaintext.len() + pad_len);
     buf.extend_from_slice(plaintext);
-    for _ in 0..pad_len { buf.push(pad_len as u8); }
+    for _ in 0..pad_len {
+        buf.push(pad_len as u8);
+    }
 
     // CBC 模式：每块 XOR 前一块密文后加密
     let mut result = Vec::with_capacity(buf.len());
     let mut prev_block: [u8; 16] = *IV;
     for chunk in buf.chunks(16) {
         let mut block = aes::Block::clone_from_slice(chunk);
-        for i in 0..16 { block[i] ^= prev_block[i]; }
+        for i in 0..16 {
+            block[i] ^= prev_block[i];
+        }
         cipher.encrypt_block(&mut block);
         result.extend_from_slice(&block);
         prev_block.copy_from_slice(&block);
@@ -42,7 +46,9 @@ fn aes_encrypt(data: &str, key: &[u8; 16]) -> String {
 fn random_key() -> String {
     const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::thread_rng();
-    (0..16).map(|_| CHARS[rng.gen_range(0..CHARS.len())] as char).collect()
+    (0..16)
+        .map(|_| CHARS[rng.gen_range(0..CHARS.len())] as char)
+        .collect()
 }
 
 /// weapi 加密：返回 (params, encSecKey)

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// 作曲风格
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompositionStyle {
-    pub genre: String,        // 流派：流行/电子/摇滚/古风/Lo-Fi...
+    pub genre: String, // 流派：流行/电子/摇滚/古风/Lo-Fi...
     pub tempo_bpm: Option<f32>,
     pub musical_key: Option<String>,
     pub instruments: Vec<String>,
@@ -42,9 +42,16 @@ impl Composer {
     }
 
     /// 根据风格生成完整曲目
-    pub async fn compose(&self, style: &CompositionStyle, lyrics: Option<&str>) -> orange_core::Result<CompositionResult> {
+    pub async fn compose(
+        &self,
+        style: &CompositionStyle,
+        lyrics: Option<&str>,
+    ) -> orange_core::Result<CompositionResult> {
         let request = crate::provider::GenerationRequest {
-            style_prompt: format!("{}, {}, BPM: {:?}", style.mood, style.genre, style.tempo_bpm),
+            style_prompt: format!(
+                "{}, {}, BPM: {:?}",
+                style.mood, style.genre, style.tempo_bpm
+            ),
             duration_secs: None,
             need_stems: true,
             lyrics: lyrics.map(|s| s.to_string()),
@@ -56,7 +63,10 @@ impl Composer {
             mixed_audio_url: result.audio_url.unwrap_or_default(),
             duration_secs: 180.0,
             bpm: style.tempo_bpm.unwrap_or(120.0),
-            musical_key: style.musical_key.clone().unwrap_or_else(|| "C major".into()),
+            musical_key: style
+                .musical_key
+                .clone()
+                .unwrap_or_else(|| "C major".into()),
             chord_progression: vec![],
             stems: result.stems,
         })

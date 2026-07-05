@@ -52,6 +52,8 @@ impl ProjectRenderer {
         _options: &RenderOptions,
         _output_path: &str,
     ) -> orange_core::Result<()> {
-        Err(orange_core::CoreError::Unsupported("工程渲染尚未实现 (v0.8)".into()))
+        Err(orange_core::CoreError::Unsupported(
+            "工程渲染尚未实现 (v0.8)".into(),
+        ))
     }
 }

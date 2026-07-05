@@ -195,6 +195,10 @@
   display: flex; align-items: center; gap: 8px; cursor: pointer;
   min-width: 0;
 }
+.col-title__cover {
+  width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
 .col-title__txt {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text);
   font-weight: 680;
@@ -214,6 +218,134 @@
 .q-master { background: linear-gradient(135deg, #ffd700, #ff6b1a); color: #000; }
 .q-high { background: rgba(120, 180, 255, 0.12); color: #7ab4ff; }
 .q-std { background: rgba(255, 255, 255, 0.06); color: var(--text-3); }
+
+/* ===== 歌单封面卡片网格（参考 MineRadio 风格） ===== */
+.pl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 20px 18px;
+}
+
+.pl-card {
+  position: relative;
+  cursor: pointer;
+  border-radius: 16px;
+  transition: transform 0.28s var(--ease), box-shadow 0.28s var(--ease);
+}
+
+.pl-card__cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 157, 69, 0.35), transparent 50%),
+    linear-gradient(135deg, #2a1f3d, #131625);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.28s var(--ease);
+}
+
+.pl-card__cover img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform 0.5s var(--ease);
+}
+
+.pl-card:hover .pl-card__cover {
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 157, 69, 0.35);
+}
+.pl-card:hover .pl-card__cover img { transform: scale(1.07); }
+
+/* 封面占位（无图时显示的音乐图标背景） */
+.pl-card__cover-placeholder {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 48px; color: rgba(255, 255, 255, 0.22);
+}
+
+/* 封面右上角播放数 */
+.pl-card__plays {
+  position: absolute; top: 8px; right: 8px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(6px);
+  color: #fff; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.pl-card__plays svg { opacity: 0.85; }
+
+/* 悬停浮现的播放按钮 */
+.pl-card__play {
+  position: absolute; right: 10px; bottom: 10px;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--orange-hot), var(--orange));
+  color: #fff; border: none; cursor: pointer;
+  box-shadow: 0 6px 18px rgba(255, 61, 0, 0.5);
+  opacity: 0; transform: translateY(8px) scale(0.85);
+  transition: opacity 0.24s var(--ease), transform 0.24s var(--ease);
+}
+.pl-card:hover .pl-card__play { opacity: 1; transform: translateY(0) scale(1); }
+.pl-card__play:hover { filter: brightness(1.12); }
+.pl-card__play:active { transform: scale(0.92); }
+
+/* 播放时的均衡器动画叠加 */
+.pl-card__playing-badge {
+  position: absolute; left: 10px; bottom: 10px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(6px);
+  color: var(--orange-2); font-size: 10px; font-weight: 700;
+}
+
+/* 封面下方信息 */
+.pl-card__meta { padding: 10px 4px 2px; }
+.pl-card__name {
+  font-size: 13.5px; font-weight: 680; color: var(--text);
+  line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pl-card__count {
+  margin-top: 3px; font-size: 11px; color: var(--text-3);
+  font-family: var(--font-mono); letter-spacing: 0.4px;
+}
+
+/* 导航徽章（搜索/歌单/每日推荐按钮）统一化 */
+.nav-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: none; border-radius: 999px;
+  font-size: 13px; font-weight: 680; color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer; transition: all 0.2s var(--ease);
+  white-space: nowrap;
+}
+.nav-pill:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-1px); }
+.nav-pill--active {
+  background: linear-gradient(135deg, var(--orange-hot), var(--orange));
+  color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px var(--orange-glow);
+}
+.nav-pill--green {
+  background: linear-gradient(135deg, #1db954, #1ed760);
+  color: #fff; border-color: transparent;
+}
+.nav-pill--ghost {
+  background: transparent; color: var(--text-3); border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* 段落标题 */
+.section-title {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 4px 2px 18px;
+}
+.section-title h3 {
+  font-family: var(--font-display); font-size: 20px; font-weight: 760;
+  color: var(--text); letter-spacing: -0.4px; margin: 0;
+}
+.section-title .section-title__sub {
+  font-size: 12px; color: var(--text-3);
+  font-family: var(--font-mono); letter-spacing: 0.5px;
+}
 
 @media (max-width: 820px) {
   .library__deck-head,
@@ -236,4 +368,5 @@
   .col-album {
     display: none;
   }
+  .pl-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px 14px; }
 }
