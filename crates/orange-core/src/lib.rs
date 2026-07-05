@@ -18,6 +18,7 @@ pub mod player;
 pub mod recommendation;
 pub mod source;
 pub mod track;
+pub mod wallpaper_engine;
 
 pub use audio_format::AudioFormat;
 pub use error::{CoreError, Result};
