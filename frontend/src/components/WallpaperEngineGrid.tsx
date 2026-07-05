@@ -104,6 +104,10 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
   const [visible, setVisible] = useState(false);
   const [importing, setImporting] = useState(false);
   const addWallpaper = useWallpaperStore((s) => s.addWallpaper);
+  // 是否已收藏到本地(防重复复制:已收藏的禁用按钮)
+  const isFavorited = useWallpaperStore((s) =>
+    s.list.some((w) => w.id === `we-local-${entry.workshop_id}`)
+  );
 
   useEffect(() => {
     const el = ref.current;
@@ -122,7 +126,7 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
 
   const onImport = async (ev: MouseEvent) => {
     ev.stopPropagation();
-    if (importing) return;
+    if (importing || isFavorited) return;
     setImporting(true);
     try {
       const result = await importWeToLocal(entry);
@@ -149,12 +153,12 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
       {entry.applicable && (
         <button
           type="button"
-          className="we-card__fav"
+          className={`we-card__fav${isFavorited ? " we-card__fav--done" : ""}`}
           onClick={onImport}
-          disabled={importing}
-          title="收藏到本地(永久内置,Steam 卸载也能用)"
+          disabled={importing || isFavorited}
+          title={isFavorited ? "已收藏到本地" : "收藏到本地(永久内置,Steam 卸载也能用)"}
         >
-          {importing ? "…" : "⭐"}
+          {importing ? "…" : isFavorited ? "✅" : "⭐"}
         </button>
       )}
     </div>
