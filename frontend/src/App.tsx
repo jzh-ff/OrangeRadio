@@ -67,6 +67,7 @@ let lastPlayTrackId = "";
 export default function App() {
   const view = usePlayerStore((s) => s.view);
   const fullPlayerOpen = usePlayerStore((s) => s.fullPlayerOpen);
+  const mainOpacity = usePlayerStore((s) => s.visualParams.mainOpacity);
   const engine = useAudioEngine(() => engineRef.advance());
   // 全局节拍检测（驱动粒子等视觉）
   useBeatDetector();
@@ -252,7 +253,10 @@ export default function App() {
       {wallpaperActive ? <WallpaperLayer /> : <WallpaperBackground />}
       <div className="app__layout">
         <Sidebar />
-        <main className="app__main">
+        <main
+          className="app__main"
+          style={{ "--ui-opacity": mainOpacity } as React.CSSProperties}
+        >
           {view === "player" ? <PlayerView /> : <StudioView pushToast={pushToast} />}
         </main>
       </div>

@@ -67,6 +67,7 @@ export function Sidebar() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
+  const sidebarOpacity = usePlayerStore((s) => s.visualParams.sidebarOpacity);
   const [playlists, setPlaylists] = useState<UserPlaylist[]>([]);
   const searchKeyword = useSearchStore((s) => s.keyword);
   const setKeyword = useSearchStore((s) => s.setKeyword);
@@ -109,7 +110,10 @@ export function Sidebar() {
   const cover = getCoverUrl(currentTrack);
 
   return (
-    <aside className={`sidebar ${isPlaying ? "sidebar--live" : ""}`}>
+    <aside
+      className={`sidebar ${isPlaying ? "sidebar--live" : ""}`}
+      style={{ "--ui-opacity": sidebarOpacity } as React.CSSProperties}
+    >
       <div className="sidebar__rail" aria-hidden />
 
       <div className="sidebar__logo">

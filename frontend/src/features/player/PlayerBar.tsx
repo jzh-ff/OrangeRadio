@@ -31,6 +31,7 @@ export function PlayerBar() {
   const position = usePlayerStore((s) => s.position);
   const duration = usePlayerStore((s) => s.duration);
   const volume = usePlayerStore((s) => s.volume);
+  const playerBarOpacity = usePlayerStore((s) => s.visualParams.playerBarOpacity);
 
   const progress = duration > 0 ? (position / duration) * 100 : 0;
   const volPct = Math.round(volume * 100);
@@ -86,7 +87,10 @@ export function PlayerBar() {
   };
 
   return (
-    <div className={`playerbar ${currentTrack ? "playerbar--visible" : ""}`}>
+    <div
+      className={`playerbar ${currentTrack ? "playerbar--visible" : ""}`}
+      style={{ "--ui-opacity": playerBarOpacity } as React.CSSProperties}
+    >
       {/* 顶置细进度条（对标 MineRadio #progress-bar 顶部线） */}
       <div className="pb-top-progress">
         <div className="pb-top-progress__fill" style={{ width: `${progress}%` }} />
