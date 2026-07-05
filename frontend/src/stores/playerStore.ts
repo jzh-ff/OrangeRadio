@@ -141,10 +141,10 @@ function loadVisualParams(): VisualParams {
     wallpaperBlur: 8,
     wallpaperScale: 1.05,
     wallpaperDim: 0.3,
-    sidebarOpacity: 0.8,
-    playerBarOpacity: 0.8,
-    mainOpacity: 0.8,
-    fullPlayerOpacity: 0.85,
+    sidebarOpacity: 0.6,
+    playerBarOpacity: 0.6,
+    mainOpacity: 0.5,
+    fullPlayerOpacity: 0.5,
   };
   try {
     const raw = localStorage.getItem("orangeradio_visual_params");

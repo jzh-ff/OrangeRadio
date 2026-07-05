@@ -81,6 +81,21 @@ export function WallpaperView() {
           </div>
         </section>
       )}
+
+      <section className="wallpaper-view__section glass-panel">
+        <h2 className="wallpaper-view__section-title">前景透明度</h2>
+        <p className="wallpaper-view__hint">调低让全局壁纸从侧栏 / 底栏 / 主视图 / 全屏页透出</p>
+        <div className="wallpaper-view__sliders">
+          <SliderRow label="侧栏" value={visualParams.sidebarOpacity} min={0} max={1} step={0.05}
+            onChange={(v) => setVisualParams({ sidebarOpacity: v })} />
+          <SliderRow label="底栏" value={visualParams.playerBarOpacity} min={0} max={1} step={0.05}
+            onChange={(v) => setVisualParams({ playerBarOpacity: v })} />
+          <SliderRow label="主视图" value={visualParams.mainOpacity} min={0} max={1} step={0.05}
+            onChange={(v) => setVisualParams({ mainOpacity: v })} />
+          <SliderRow label="全屏页" value={visualParams.fullPlayerOpacity} min={0} max={1} step={0.05}
+            onChange={(v) => setVisualParams({ fullPlayerOpacity: v })} />
+        </div>
+      </section>
     </div>
   );
 }
