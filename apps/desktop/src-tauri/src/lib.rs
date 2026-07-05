@@ -278,14 +278,14 @@ async fn handle_we_file(
 
     let mut builder = Response::builder()
         .status(status)
-        .header("Content-Type", content_type);
+        .header("Content-Type", content_type)
+        // 始终带 Accept-Ranges:浏览器首探若走 200,带上此头能让它更早发后续 Range 请求
+        .header("Accept-Ranges", "bytes");
     if status == 206 {
-        builder = builder
-            .header(
-                "Content-Range",
-                format!("bytes {}-{}/{}", start, end, total),
-            )
-            .header("Accept-Ranges", "bytes");
+        builder = builder.header(
+            "Content-Range",
+            format!("bytes {}-{}/{}", start, end, total),
+        );
     }
     builder = builder
         .header("Content-Length", len.to_string())
