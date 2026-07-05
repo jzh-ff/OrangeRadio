@@ -1126,6 +1126,71 @@ fn fnv_hash(s: &str) -> u64 {
     h
 }
 
+/// 远端封面代理下载到本地（绕开浏览器 CORS，驱动 cinema 模式 CoverParticles）
+///
+/// 输入是网易云/QQ 返回的封面 URL（不带 CORS 头），下载到
+/// `.orangeradio/covers/<fnv(url)>.jpg` 后返回本地路径，前端用 `convertFileSrc` 喂给 WebView。
+///
+/// 命中缓存（URL 不变）秒返，避免重复下载。
+/// 失败返回 Err，前端 fallback 到 hasCover=false（粒子层用默认色渐变）。
+#[tauri::command]
+pub async fn cover_proxy(url: String) -> Result<String, String> {
+    use std::path::PathBuf;
+
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("仅支持 http(s) URL: {url}"));
+    }
+
+    let cache_dir = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".orangeradio")
+        .join("covers");
+    let _ = std::fs::create_dir_all(&cache_dir);
+
+    let key = fnv_hash(&url);
+    // 用 URL 后缀推断扩展名（默认 jpg）
+    let ext = std::path::Path::new(&url)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .filter(|s| matches!(s.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif"))
+        .unwrap_or_else(|| "jpg".to_string());
+    let cache_file = cache_dir.join(format!("{key}.{ext}"));
+
+    // 命中缓存直接返回
+    if cache_file.is_file() {
+        return Ok(cache_file.to_string_lossy().into_owned());
+    }
+
+    // 下载（带 UA + Referer，部分 CDN 拦截裸请求）
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 OrangeRadio")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("构建 HTTP 客户端失败: {e}"))?;
+    let resp = client
+        .get(&url)
+        .header("Referer", "https://music.163.com/")
+        .send()
+        .await
+        .map_err(|e| format!("下载封面失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("封面 HTTP {}: {}", resp.status(), url));
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取封面字节失败: {e}"))?;
+    std::fs::write(&cache_file, &bytes).map_err(|e| format!("写封面缓存失败: {e}"))?;
+    tracing::info!(
+        "封面已下载: {} ({} bytes) → {}",
+        url,
+        bytes.len(),
+        cache_file.display()
+    );
+    Ok(cache_file.to_string_lossy().into_owned())
+}
+
 // ===== Hue 灯光联动（v0.8 MVP） =====
 
 /// 发现局域网内的 Hue Bridge（nupnp）
@@ -1573,6 +1638,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             get_user_profile,
             recommend_next,
             analyze_beatmap,
+            cover_proxy,
             hue_discover,
             hue_pair,
             hue_set_state,
