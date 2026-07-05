@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../stores/playerStore";
 import { useSearchStore } from "../stores/searchStore";
-import { getCoverUrl } from "../features/player/useCover";
+import { getCoverUrl, DEFAULT_COVER } from "../features/player/useCover";
+import { engineRef } from "../App";
+import { SpectrumPulse } from "./SpectrumPulse";
 import "../styles/sidebar.css";
 
 interface UserPlaylist {
@@ -14,7 +16,7 @@ interface UserPlaylist {
 
 type SubView =
   | "home" | "library" | "wallpaper" | "radio" | "netease"
-  | "podcast" | "qqmusic" | "spotify";
+  | "podcast" | "qqmusic" | "spotify" | "gequbao";
 
 interface MenuItem {
   label: string;
@@ -22,6 +24,8 @@ interface MenuItem {
   sub?: SubView;
   status?: string;
   disabled?: boolean;
+  /** 特殊动作（非页面跳转） */
+  action?: "recommend" | "understand_you";
 }
 
 const PRIMARY: { key: "player" | "studio"; label: string; kicker: string }[] = [
@@ -39,20 +43,26 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
     ],
   },
   {
+    title: "智能",
+    items: [
+      { label: "AI 推荐", icon: "AI", status: "新", sub: "home", action: "recommend" },
+      { label: "懂你模式", icon: "YOU", status: "🧠", sub: "home", action: "understand_you" },
+    ],
+  },
+  {
     title: "音源",
     items: [
       { label: "网络电台", icon: "RAD", sub: "radio" },
       { label: "网易云音乐", icon: "NE", sub: "netease", status: "Beta" },
       { label: "QQ 音乐", icon: "QQ", sub: "qqmusic", status: "Beta" },
       { label: "Spotify", icon: "SP", sub: "spotify", status: "30s" },
+      { label: "歌曲宝", icon: "GQB", sub: "gequbao", status: "Beta" },
       { label: "播客", icon: "POD", sub: "podcast" },
     ],
   },
   {
     title: "即将推出",
     items: [
-      { label: "AI 推荐", icon: "AI", status: "v0.5", disabled: true },
-      { label: "懂你模式", icon: "YOU", status: "v0.5", disabled: true },
       { label: "一起听", icon: "SYNC", status: "v0.7", disabled: true },
     ],
   },
@@ -61,6 +71,7 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
 export function Sidebar() {
   const view = usePlayerStore((s) => s.view);
   const subView = usePlayerStore((s) => s.subView);
+  const smartAction = usePlayerStore((s) => s.smartAction);
   const setView = usePlayerStore((s) => s.setView);
   const setSubView = usePlayerStore((s) => s.setSubView);
   const currentPlaylistId = usePlayerStore((s) => s.currentPlaylistId);
@@ -90,6 +101,39 @@ export function Sidebar() {
     return () => clearInterval(t);
   }, []);
 
+  const onItemAction = (item: MenuItem) => {
+    if (item.disabled) return;
+    if (item.action === "understand_you") {
+      // 懂你模式：切播放模式 + 跳首页（下一首自动走 AI 推荐选歌）
+      usePlayerStore.getState().setSmartAction("understand_you");
+      usePlayerStore.getState().setMode("understand_you");
+      setView("player");
+      setSubView("home");
+      return;
+    }
+    if (item.action === "recommend") {
+      // AI 推荐：拉一批推荐队列并立即播放
+      usePlayerStore.getState().setSmartAction("recommend");
+      setView("player");
+      setSubView("home");
+      invoke<unknown[]>("recommend_next", { limit: 10 })
+        .then((list) => {
+          const tracks = list as import("../stores/libraryStore").Track[];
+          if (tracks.length) {
+            usePlayerStore.getState().setQueue(tracks);
+            void engineRef.playTrack(tracks[0], 0);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+    // 普通菜单项：清除智能动作激活态,再跳子页面
+    usePlayerStore.getState().setSmartAction(null);
+    if (item.sub) {
+      setSubView(item.sub);
+    }
+  };
+
   const openPlaylist = (id: string) => {
     usePlayerStore.setState({ currentPlaylistId: id });
     setSubView("user_playlist");
@@ -114,15 +158,7 @@ export function Sidebar() {
       className={`sidebar ${isPlaying ? "sidebar--live" : ""}`}
       style={{ "--ui-opacity": sidebarOpacity } as React.CSSProperties}
     >
-      <div className="sidebar__rail" aria-hidden />
-
-      <div className="sidebar__logo">
-        <span className="sidebar__logo-mark">OR</span>
-        <span className="sidebar__logo-copy">
-          <span className="sidebar__logo-title">OrangeRadio</span>
-          <span className="sidebar__logo-tag">private wave console</span>
-        </span>
-      </div>
+      <SpectrumPulse />
 
       <div className="sb-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="sb-search__icon" aria-hidden>
@@ -164,17 +200,17 @@ export function Sidebar() {
           <div key={section.title} className="sidebar__section">
             <div className="sidebar__section-title">{section.title}</div>
             {section.items.map((item) => {
-              const active = !!item.sub && view === "player" && subView === item.sub;
+              // 智能动作项用 smartAction 判活,避免与"首页"等共享 subView 的项联动
+              const active = !!item.action
+                ? smartAction === item.action
+                : !!item.sub && view === "player" && subView === item.sub;
               return (
                 <button
                   key={item.label}
                   type="button"
                   className={`sb-item ${active ? "sb-item--active" : ""} ${item.disabled ? "sb-item--disabled" : ""}`}
                   disabled={item.disabled}
-                  onClick={() => {
-                    if (item.disabled || !item.sub) return;
-                    setSubView(item.sub);
-                  }}
+                  onClick={() => onItemAction(item)}
                 >
                   <span className="sb-item__icon">{item.icon}</span>
                   <span className="sb-item__label">{item.label}</span>
@@ -213,7 +249,7 @@ export function Sidebar() {
           title="打开播放详情"
         >
           <div className="sidebar__now-cover">
-            {cover ? <img src={cover} alt="" /> : <span>OR</span>}
+            {cover ? <img src={cover} alt="" /> : <img src={DEFAULT_COVER} alt="" />}
           </div>
           <div className="sidebar__now-copy">
             <span className="sidebar__now-title">{currentTrack.meta.title}</span>

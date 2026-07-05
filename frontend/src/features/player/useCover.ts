@@ -2,6 +2,14 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Track } from "../../stores/libraryStore";
 
 /**
+ * 默认专辑封面（黑胶唱片图）
+ *
+ * 当 track 无封面（artwork 缺失）时统一使用此图，
+ * 替代早期的 "OR" 文字占位。来自 apps/desktop/src-tauri/icons/黑胶.png。
+ */
+export const DEFAULT_COVER = "/vinyl.png";
+
+/**
  * 封面 URL 解析工具
  *
  * 根据 track.meta.artwork.source.kind 分支：

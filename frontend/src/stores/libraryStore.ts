@@ -45,11 +45,18 @@ interface LibraryState {
   tracks: Track[];
   loading: boolean;
   searchKeyword: string;
+  /** 分页状态（本地库大列表懒加载） */
+  page: number;
+  hasMore: boolean;
+  /** 当前是否在搜索（搜索时不分页，搜索结果一次性返回但虚拟化已覆盖渲染） */
+  searching: boolean;
 
   setLoading: (b: boolean) => void;
   setSearchKeyword: (k: string) => void;
   scanLocal: () => Promise<number>;
   loadTracks: () => Promise<void>;
+  /** 加载本地库下一页（追加，用于无限滚动） */
+  loadMore: () => Promise<void>;
   doSearch: () => Promise<void>;
 }
 
@@ -57,6 +64,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   tracks: [],
   loading: false,
   searchKeyword: "",
+  page: 1,
+  hasMore: false,
+  searching: false,
 
   setLoading: (loading) => set({ loading }),
   setSearchKeyword: (searchKeyword) => set({ searchKeyword }),
@@ -82,16 +92,47 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   loadTracks: async () => {
-    const tracks = await invoke<Track[]>("library_tracks");
-    set({ tracks });
-    // 同步队列到播放器 store
+    // 首次加载第一页（200 条），标记 hasMore 供无限滚动
+    const PAGE_SIZE = 200;
+    const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE });
+    set({ tracks, page: 1, hasMore: tracks.length === PAGE_SIZE, searching: false });
     usePlayerStore.getState().setQueue(tracks);
+  },
+
+  loadMore: async () => {
+    const { loading, hasMore, searching, page, tracks } = get();
+    if (loading || !hasMore || searching) return;
+    const PAGE_SIZE = 200;
+    const next = page + 1;
+    const offset = page * PAGE_SIZE;
+    set({ loading: true });
+    try {
+      const list = await invoke<Track[]>("library_tracks", { offset, limit: PAGE_SIZE });
+      if (list.length === 0) {
+        set({ hasMore: false });
+      } else {
+        set({ tracks: [...tracks, ...list], page: next, hasMore: list.length === PAGE_SIZE });
+        usePlayerStore.getState().addManyToQueue(list);
+      }
+    } finally {
+      set({ loading: false });
+    }
   },
 
   doSearch: async () => {
     const kw = get().searchKeyword;
-    const tracks = await invoke<Track[]>("search", { keyword: kw });
-    set({ tracks });
-    usePlayerStore.getState().setQueue(tracks);
+    if (!kw.trim()) {
+      // 空搜索 → 回到全库（重新分页加载）
+      await get().loadTracks();
+      return;
+    }
+    set({ loading: true, searching: true });
+    try {
+      const tracks = await invoke<Track[]>("search", { keyword: kw, page: 1 });
+      set({ tracks, hasMore: false });
+      usePlayerStore.getState().setQueue(tracks);
+    } finally {
+      set({ loading: false });
+    }
   },
 }));

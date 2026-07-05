@@ -9,12 +9,14 @@
 //! - [`spotify`] —— Spotify (官方 API)
 //! - [`web_radio`] —— 网络电台 (RadioBrowser / Icecast / Shoutcast)
 //! - [`podcast`] —— 播客 RSS
+//! - [`gequbao`] —— 歌曲宝（第三方聚合音源，HTML 抓取）
 //!
 //! ## 扩展音源
 //! 用户/社区可通过实现 [`AudioSource`](orange_core::source::AudioSource) trait
 //! 编写自定义音源插件。
 
 pub mod auth_store;
+pub mod gequbao;
 pub mod local;
 pub mod podcast;
 pub mod weapi;
@@ -25,6 +27,7 @@ pub mod qqmusic;
 pub mod spotify;
 
 pub use auth_store::{AuthStore, StoredAuth};
+pub use gequbao::GequbaoSource;
 pub use netease::NeteaseSource;
 pub use podcast::PodcastSource;
 pub use qqmusic::QqMusicSource;

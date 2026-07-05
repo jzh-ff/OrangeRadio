@@ -3,6 +3,8 @@ import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { getCoverUrl } from "./useCover";
 import { TrackActions } from "./TrackActions";
+import { VirtualTrackList } from "../../components/TrackRow";
+import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import type { Track, SourceKind } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
@@ -21,14 +23,18 @@ export function SearchView() {
   const keyword = useSearchStore((s) => s.keyword);
   const results = useSearchStore((s) => s.results);
   const loading = useSearchStore((s) => s.loading);
+  const hasMore = useSearchStore((s) => s.hasMore);
   const doSearch = useSearchStore((s) => s.doSearch);
+  const loadMore = useSearchStore((s) => s.loadMore);
   const setKeyword = useSearchStore((s) => s.setKeyword);
-  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
 
   const handlePlay = (track: Track, index: number) => {
     engineRef.playTrack(track, index);
   };
+
+  const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
 
   // 统计各源结果数
   const sourceCounts = results.reduce((acc, t) => {
@@ -89,33 +95,34 @@ export function SearchView() {
             <span className="col-dur">操作</span>
           </div>
           <div className="lib-rows">
-            {results.map((t, i) => {
-              const active = currentIndex === i;
-              const kind = (t.source_kind || "local") as string;
-              const badge = SOURCE_BADGE[kind] || { label: "?", cls: "q-std" };
-              const cover = getCoverUrl(t);
-              const d = t.meta.duration_secs;
-              return (
-                <div key={t.id + i} className={`lib-row ${active ? "lib-row--active" : ""}`} onDoubleClick={() => handlePlay(t, i)}>
-                  <span className="col-i">
-                    {active && isPlaying ? <span className="eq-bars"><i></i><i></i><i></i></span>
-                      : <><span className="idx">{i + 1}</span>
-                        <svg className="play-hover" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></>}
-                  </span>
-                  <span className="col-title" onClick={() => handlePlay(t, i)}>
-                    {cover && <img src={cover} alt="" className="col-title__cover" loading="lazy" />}
-                    <span className="col-title__txt">{t.meta.title}</span>
-                    <span className={`q-badge ${badge.cls}`}>{badge.label}</span>
-                  </span>
-                  <span className="col-artist">{t.meta.artist}</span>
-                  <span className="col-album">{t.meta.album || "—"}</span>
-                  <span className="col-dur">
-                    {d ? `${Math.floor(d / 60)}:${Math.floor(d % 60).toString().padStart(2, "0")}` : "—"}
-                    <TrackActions track={t} size={14} />
-                  </span>
-                </div>
-              );
-            })}
+            <VirtualTrackList
+              tracks={results}
+              activeId={currentTrack?.id}
+              isPlaying={isPlaying}
+              onPlay={handlePlay}
+              onItemsRendered={onItemsRendered}
+              renderRow={(t, i) => {
+                const kind = (t.source_kind || "local") as string;
+                const badge = SOURCE_BADGE[kind] || { label: "?", cls: "q-std" };
+                const cover = getCoverUrl(t);
+                const d = t.meta.duration_secs;
+                return (
+                  <>
+                    <span className="col-title" onClick={() => handlePlay(t, i)}>
+                      {cover && <img src={cover} alt="" className="col-title__cover" loading="lazy" />}
+                      <span className="col-title__txt">{t.meta.title}</span>
+                      <span className={`q-badge ${badge.cls}`}>{badge.label}</span>
+                    </span>
+                    <span className="col-artist">{t.meta.artist}</span>
+                    <span className="col-album">{t.meta.album || "—"}</span>
+                    <span className="col-dur">
+                      {d ? `${Math.floor(d / 60)}:${Math.floor(d % 60).toString().padStart(2, "0")}` : "—"}
+                      <TrackActions track={t} size={14} />
+                    </span>
+                  </>
+                );
+              }}
+            />
           </div>
         </div>
       ) : loading ? (

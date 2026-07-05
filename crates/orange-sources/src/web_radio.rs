@@ -88,6 +88,8 @@ impl WebRadioSource {
                 ..Default::default()
             },
         );
+        // 显式标记电台来源（前端靠 source_kind 区分电台/单曲队列；否则 Track::new 默认 Local，会导致隔离失效）
+        track.source_kind = SourceKind::WebRadio;
         track.format = match st.codec.to_uppercase().as_str() {
             "MP3" => AudioFormat::Mp3,
             "AAC" => AudioFormat::Aac,
