@@ -124,3 +124,10 @@ export const useWallpaperStore = create<WallpaperState>((set, get) => ({
 
 // 初始化加载（模块导入时触发）
 useWallpaperStore.getState().reload();
+// 启动时若已配置 WE 目录，自动扫描填充 engineEntries（精选推荐用）+ we_roots 白名单
+{
+  const { engineDirs, scanWallpaperEngine } = useWallpaperStore.getState();
+  if (engineDirs.length > 0) {
+    void scanWallpaperEngine();
+  }
+}

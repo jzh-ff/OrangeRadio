@@ -107,3 +107,21 @@
 .wp-card__remove:hover {
   background: rgba(220, 60, 60, 0.85);
 }
+
+/* 精选推荐区（来自 Wallpaper Engine） */
+.wp-featured {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.wp-featured__title {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+.wp-featured__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}

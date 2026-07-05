@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useWallpaperStore } from "../stores/wallpaperStore";
 import { uploadWallpaperPersistent, removeWallpaperFile } from "../lib/wallpaperUpload";
 import { WallpaperEngineGrid } from "./WallpaperEngineGrid";
+import { weFileUrl, weKindLabel, type WallpaperEngineEntry } from "../lib/wallpaperEngine";
+import { toWebviewUrl } from "../lib/webviewUrl";
 import "../styles/wallpaper-picker.css";
 
 /** 壁纸网格选择器（侧边栏壁纸页 + 全屏 VisualConsole 复用） */
@@ -12,6 +14,24 @@ export function WallpaperPicker({ compact = false }: { compact?: boolean }) {
   const addWallpaper = useWallpaperStore((s) => s.addWallpaper);
   const removeWallpaper = useWallpaperStore((s) => s.removeWallpaper);
   const [showEngine, setShowEngine] = useState(false);
+  const engineEntries = useWallpaperStore((s) => s.engineEntries);
+  // 精选推荐：前 4 个可应用的 WE 壁纸，点击即生成 wallpaper 写入壁纸库并设为背景
+  const featured = engineEntries.filter((e) => e.applicable).slice(0, 4);
+  const applyWe = (e: WallpaperEngineEntry) => {
+    const raw = weFileUrl(e.source_dir, e.file);
+    const previewRel = e.preview ?? (e.kind === "picture" ? e.file : null);
+    const id = `we-${e.workshop_id}`;
+    addWallpaper({
+      id,
+      name: e.title,
+      type: e.kind === "video" ? "video" : "image",
+      src: toWebviewUrl(raw),
+      thumbnail: previewRel ? toWebviewUrl(weFileUrl(e.source_dir, previewRel)) : undefined,
+      builtin: false,
+      addedAt: Date.now(),
+    });
+    setWallpaper(id);
+  };
 
   const onUploadClick = async () => {
     try {
@@ -99,6 +119,31 @@ export function WallpaperPicker({ compact = false }: { compact?: boolean }) {
           <span className="wp-card__name">Wallpaper Engine</span>
         </button>
       </div>
+      {featured.length > 0 && (
+        <div className="wp-featured">
+          <div className="wp-featured__title">精选推荐 · Wallpaper Engine</div>
+          <div className="wp-featured__grid">
+            {featured.map((e) => {
+              const previewRel = e.preview ?? (e.kind === "picture" ? e.file : null);
+              const imgSrc = previewRel ? toWebviewUrl(weFileUrl(e.source_dir, previewRel)) : null;
+              return (
+                <button
+                  key={e.workshop_id}
+                  type="button"
+                  className="wp-card"
+                  onClick={() => applyWe(e)}
+                  title={`${e.title} (${weKindLabel(e.kind)})`}
+                >
+                  <div className="wp-card__cover">
+                    {imgSrc ? <img src={imgSrc} alt={e.title} /> : <div className="wp-card__cover--galaxy" />}
+                  </div>
+                  <span className="wp-card__name">{e.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {showEngine && <WallpaperEngineGrid />}
     </div>
   );
