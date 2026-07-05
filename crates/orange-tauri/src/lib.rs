@@ -3,6 +3,7 @@
 //! 将 Rust 核心能力通过 `#[tauri::command]` 暴露给前端 WebView。
 
 pub mod commands;
+pub mod wallpaper_engine;
 
 use orange_ai::AiRecommendationEngine;
 use orange_core::{AuthEventSink, AuthExpiredPayload};
