@@ -101,10 +101,7 @@ impl Default for AppState {
         // 同上：start_health_loop 在 setup 钩子里调
 
         // Spotify：启动恢复要 spawn tokio task，同样放 setup 钩子
-        let spotify = Arc::new(SpotifySource::new(
-            auth_store.clone(),
-            Some(auth_sink_dyn),
-        ));
+        let spotify = Arc::new(SpotifySource::new(auth_store.clone(), Some(auth_sink_dyn)));
 
         // 推荐引擎（懂你模式）：本地画像打分，开箱即用
         let recommender: Arc<dyn orange_core::recommendation::RecommendationEngine> =

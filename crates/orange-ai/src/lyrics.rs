@@ -45,7 +45,11 @@ impl LyricsTranslator {
         lyrics: &str,
         source_lang: &str,
     ) -> orange_core::Result<AnnotatedLyrics> {
-        let lang = if source_lang.is_empty() { "外文" } else { source_lang };
+        let lang = if source_lang.is_empty() {
+            "外文"
+        } else {
+            source_lang
+        };
         let prompt = format!(
             "你是专业的音乐歌词译注 AI。把下面{lang}歌词逐行翻译成中文，\
              并对含有典故 / 彩蛋 / 文化背景的行加一句简短注解（没有就留空）。\

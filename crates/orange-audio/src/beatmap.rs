@@ -50,7 +50,11 @@ pub fn analyze(audio: &DecodedAudio) -> Beatmap {
     let sr = audio.sample_rate as f32;
     let samples = &audio.samples;
     if samples.is_empty() {
-        return Beatmap { hits: vec![], bpm: 120.0, duration: 0.0 };
+        return Beatmap {
+            hits: vec![],
+            bpm: 120.0,
+            duration: 0.0,
+        };
     }
 
     // 1. lowpass biquad（200Hz，Q=0.707 近 Butterworth，取 kick/bass）

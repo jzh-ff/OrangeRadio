@@ -210,10 +210,8 @@ mod tests {
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let id = SEQ.fetch_add(1, Ordering::Relaxed);
         let pid = std::process::id();
-        let dir = std::env::temp_dir().join(format!(
-            "orangeradio-auth-test-{}-{}-{}",
-            label, pid, id
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("orangeradio-auth-test-{}-{}-{}", label, pid, id));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -271,7 +269,10 @@ mod tests {
         })
         .await
         .unwrap();
-        let auth = store2.get("qqmusic").await.expect("reopen get returned None");
+        let auth = store2
+            .get("qqmusic")
+            .await
+            .expect("reopen get returned None");
         assert_eq!(auth.cookie, "uin=o123456789; qqmusic_key=K1");
         assert_eq!(auth.source, "qqmusic");
 
@@ -400,7 +401,10 @@ mod tests {
         })
         .await
         .unwrap();
-        store.save("netease", "MUSIC_U=sync_test".into()).await.unwrap();
+        store
+            .save("netease", "MUSIC_U=sync_test".into())
+            .await
+            .unwrap();
         // get_sync 本身在 async 上下文里调也不该 panic（虽然不推荐）
         // —— 但它在 async 测试里调用 blocking_read 会触发同样问题，
         // 所以这里只断言 cache 已经填充即可
@@ -422,9 +426,7 @@ mod tests {
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
         let cipher = Aes256Gcm::new(key);
         let nonce = Nonce::from_slice(NONCE);
-        let ciphertext = cipher
-            .encrypt(nonce, plaintext.as_ref())
-            .expect("encrypt");
+        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref()).expect("encrypt");
         // 用错的 key 解密
         let wrong_key: [u8; 32] = [0x99; 32];
         let wrong_key = Key::<Aes256Gcm>::from_slice(&wrong_key);

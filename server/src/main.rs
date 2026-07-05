@@ -46,7 +46,9 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .expect("绑定端口失败");
-    tracing::info!("🍊 OrangeRadio 社交后端已启动: http://localhost:{port}（一起听 WS: /ws/room/<id>）");
+    tracing::info!(
+        "🍊 OrangeRadio 社交后端已启动: http://localhost:{port}（一起听 WS: /ws/room/<id>）"
+    );
     axum::serve(listener, app).await.expect("服务器错误");
 }
 

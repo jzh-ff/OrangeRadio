@@ -48,7 +48,11 @@ impl MiniMaxProvider {
     }
 
     /// 下载远程音频到本地缓存目录，返回本地路径
-    pub async fn download_audio(&self, url: &str, dest: &std::path::Path) -> orange_core::Result<String> {
+    pub async fn download_audio(
+        &self,
+        url: &str,
+        dest: &std::path::Path,
+    ) -> orange_core::Result<String> {
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| orange_core::CoreError::AiService(format!("创建缓存目录失败: {e}")))?;
@@ -87,10 +91,7 @@ impl AudioAIProvider for MiniMaxProvider {
         }
     }
 
-    async fn generate(
-        &self,
-        request: &GenerationRequest,
-    ) -> orange_core::Result<GenerationResult> {
+    async fn generate(&self, request: &GenerationRequest) -> orange_core::Result<GenerationResult> {
         let url = format!(
             "{}/v1/music_generation",
             self.api_base.trim_end_matches('/')

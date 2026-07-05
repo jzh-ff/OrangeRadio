@@ -143,8 +143,9 @@ impl LlmProvider for MinimaxProvider {
                 &text[..text.len().min(300)]
             )));
         }
-        let v: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|e| orange_core::CoreError::AiService(format!("解析 MiniMax 响应失败: {e}")))?;
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            orange_core::CoreError::AiService(format!("解析 MiniMax 响应失败: {e}"))
+        })?;
         // anthropic 格式：{content: [{type:"text", text:"..."}], usage:{...}}
         let out = v["content"]
             .as_array()
@@ -161,6 +162,9 @@ impl LlmProvider for MinimaxProvider {
                 &text[..text.len().min(200)]
             )));
         }
-        Ok(LlmResponse { text: out, usage: None })
+        Ok(LlmResponse {
+            text: out,
+            usage: None,
+        })
     }
 }

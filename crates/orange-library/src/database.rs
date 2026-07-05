@@ -398,9 +398,9 @@ impl LibraryDb {
         let Ok(conn) = Connection::open(path) else {
             return Vec::new();
         };
-        let Ok(mut stmt) = conn.prepare(
-            "SELECT DISTINCT track_id FROM play_history ORDER BY played_at DESC LIMIT ?1",
-        ) else {
+        let Ok(mut stmt) = conn
+            .prepare("SELECT DISTINCT track_id FROM play_history ORDER BY played_at DESC LIMIT ?1")
+        else {
             return Vec::new();
         };
         let rows = stmt.query_map(params![limit as i64], |r| r.get::<_, String>(0));
@@ -411,10 +411,7 @@ impl LibraryDb {
     }
 
     /// 最近的播放反馈（skipped/liked/completed 的 track_id），驱动懂你模式实时调整
-    pub fn recent_feedback(
-        &self,
-        limit: usize,
-    ) -> orange_core::recommendation::ListenFeedback {
+    pub fn recent_feedback(&self, limit: usize) -> orange_core::recommendation::ListenFeedback {
         let mut fb = orange_core::recommendation::ListenFeedback::default();
         let path = match &self.db_path {
             Some(p) => p.as_ref(),
@@ -510,20 +507,28 @@ impl LibraryDb {
             if let Some(t) = tracks_map.get(track_id) {
                 let artist = t.meta.artist.trim();
                 if !artist.is_empty() {
-                    let s = artist_stat
-                        .entry(artist.to_string())
-                        .or_insert((0.0, 0, 0));
+                    let s = artist_stat.entry(artist.to_string()).or_insert((0.0, 0, 0));
                     s.0 += weight;
-                    if *completed { s.1 += 1; }
-                    if *skipped { s.2 += 1; }
+                    if *completed {
+                        s.1 += 1;
+                    }
+                    if *skipped {
+                        s.2 += 1;
+                    }
                 }
                 for g in &t.meta.genre {
                     let g = g.trim();
-                    if g.is_empty() { continue; }
+                    if g.is_empty() {
+                        continue;
+                    }
                     let s = genre_stat.entry(g.to_string()).or_insert((0.0, 0, 0));
                     s.0 += weight;
-                    if *completed { s.1 += 1; }
-                    if *skipped { s.2 += 1; }
+                    if *completed {
+                        s.1 += 1;
+                    }
+                    if *skipped {
+                        s.2 += 1;
+                    }
                 }
             }
         }
@@ -570,13 +575,17 @@ fn collect_patterns(
     for stat in [artist, genre] {
         for (k, (_, c, sk)) in stat {
             let total = c + sk;
-            if total < 2 { continue; }
+            if total < 2 {
+                continue;
+            }
             let rate = if skip {
                 *sk as f32 / total as f32
             } else {
                 *c as f32 / total as f32
             };
-            if rate > 0.5 { out.push(k.clone()); }
+            if rate > 0.5 {
+                out.push(k.clone());
+            }
         }
     }
     out.truncate(50);
