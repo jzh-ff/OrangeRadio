@@ -46,11 +46,14 @@ export function WallpaperEngineGrid() {
       return;
     }
     const raw = weFileUrl(e.source_dir, e.file);
+    // 预览图:优先 preview 字段;picture 类型回退用 file 本身。让 WallpaperPicker 卡片有缩略图。
+    const previewRel = e.preview ?? (e.kind === "picture" ? e.file : null);
     const w: Wallpaper = {
       id: `we-${e.workshop_id}`,
       name: e.title,
       type: e.kind === "video" ? "video" : "image",
       src: toWebviewUrl(raw),
+      thumbnail: previewRel ? toWebviewUrl(weFileUrl(e.source_dir, previewRel)) : undefined,
       builtin: false,
       addedAt: Date.now(),
     };
