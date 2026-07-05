@@ -7,13 +7,15 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { usePlayerStore } from "../stores/playerStore";
 
 /**
- * 共享 Bloom 后期处理组件
+ * 共享 Bloom 后期处理组件（仅 BeatParticles preset 用）
  *
- * 接管 R3F 默认渲染，注入 EffectComposer + UnrealBloomPass。
- * 节拍 hit 时 bloom strength 脉冲增强（对标 Mineradio）。
- * 由 BeatParticles / CoverParticles 共用，保持视觉一致。
+ * cinema 模式的 CoverParticles 已经自带"双层粒子 + bloomKeep"局部辉光，不再需要全屏 bloom。
+ * 本组件现在只为 BeatParticles（球面散点预设）提供全屏 bloom 兜底。
+ *
+ * bloomScale prop：粒子层 bloom 强度系数（默认 0.5，对比之前的 1.1 拉低一半），
+ *   配合 store.visualParams.bloomStrength 由用户调。BeatParticles 场景下不再"糊一切"。
  */
-export function BloomLayer() {
+export function BloomLayer({ bloomScale = 0.5 }: { bloomScale?: number }) {
   const { gl, scene, camera, size } = useThree();
   const composerRef = useRef<EffectComposer | null>(null);
   const bloomRef = useRef<UnrealBloomPass | null>(null);
@@ -23,9 +25,9 @@ export function BloomLayer() {
     composer.addPass(new RenderPass(scene, camera));
     const bloom = new UnrealBloomPass(
       new THREE.Vector2(size.width, size.height),
-      1.1, // strength（每帧动态调整）
-      0.6, // radius
-      0.1  // threshold
+      1.1 * bloomScale, // strength 基线（每帧动态调整）
+      0.5,              // radius（0.6 → 0.5，更收敛）
+      0.18              // threshold（0.1 → 0.18，只让真正高亮的像素 bloom）
     );
     composer.addPass(bloom);
     composerRef.current = composer;
@@ -35,7 +37,7 @@ export function BloomLayer() {
       composerRef.current = null;
       bloomRef.current = null;
     };
-  }, [gl, scene, camera]);
+  }, [gl, scene, camera, bloomScale]);
 
   useEffect(() => {
     if (composerRef.current) composerRef.current.setSize(size.width, size.height);
@@ -46,7 +48,9 @@ export function BloomLayer() {
     const beat = usePlayerStore.getState().beat;
     const { bloomStrength } = usePlayerStore.getState().visualParams;
     if (bloomRef.current) {
-      bloomRef.current.strength = bloomStrength + beat.intensity * 1.5;
+      // 节拍 hit 时 bloom 脉冲（强度按 bloomScale 收敛）
+      bloomRef.current.strength =
+        bloomStrength * bloomScale + beat.intensity * 0.6 * bloomScale;
     }
     composerRef.current?.render();
   }, 1); // priority=1 接管渲染

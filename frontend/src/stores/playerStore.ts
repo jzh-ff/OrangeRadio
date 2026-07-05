@@ -44,6 +44,58 @@ export interface BeatHit {
   combo: BeatCombo;
 }
 
+/** BeatCam 模式：deep=低频/kick；body=中频/人声；snap=高频/镲片（对标 Mineradio） */
+export type BeatCamMode = "deep" | "body" | "snap";
+
+/**
+ * 节拍相机事件（对标 Mineradio scheduleBeatCamera 入队的事件对象，index.html 4868-4888）
+ *
+ * 由 scheduleBeatCamera 在节拍命中时构造，按 audio.currentTime 推进 ADSR 包络。
+ * updateBeatCamera 每帧消费这些事件，输出 5 通道 beatCam 状态。
+ */
+export interface BeatCamEvent {
+  /** 事件在 audio.currentTime 时间轴上的开始时刻（= hitTime - attack） */
+  start: number;
+  /** 节拍命中时刻 */
+  hit: number;
+  /** 整体冲击强度 0~1 */
+  amp: number;
+  /** ADSR 三段长度（秒） */
+  attack: number;
+  hold: number;
+  release: number;
+  /** 各方向通道幅值系数 */
+  zoomAmp: number;
+  thetaAmp: number;
+  phiAmp: number;
+  rollAmp: number;
+  /** 音色模式 + 角色（驱动应用层分支） */
+  mode: BeatCamMode;
+  combo: BeatCombo;
+  /** 相位偏移（用于决定 roll 的正负方向，制造左右摇） */
+  phase: number;
+  /** 归一化音色分量（应用层辅助） */
+  low: number;
+  body: number;
+  snap: number;
+  /** 综合"质量感" 0~1（低频为主） */
+  mass: number;
+}
+
+/** BeatCam 当前帧输出（5 通道，updateBeatCamera 写入，CinematicCamera 读取） */
+export interface BeatCamState {
+  /** 总冲击（驱动 FOV punch） */
+  punch: number;
+  /** 水平摇（yaw） */
+  thetaKick: number;
+  /** 俯仰摇（pitch） */
+  phiKick: number;
+  /** 径向推近（沿相机前向） */
+  radiusKick: number;
+  /** 滚动（roll） */
+  rollKick: number;
+}
+
 /** 视觉参数（可由 VisualConsole 调节，持久化到 localStorage；对标 MineRadio fx 对象） */
 export type ColorTheme = "orange" | "purple" | "ocean" | "aurora" | "auto";
 
@@ -176,6 +228,10 @@ interface PlayerState {
   beatmap: BeatHit[] | null;
   /** 图谱游标：当前已触发的 hit 索引 */
   beatmapIndex: number;
+  /** BeatCam 事件队列（scheduleBeatCamera 入队 → updateBeatCamera 消费） */
+  beatCamEvents: BeatCamEvent[];
+  /** BeatCam 当前帧 5 通道状态（punch + 4 个方向 kick），驱动 CinematicCamera */
+  beatCam: BeatCamState;
   /** 视觉参数（cinema 模式用） */
   visualParams: VisualParams;
   /** 当前封面主色 [r,g,b] 0~255，null 表示未提取/失败（auto 主题退回橙色默认） */
@@ -223,6 +279,12 @@ interface PlayerState {
   setBeat: (b: Partial<BeatState>) => void;
   /** 设置节拍图谱（null 清空 → 退化用实时检测） */
   setBeatmap: (hits: BeatHit[] | null) => void;
+  /** BeatCam 入队一条事件（scheduleBeatCamera 调用） */
+  pushBeatCamEvent: (ev: BeatCamEvent) => void;
+  /** 清空 BeatCam 事件队列（切歌/暂停时调） */
+  clearBeatCamEvents: () => void;
+  /** 写入 BeatCam 5 通道当前帧（updateBeatCamera 每帧调用） */
+  setBeatCamState: (s: BeatCamState) => void;
   setVisualParams: (p: Partial<VisualParams>) => void;
   setDominantColor: (c: [number, number, number] | null) => void;
   setFullPlayer: (b: boolean) => void;
@@ -253,6 +315,8 @@ export const usePlayerStore = create<PlayerState>()(
   beat: { isBeat: false, bass: 0, mid: 0, treble: 0, intensity: 0, currentCombo: null },
   beatmap: null,
   beatmapIndex: 0,
+  beatCamEvents: [],
+  beatCam: { punch: 0, thetaKick: 0, phiKick: 0, radiusKick: 0, rollKick: 0 },
   visualParams: loadVisualParams(),
   dominantColor: null,
   fullPlayerOpen: false,
@@ -298,7 +362,17 @@ export const usePlayerStore = create<PlayerState>()(
       beatmap,
       beatmapIndex: 0,
       beat: { isBeat: false, bass: 0, mid: 0, treble: 0, intensity: 0, currentCombo: null },
+      beatCamEvents: [],           // 切图谱时清队列
+      beatCam: { punch: 0, thetaKick: 0, phiKick: 0, radiusKick: 0, rollKick: 0 },
     }),
+  pushBeatCamEvent: (ev) => set((s) => {
+    // 队列上限 12（对标 Mineradio maxEvents = 12，4890 行）
+    const next = [...s.beatCamEvents, ev];
+    if (next.length > 12) next.splice(0, next.length - 12);
+    return { beatCamEvents: next };
+  }),
+  clearBeatCamEvents: () => set({ beatCamEvents: [], beatCam: { punch: 0, thetaKick: 0, phiKick: 0, radiusKick: 0, rollKick: 0 } }),
+  setBeatCamState: (beatCam) => set({ beatCam }),
   setVisualParams: (p) => {
     const next = { ...get().visualParams, ...p };
     set({ visualParams: next });

@@ -1,9 +1,14 @@
 import { useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
+import { writeSpectrum, writeBeat, readBeat } from "../../stores/spectrumBus";
 import type { Track } from "../../stores/libraryStore";
 import { recordPlayback } from "../../lib/playback";
 import { toWebviewUrl } from "../../lib/webviewUrl";
+import { scheduleBeatCameraFromHit, updateBeatCam, smoothBeatCam } from "../../lib/beatCam";
+
+// 模拟频谱复用缓冲（避免每帧 new Array/Uint8Array 造成 GC 压力）
+const SIM_SPECTRUM_BUF = new Uint8Array(64);
 
 /**
  * Web Audio 播放引擎（v4：真实频谱）
@@ -70,7 +75,7 @@ export function useAudioEngine(autoNext?: () => void) {
       const { beatmap, beatmapIndex } = usePlayerStore.getState();
       if (beatmap && beatmap.length > 0 && audio) {
         const t = audio.currentTime;
-        const cur = usePlayerStore.getState().beat;
+        const cur = readBeat();
         let intensity = cur.intensity * 0.92; // 命中后指数衰减
         let bass = cur.bass;
         let body = cur.mid;
@@ -86,6 +91,9 @@ export function useAudioEngine(autoNext?: () => void) {
           treble = hit.snap;
           combo = hit.combo;
           isBeat = true;
+          // ★ 同步入队 BeatCam 事件（驱动电影运镜 ADSR 包络）
+          const ev = scheduleBeatCameraFromHit(hit, t);
+          usePlayerStore.getState().pushBeatCamEvent(ev);
           idx++;
         }
         if (
@@ -93,33 +101,67 @@ export function useAudioEngine(autoNext?: () => void) {
           isBeat !== cur.isBeat ||
           Math.abs(intensity - cur.intensity) > 0.01
         ) {
-          usePlayerStore.setState({
-            beatmapIndex: idx,
-            beat: { isBeat, bass, mid: body, treble, intensity, currentCombo: combo },
-          });
+          // beatmapIndex 仍写 store（低频：仅在 hit 推进时变化，供回放游标判别）；
+          // beat 高频快照走 bus，避免每帧 setState
+          usePlayerStore.setState({ beatmapIndex: idx });
+          writeBeat({ isBeat, bass, mid: body, treble, intensity, currentCombo: combo });
         }
       }
       const analyser = analyserRef.current;
       if (analyser && graphOkRef.current) {
-        // 真实频谱
+        // 真实频谱：复用缓冲区，直接写 bus（不走 store，零分配）
         const data = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(data);
-        usePlayerStore.setState({ spectrum: Array.from(data) });
+        writeSpectrum(data);
       } else {
-        // 回退：模拟频谱
+        // 回退：模拟频谱（写入复用缓冲，不 setState）
         const audio = audioRef.current;
         if (audio && !audio.paused) {
           const t = audio.currentTime;
-          const bands = new Array(64);
-          for (let i = 0; i < 64; i++) {
-            const freq = i / 64;
+          for (let i = 0; i < SIM_SPECTRUM_BUF.length; i++) {
+            const freq = i / SIM_SPECTRUM_BUF.length;
             const base = (1 - freq) * 180 + 30;
             const beat = Math.sin(t * (2 + freq * 8) + i * 0.5) * 40;
             const noise = Math.random() * 30;
-            bands[i] = Math.max(0, Math.min(255, base + beat + noise));
+            SIM_SPECTRUM_BUF[i] = Math.max(0, Math.min(255, base + beat + noise));
           }
-          usePlayerStore.setState({ spectrum: bands });
+          writeSpectrum(SIM_SPECTRUM_BUF);
         }
+      }
+
+      // ★ BeatCam 推进：每帧遍历事件队列算 ADSR → 平滑 → 写 5 通道 state
+      //    （无 beatmap 时事件队列为空，state 全 0；CinematicCamera 自然不抖）
+      const beatCamSt = usePlayerStore.getState();
+      const audioForBeatCam = audioRef.current;
+      const audioTimeForBeatCam = audioForBeatCam ? audioForBeatCam.currentTime : 0;
+      const paused = audioForBeatCam?.paused ?? true;
+      const { newEvents, state: rawTarget } = updateBeatCam(beatCamSt.beatCamEvents, audioTimeForBeatCam);
+      const prevSt = beatCamSt.beatCam;
+      let smoothed: typeof prevSt;
+      if (paused) {
+        // 暂停时快速归零（对标 Mineradio 4896-4900：punch *= 0.08^dt）
+        smoothed = {
+          punch: prevSt.punch * 0.08,
+          thetaKick: prevSt.thetaKick * 0.05,
+          phiKick: prevSt.phiKick * 0.05,
+          radiusKick: prevSt.radiusKick * 0.05,
+          rollKick: prevSt.rollKick * 0.05,
+        };
+      } else {
+        smoothed = smoothBeatCam(prevSt, rawTarget);
+      }
+      // 仅在变化时写 store（避免每帧触发 React 重渲染）
+      const changed =
+        Math.abs(smoothed.punch - prevSt.punch) > 0.0005 ||
+        Math.abs(smoothed.thetaKick - prevSt.thetaKick) > 0.0005 ||
+        Math.abs(smoothed.phiKick - prevSt.phiKick) > 0.0005 ||
+        Math.abs(smoothed.radiusKick - prevSt.radiusKick) > 0.0005 ||
+        Math.abs(smoothed.rollKick - prevSt.rollKick) > 0.0005;
+      if (changed || newEvents.length !== beatCamSt.beatCamEvents.length) {
+        usePlayerStore.setState({
+          beatCamEvents: newEvents,
+          beatCam: smoothed,
+        });
       }
       rafRef.current = requestAnimationFrame(tick);
     };

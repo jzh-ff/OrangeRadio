@@ -196,6 +196,87 @@
   color: rgba(255, 255, 255, 0.55);
 }
 
+/* ★ 主视觉大字锚点（对标 Mineradio 中央大字"Memory feat.Mika Nakashima - 中島美嘉"） */
+.fp-cinema-hero {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translateX(-50%);
+  z-index: 6;
+  text-align: center;
+  pointer-events: none;
+  width: min(86%, 1100px);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: clamp(14px, 2vw, 28px);
+  flex-wrap: wrap;
+  text-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.55),
+    0 6px 36px rgba(0, 0, 0, 0.85),
+    0 0 64px rgba(0, 0, 0, 0.55);
+  animation: fp-hero-pop 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.fp-cinema-hero__title {
+  font-family: var(--font-display-serif);
+  font-size: clamp(38px, 6.2vw, 84px);
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+.fp-cinema-hero__sep {
+  font-family: var(--font-display-serif);
+  font-size: clamp(24px, 3.5vw, 44px);
+  color: rgba(255, 255, 255, 0.42);
+  font-weight: 300;
+}
+.fp-cinema-hero__artist {
+  font-family: var(--font-display-serif);
+  font-size: clamp(22px, 3vw, 38px);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: -0.015em;
+  font-style: italic;
+}
+@keyframes fp-hero-pop {
+  from { opacity: 0; transform: translate(-50%, 18px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ★ 数字年表装饰层（对标 Mineradio 下方发光"20051208"） */
+.fp-cinema-year {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: clamp(11px, 0.95vw, 14px);
+  letter-spacing: 0.32em;
+  color: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  text-shadow: 0 0 18px rgba(255, 196, 133, 0.18);
+  animation: fp-year-fade 1.8s ease-out 0.4s both;
+}
+.fp-cinema-year__label {
+  color: rgba(255, 196, 133, 0.78);
+  font-weight: 700;
+}
+.fp-cinema-year__sep { color: rgba(255, 255, 255, 0.32); }
+.fp-cinema-year__num {
+  color: rgba(255, 255, 255, 0.78);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes fp-year-fade {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .fp-cinema-lyrics {
   text-align: center;
   margin-bottom: 120px;
