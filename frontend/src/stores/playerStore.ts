@@ -99,6 +99,15 @@ export interface VisualParams {
   wallpaperScale: number;
   /** 自定义壁纸暗角（0-1） */
   wallpaperDim: number;
+  // ===== 前景组件透明度（壁纸视觉重构）=====
+  /** 侧栏透明度（0-1，调低让全局壁纸透出） */
+  sidebarOpacity: number;
+  /** 底部播放栏透明度 */
+  playerBarOpacity: number;
+  /** 主视图透明度 */
+  mainOpacity: number;
+  /** 全屏播放页透明度（非 cinema tab；略高保歌词可读） */
+  fullPlayerOpacity: number;
 }
 
 /** 全屏播放页布局模式 */
@@ -132,6 +141,10 @@ function loadVisualParams(): VisualParams {
     wallpaperBlur: 8,
     wallpaperScale: 1.05,
     wallpaperDim: 0.3,
+    sidebarOpacity: 0.8,
+    playerBarOpacity: 0.8,
+    mainOpacity: 0.8,
+    fullPlayerOpacity: 0.85,
   };
   try {
     const raw = localStorage.getItem("orangeradio_visual_params");
