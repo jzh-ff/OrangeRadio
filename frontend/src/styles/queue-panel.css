@@ -109,11 +109,40 @@
 
 .qp-item__indicator { width: 24px; text-align: center; flex-shrink: 0; }
 .qp-item__index { font-size: 11px; color: rgba(255, 255, 255, 0.25); }
-.qp-item__remove {
-  width: 20px; height: 20px; border: none; background: transparent;
-  color: rgba(255, 255, 255, 0.25); cursor: pointer; font-size: 12px;
-  border-radius: 6px; flex-shrink: 0;
-  opacity: 0; transition: opacity 0.15s ease, color 0.15s ease;
+
+/* 行操作区（下一首播放 + 删除） */
+.qp-item__actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
 }
-.qp-item:hover .qp-item__remove { opacity: 1; }
-.qp-item__remove:hover { color: #ff6b6b; background: rgba(255, 80, 80, 0.1); }
+.qp-item__btn {
+  width: 26px; height: 26px;
+  border: none; background: transparent;
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s ease;
+}
+.qp-item__btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.qp-item__playnext:hover { color: var(--orange-2, #ff9d45); background: rgba(255, 107, 26, 0.12); }
+.qp-item__remove:hover { color: #ff6b6b; background: rgba(255, 80, 80, 0.12); }
+
+/* 头部「清空」按钮 */
+.qp-clear {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.qp-clear:hover { color: #ff6b6b; border-color: rgba(255, 80, 80, 0.4); background: rgba(255, 80, 80, 0.08); }
+.qp-clear--section {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 10px;
+}

@@ -43,6 +43,11 @@ export function QueuePanel() {
         usePlayerStore.setState({ radioTracks: rt });
       }
     };
+    const playNext = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      // 单曲队列才支持「下一首播放」（电台是流，无此语义）
+      if (queue === "tracks") usePlayerStore.getState().insertNext(t);
+    };
     return (
       <div
         className={`qp-item ${active ? "qp-item--active" : ""}`}
@@ -66,7 +71,23 @@ export function QueuePanel() {
             <span className="qp-item__index">{i + 1}</span>
           )}
         </span>
-        <button className="qp-item__remove" onClick={remove} title="从队列移除">✕</button>
+        <div className="qp-item__actions">
+          {/* 下一首播放（仅单曲队列，电台流无此语义） */}
+          {queue === "tracks" && (
+            <button className="qp-item__btn qp-item__playnext" onClick={playNext} title="下一首播放">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 4l10 8-10 8V4z" fill="currentColor" />
+                <path d="M19 5v14" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
+          {/* 删除按钮（始终可见，hover 高亮） */}
+          <button className="qp-item__btn qp-item__remove" onClick={remove} title="从队列移除">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
       </div>
     );
   };
@@ -84,6 +105,9 @@ export function QueuePanel() {
     </div>
   );
 
+  const clearTracks = () => usePlayerStore.getState().clearQueue();
+  const clearRadio = () => usePlayerStore.setState({ radioTracks: [], radioIndex: -1 });
+
   const isEmpty = tracks.length === 0 && radioTracks.length === 0;
 
   return (
@@ -93,6 +117,9 @@ export function QueuePanel() {
         <div className="qp-head">
           <span className="qp-title">播放队列</span>
           <span className="qp-count">{tracks.length} 首</span>
+          {tracks.length > 0 && (
+            <button className="qp-clear" onClick={clearTracks} title="清空单曲队列">清空</button>
+          )}
           <button className="qp-close" onClick={setOpen}>✕</button>
         </div>
         <div className="qp-list">
@@ -110,7 +137,10 @@ export function QueuePanel() {
           )}
           {radioTracks.length > 0 && (
             <>
-              <div className="qp-section">📻 电台列表 <span className="qp-count">{radioTracks.length}</span></div>
+              <div className="qp-section">
+                📻 电台列表 <span className="qp-count">{radioTracks.length}</span>
+                <button className="qp-clear qp-clear--section" onClick={clearRadio} title="清空电台列表">清空</button>
+              </div>
               <List
                 height={Math.min(radioTracks.length * QP_ROW_HEIGHT, 4000)}
                 itemCount={radioTracks.length}
