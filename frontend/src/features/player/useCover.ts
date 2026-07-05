@@ -1,4 +1,4 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { Track } from "../../stores/libraryStore";
 
 /**
@@ -10,13 +10,18 @@ import type { Track } from "../../stores/libraryStore";
 export const DEFAULT_COVER = "/vinyl.png";
 
 /**
- * 封面 URL 解析工具
+ * 封面 URL 解析工具（同步版）
  *
  * 根据 track.meta.artwork.source.kind 分支：
- *   - url      → 直接返回网络 URL（网易云等在线音源）
+ *   - url      → 直接返回网络 URL（网易云/QQ 等在线音源）
  *   - local    → convertFileSrc(path)（本地音乐提取的封面文件）
- *   - embedded → null（暂不支持，需要专门 IPC）
+ *   - embedded → null（暂不支持）
  *   - 无 artwork → null
+ *
+ * 注意：url 类型返回的是远端 URL，浏览器加载时可能受 CORS 限制。
+ *   - <img> 标签：可以直接加载显示
+ *   - canvas getImageData / WebGL texture：会因 CORS 失败
+ *   - cinema 模式的 CoverParticles 平面网格需要走 `proxyCoverUrl` 拿本地路径
  */
 export function getCoverUrl(track: Track | null | undefined): string | null {
   if (!track?.meta?.artwork?.source) return null;
@@ -29,6 +34,30 @@ export function getCoverUrl(track: Track | null | undefined): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * 封面代理（异步）：远端 URL → Rust cover_proxy 拉本地缓存 → convertFileSrc 返回
+ *
+ * 绕开浏览器 CORS，让 WebGL/canvas 能拿到封面像素（CoverParticles 平面网格依赖此）。
+ * 命中本地缓存秒返。失败返回 null（CoverParticles 收到 hasCover=false 后用默认色）。
+ */
+export async function proxyCoverUrl(
+  track: Track | null | undefined
+): Promise<string | null> {
+  if (!track?.meta?.artwork?.source) return null;
+  const src = track.meta.artwork.source;
+  if (src.kind === "local" && src.path) return convertFileSrc(src.path);
+  if (src.kind === "url" && src.url) {
+    try {
+      const localPath = await invoke<string>("cover_proxy", { url: src.url });
+      return convertFileSrc(localPath);
+    } catch (e) {
+      console.warn("[cover_proxy] 封面代理失败:", e);
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
