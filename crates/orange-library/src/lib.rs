@@ -8,12 +8,12 @@
 //! - 听歌识曲：基于 chromaprint 声纹指纹识别环境中的歌曲
 //! - 智能歌单生成
 
-pub mod scanner;
-pub mod metadata;
-pub mod fingerprint;
 pub mod database;
+pub mod fingerprint;
+pub mod metadata;
+pub mod scanner;
 
-pub use scanner::{LibraryScanner, ScanOptions};
-pub use metadata::read_track;
+pub use database::{LibraryDb, UserPlaylist};
 pub use fingerprint::FingerprintRecognizer;
-pub use database::LibraryDb;
+pub use metadata::read_track;
+pub use scanner::{LibraryScanner, ScanOptions};

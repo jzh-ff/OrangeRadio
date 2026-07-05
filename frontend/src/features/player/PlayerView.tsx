@@ -1,10 +1,14 @@
 import type { PointerEvent } from "react";
 import { LibraryView } from "./LibraryView";
+import { HomeView } from "./HomeView";
 import { RadioView } from "./RadioView";
 import { NeteaseView } from "./NeteaseView";
 import { QqMusicView } from "./QqMusicView";
 import { SpotifyView } from "./SpotifyView";
 import { PodcastView } from "./PodcastView";
+import { UserPlaylistView } from "./UserPlaylistView";
+import { SearchView } from "./SearchView";
+import { WallpaperView } from "./WallpaperView";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { usePlayerStore, type PlaybackMode } from "../../stores/playerStore";
 import "../../styles/player.css";
@@ -37,9 +41,11 @@ export function PlayerView() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const mode = usePlayerStore((s) => s.mode);
   const subView = usePlayerStore((s) => s.subView);
+  const showHero = subView === "library";
 
   return (
     <div className="player-view">
+      {showHero && (
       <header className="player-hero" onPointerMove={setSpotlight}>
         <div className="player-hero__copy">
           <div className="signal-chip">
@@ -77,8 +83,15 @@ export function PlayerView() {
           </div>
         </div>
       </header>
+      )}
 
-      {subView === "radio" ? (
+      {subView === "home" ? (
+        <HomeView />
+      ) : subView === "wallpaper" ? (
+        <WallpaperView />
+      ) : subView === "search" ? (
+        <SearchView />
+      ) : subView === "radio" ? (
         <RadioView />
       ) : subView === "netease" ? (
         <NeteaseView />
@@ -88,6 +101,8 @@ export function PlayerView() {
         <SpotifyView />
       ) : subView === "podcast" ? (
         <PodcastView />
+      ) : subView === "user_playlist" ? (
+        <UserPlaylistView />
       ) : (
         <>
           <LibraryView />

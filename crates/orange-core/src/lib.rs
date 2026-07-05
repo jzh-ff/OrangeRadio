@@ -11,24 +11,25 @@
 //! - [`Player`] —— 播放器内核（Hi-Res 解码 + DSP）
 //! - [`PlaybackMode`] —— 播放模式（顺序/随机/循环/懂你模式）
 
-pub mod error;
-pub mod track;
-pub mod source;
-pub mod player;
-pub mod events;
 pub mod audio_format;
+pub mod error;
+pub mod events;
+pub mod player;
 pub mod recommendation;
+pub mod source;
+pub mod track;
+pub mod wallpaper_engine;
 
-pub use error::{CoreError, Result};
-pub use track::{Track, TrackId, TrackMeta, Artwork};
-pub use source::{
-    AudioSource, AuthSource, SourceId, SourceKind, SearchQuery, SearchResult,
-    StreamLocation, PlaylistRef, QrCodeLogin, QrCodeStatus, UserInfo,
-};
-pub use player::{Player, PlayerState, PlayerEvent, PlaybackMode, RepeatMode};
-pub use events::{EventBus, EventSubscription};
 pub use audio_format::AudioFormat;
-pub use recommendation::{RecommendationEngine, RecommendContext, UserProfile};
+pub use error::{CoreError, Result};
+pub use events::{AuthEventSink, AuthExpiredPayload, EventBus, EventSubscription, NoopAuthSink};
+pub use player::{PlaybackMode, Player, PlayerEvent, PlayerState, RepeatMode};
+pub use recommendation::{RecommendContext, RecommendationEngine, UserProfile};
+pub use source::{
+    AudioSource, AuthSource, PlaylistRef, QrCodeLogin, QrCodeStatus, SearchQuery, SearchResult,
+    SourceId, SourceKind, StreamLocation, UserInfo,
+};
+pub use track::{Artwork, Track, TrackId, TrackMeta};
 
 /// OrangeRadio 版本号
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

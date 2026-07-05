@@ -25,7 +25,10 @@ impl FingerprintRecognizer {
 
     /// 识别一段录音
     /// v0.8 实现：chromaprint + AcoustID 查询
-    pub async fn recognize(&self, _audio_samples: &[f32]) -> orange_core::Result<RecognitionResult> {
+    pub async fn recognize(
+        &self,
+        _audio_samples: &[f32],
+    ) -> orange_core::Result<RecognitionResult> {
         Ok(RecognitionResult {
             matched: false,
             track: None,

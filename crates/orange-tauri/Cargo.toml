@@ -21,3 +21,7 @@ async-trait.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 parking_lot.workspace = true
+chrono.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
