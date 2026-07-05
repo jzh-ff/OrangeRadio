@@ -64,6 +64,10 @@ pub struct AppState {
     pub auth_sink: Arc<TauriAuthSink>,
     /// 推荐引擎（懂你模式）：本地画像打分，不依赖 LLM
     pub recommender: Arc<dyn orange_core::recommendation::RecommendationEngine>,
+    /// Wallpaper Engine Workshop 根目录白名单（wefile 安全校验用）。
+    /// 由 wallpaper_engine_scan 命令扫描完成后写入；Task 5 的 wefile handler 读这里。
+    /// Arc 包裹以保留 `#[derive(Clone)]`（parking_lot::RwLock 本身不是 Clone）。
+    pub we_roots: Arc<parking_lot::RwLock<Vec<PathBuf>>>,
 }
 
 impl Default for AppState {
@@ -118,6 +122,7 @@ impl Default for AppState {
             auth_store,
             auth_sink,
             recommender,
+            we_roots: Arc::new(parking_lot::RwLock::new(Vec::new())),
         }
     }
 }

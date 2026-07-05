@@ -1107,6 +1107,30 @@ pub fn wallpaper_remove(path: String) -> Result<(), String> {
     std::fs::remove_file(&path).map_err(|e| format!("删除壁纸文件失败: {e}"))
 }
 
+/// 扫描本地 Wallpaper Engine 壁纸。
+///
+/// `dirs=Some` 用前端配置目录；`None` 自动发现（注册表 + libraryfolders.vdf）。
+/// 扫描完成后把发现的 Workshop 根目录登记到 AppState.we_roots，供 orangeradio://wefile 安全校验。
+#[tauri::command]
+pub async fn wallpaper_engine_scan(
+    state: tauri::State<'_, AppState>,
+    dirs: Option<Vec<String>>,
+) -> Result<orange_core::wallpaper_engine::WallpaperEngineScanResult, String> {
+    let result = crate::wallpaper_engine::scan(dirs).await;
+    let roots: Vec<std::path::PathBuf> = result
+        .discovered_dirs
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    *state.we_roots.write() = roots;
+    tracing::info!(
+        "Wallpaper Engine 扫描完成：{} 条壁纸，根目录 {:?}",
+        result.entries.len(),
+        result.discovered_dirs
+    );
+    Ok(result)
+}
+
 // ===== AI 歌词译注（v0.5，用 MiniMax LLM） =====
 
 /// 用 MiniMax LLM 翻译并注解歌词（base/key/model 由前端配置传入，存 localStorage）
@@ -1435,6 +1459,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             hue_set_state,
             wallpaper_save,
             wallpaper_remove,
+            wallpaper_engine_scan,
             lyric_annotate,
             emotion_analyze,
             studio_generate_lyrics,
