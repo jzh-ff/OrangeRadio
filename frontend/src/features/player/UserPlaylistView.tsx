@@ -1,35 +1,43 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { getCoverUrl } from "./useCover";
 import { TrackActions } from "./TrackActions";
+import { VirtualTrackList } from "../../components/TrackRow";
+import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
+
+const PAGE_SIZE = 100;
 
 /**
  * 用户自建歌单视图
  *
  * 展示歌单内歌曲（支持跨源：网易云歌曲也能播放）。
  * 播放时 engineRef.playTrack 根据 source_kind 自动取流。
+ * 分页加载（每页 100 首）+ 虚拟化。
  */
 export function UserPlaylistView() {
   const playlistId = usePlayerStore((s) => s.currentPlaylistId);
-  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [playlistName, setPlaylistName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
     if (!playlistId) return;
     setLoading(true);
-    invoke<Track[]>("playlist_tracks", { playlistId })
+    setPage(1); setHasMore(false);
+    invoke<Track[]>("playlist_tracks", { playlistId, offset: 0, limit: PAGE_SIZE })
       .then((list) => {
         setTracks(list);
+        setHasMore(list.length === PAGE_SIZE);
         setQueue(list);
-        // 取歌单名（从 all_playlists 查）
         invoke<{ id: string; name: string }[]>("all_playlists").then((ps) => {
           const p = ps.find((x) => x.id === playlistId);
           if (p) setPlaylistName(p.name);
@@ -37,7 +45,27 @@ export function UserPlaylistView() {
       })
       .catch(() => setTracks([]))
       .finally(() => setLoading(false));
-  }, [playlistId]);
+  }, [playlistId, setQueue]);
+
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore || !playlistId) return;
+    const next = page + 1;
+    const offset = page * PAGE_SIZE;
+    setLoading(true);
+    try {
+      const list = await invoke<Track[]>("playlist_tracks", { playlistId, offset, limit: PAGE_SIZE });
+      if (list.length === 0) setHasMore(false);
+      else {
+        setTracks((prev) => [...prev, ...list]);
+        usePlayerStore.getState().addManyToQueue(list);
+        setPage(next);
+        setHasMore(list.length === PAGE_SIZE);
+      }
+    } catch { /* 静默 */ }
+    finally { setLoading(false); }
+  }, [loading, hasMore, page, playlistId]);
+
+  const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
 
   const handlePlay = (track: Track, index: number) => {
     engineRef.playTrack(track, index);
@@ -87,31 +115,31 @@ export function UserPlaylistView() {
             <span className="col-dur">操作</span>
           </div>
           <div className="lib-rows">
-            {tracks.map((t, i) => {
-              const active = currentIndex === i;
-              const d = t.meta.duration_secs;
-              const sourceLabel = t.source_kind === "netease_cloud_music" ? "网易云"
-                : t.source_kind === "qq_music" ? "QQ" : "本地";
-              const cover = getCoverUrl(t);
-              return (
-                <div key={t.id} className={`lib-row ${active ? "lib-row--active" : ""}`} onDoubleClick={() => handlePlay(t, i)}>
-                  <span className="col-i">
-                    {active && isPlaying ? <span className="eq-bars"><i></i><i></i><i></i></span>
-                    : <><span className="idx">{i + 1}</span>
-                      <svg className="play-hover" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></>}
-                  </span>
-                  <span className="col-title" onClick={() => handlePlay(t, i)}>
-                    {cover && <img src={cover} alt="" className="col-title__cover" loading="lazy" />}
-                    <span className="col-title__txt">{t.meta.title}</span>
-                  </span>
-                  <span className="col-artist">{t.meta.artist}</span>
-                  <span className="col-album"><span className="q-badge q-high">{sourceLabel}</span></span>
-                  <span className="col-dur">
-                    <TrackActions track={t} />
-                  </span>
-                </div>
-              );
-            })}
+            <VirtualTrackList
+              tracks={tracks}
+              activeId={currentTrack?.id}
+              isPlaying={isPlaying}
+              onPlay={handlePlay}
+              onItemsRendered={onItemsRendered}
+              renderRow={(t, i) => {
+                const sourceLabel = t.source_kind === "netease_cloud_music" ? "网易云"
+                  : t.source_kind === "qq_music" ? "QQ" : "本地";
+                const cover = getCoverUrl(t);
+                return (
+                  <>
+                    <span className="col-title" onClick={() => handlePlay(t, i)}>
+                      {cover && <img src={cover} alt="" className="col-title__cover" loading="lazy" />}
+                      <span className="col-title__txt">{t.meta.title}</span>
+                    </span>
+                    <span className="col-artist">{t.meta.artist}</span>
+                    <span className="col-album"><span className="q-badge q-high">{sourceLabel}</span></span>
+                    <span className="col-dur">
+                      <TrackActions track={t} />
+                    </span>
+                  </>
+                );
+              }}
+            />
           </div>
         </div>
       )}

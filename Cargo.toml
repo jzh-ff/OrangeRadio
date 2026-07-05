@@ -81,6 +81,9 @@ symphonia = { version = "0.5", features = ["mp3", "aac", "flac", "wav", "ogg", "
 # 异步流（server WebSocket 一起听用）
 futures-util = "0.3"
 
+# HTML 解析（gequbao 音源抓取用）
+scraper = "0.20"
+
 [profile.release]
 opt-level = 3
 lto = true

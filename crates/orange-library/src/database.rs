@@ -7,7 +7,7 @@
 //! 数据库位置：`<工作目录>/.orangeradio/library.sqlite`
 
 use orange_core::source::SearchQuery;
-use orange_core::track::Track;
+use orange_core::track::{ArtworkSource, Track};
 use parking_lot::RwLock;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
@@ -309,12 +309,33 @@ impl LibraryDb {
                     name: r.get::<_, String>(1)?,
                     created_at: r.get::<_, String>(2)?,
                     track_count: cnt as u32,
+                    cover: None,
                 })
             })
             .map_err(sqlite_err)?;
         let mut result = Vec::new();
         for row in rows {
-            result.push(row.map_err(sqlite_err)?);
+            let mut pl = row.map_err(sqlite_err)?;
+            // 取该歌单第一首有 artwork 的曲目，提取封面 URL/路径
+            let mut cover_stmt = conn
+                .prepare("SELECT t.data FROM playlist_tracks pt JOIN tracks t ON pt.track_id=t.id WHERE pt.playlist_id=?1 ORDER BY pt.added_at")
+                .map_err(sqlite_err)?;
+            let data_rows: Vec<String> = cover_stmt
+                .query_map(params![pl.id], |r| r.get::<_, String>(0))
+                .map_err(sqlite_err)?
+                .filter_map(|r| r.ok())
+                .collect();
+            for json in data_rows {
+                if let Ok(t) = serde_json::from_str::<Track>(&json) {
+                    if let Some(art) = &t.meta.artwork {
+                        if let Some(url) = extract_cover_url(&art.source) {
+                            pl.cover = Some(url.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+            result.push(pl);
         }
         Ok(result)
     }
@@ -642,6 +663,9 @@ pub struct UserPlaylist {
     pub name: String,
     pub created_at: String,
     pub track_count: u32,
+    /// 歌单封面（取第一首有 artwork 的曲目，前端用于 3D 歌单架展示）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
 }
 
 /// 从 SQLite 加载全部曲目到内存
@@ -665,4 +689,16 @@ fn load_tracks(conn: &Connection) -> orange_core::Result<Vec<Track>> {
 
 fn sqlite_err(e: rusqlite::Error) -> orange_core::CoreError {
     orange_core::CoreError::Internal(format!("SQLite: {e}"))
+}
+
+/// 从 ArtworkSource 提取 3D 歌单架可用的封面 URL：
+/// - Url → 返回 url（网络封面，前端 Canvas 可直接加载）
+/// - Local → None（本地文件封面在 3D Canvas 加载需 asset 协议，且可能 CORS 受限，保持黑胶占位）
+/// - Embedded → None
+fn extract_cover_url(a: &ArtworkSource) -> Option<&str> {
+    match a {
+        ArtworkSource::Url { url } => Some(url.as_str()),
+        ArtworkSource::Local { .. } => None,
+        ArtworkSource::Embedded { .. } => None,
+    }
 }

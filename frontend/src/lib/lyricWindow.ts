@@ -54,8 +54,8 @@ export async function openLyricOverlay(): Promise<WebviewWindow | null> {
   const saved = loadPos();
   const opts: ConstructorParameters<typeof WebviewWindow>[1] = {
     title: "OrangeRadio 桌面歌词",
-    width: 900,
-    height: 140,
+    width: 1100,
+    height: 260,
     decorations: false,
     transparent: true,
     alwaysOnTop: true,

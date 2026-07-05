@@ -113,10 +113,13 @@ impl AudioAIProvider for MiniMaxProvider {
             "lyrics": lyrics,
             "is_instrumental": is_instrumental,
             "lyrics_optimizer": true,
+            // format 是「音频编码格式」(mp3/wav/pcm/flac)，不是返回方式。
+            // MiniMax 始终通过 data.audio_url 返回 URL，与此字段无关。
+            // 之前传 "url" 会触发服务端 2013: invalid params, audio format: url is not allowed
             "audio_setting": {
                 "sample_rate": 44100,
-                "bitrate": 512000,
-                "format": "url",
+                "bitrate": 256000,
+                "format": "mp3",
                 "channel": 2
             }
         });

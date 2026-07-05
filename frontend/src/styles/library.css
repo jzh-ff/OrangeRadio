@@ -143,6 +143,10 @@
   grid-template-columns: 48px minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) 56px;
   gap: 12px; padding: 0 18px; align-items: center; height: 48px;
 }
+/* 4 列变体（无专辑列：歌曲宝/电台等） */
+.lib-header.cols-4, .lib-row.cols-4 {
+  grid-template-columns: 48px minmax(0, 3fr) minmax(0, 2fr) 64px;
+}
 .lib-header {
   height: 44px;
   font-family: var(--font-mono);
@@ -309,9 +313,9 @@
   font-family: var(--font-mono); letter-spacing: 0.4px;
 }
 
-/* 导航徽章（搜索/歌单/每日推荐按钮）统一化 */
+/* 导航徽章（搜索/歌单/每日推荐按钮）统一化（零 emoji，全部 SVG icon） */
 .nav-pill {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 7px;
   padding: 8px 16px; border: none; border-radius: 999px;
   font-size: 13px; font-weight: 680; color: var(--text);
   background: rgba(255, 255, 255, 0.06);
@@ -319,19 +323,30 @@
   cursor: pointer; transition: all 0.2s var(--ease);
   white-space: nowrap;
 }
+.nav-pill__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-3);
+  transition: color 0.18s var(--ease), transform 0.18s var(--ease);
+  flex-shrink: 0;
+}
 .nav-pill:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-1px); }
+.nav-pill:hover .nav-pill__icon { color: var(--text); }
 .nav-pill--active {
   background: linear-gradient(135deg, var(--orange-hot), var(--orange));
   color: #fff; border-color: transparent;
   box-shadow: 0 4px 14px var(--orange-glow);
 }
+.nav-pill--active .nav-pill__icon { color: rgba(255, 255, 255, 0.96); }
 .nav-pill--green {
   background: linear-gradient(135deg, #1db954, #1ed760);
   color: #fff; border-color: transparent;
+  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.28);
 }
+.nav-pill--green .nav-pill__icon { color: rgba(255, 255, 255, 0.94); }
 .nav-pill--ghost {
   background: transparent; color: var(--text-3); border-color: rgba(255, 255, 255, 0.12);
 }
+.nav-pill--ghost:hover { color: var(--text); }
 
 /* 段落标题 */
 .section-title {

@@ -13,11 +13,13 @@ interface LyricState {
   isPlaying: boolean;
   /** 总时长（秒） */
   duration: number;
+  /** 主窗口实时 beat intensity（0~1.4），订阅驱动歌词呼吸/扫光抖动 */
+  beatIntensity?: number;
 }
 
 /** 悬浮窗回传的控件命令 */
 interface LyricCmd {
-  cmd: "toggle" | "close" | "unlock";
+  cmd: "toggle" | "close" | "unlock" | "prev" | "next";
 }
 
 /**
@@ -26,9 +28,13 @@ interface LyricCmd {
  *
  * 推送策略：position 节流 200ms；track/isPlaying 变化时立即推（切歌/暂停要立刻反映）。
  */
-export function useLyricBridge(opts?: { onToggle?: () => void }) {
+export function useLyricBridge(opts?: { onToggle?: () => void; onPrev?: () => void; onNext?: () => void }) {
   const onToggleRef = useRef(opts?.onToggle);
   onToggleRef.current = opts?.onToggle;
+  const onPrevRef = useRef(opts?.onPrev);
+  onPrevRef.current = opts?.onPrev;
+  const onNextRef = useRef(opts?.onNext);
+  onNextRef.current = opts?.onNext;
 
   // 推送状态
   useEffect(() => {
@@ -42,8 +48,9 @@ export function useLyricBridge(opts?: { onToggle?: () => void }) {
       const trackChanged = trackId !== lastTrackId;
       const playingChanged = s.isPlaying !== lastIsPlaying;
       const positionStale = now - lastEmit > 200;
+      const beatStale = now - lastEmit > 100; // 节拍推送更密，让悬浮窗跟得上鼓点
 
-      if (!trackChanged && !playingChanged && !positionStale) return;
+      if (!trackChanged && !playingChanged && !positionStale && !beatStale) return;
       lastEmit = now;
       lastTrackId = trackId;
       lastIsPlaying = s.isPlaying;
@@ -53,6 +60,7 @@ export function useLyricBridge(opts?: { onToggle?: () => void }) {
         position: s.position,
         isPlaying: s.isPlaying,
         duration: s.duration,
+        beatIntensity: s.beat?.intensity ?? 0,
       };
       void emit<LyricState>("lyric:state", payload).catch(() => {});
     });
@@ -66,6 +74,8 @@ export function useLyricBridge(opts?: { onToggle?: () => void }) {
       unlisten = await listen<LyricCmd>("lyric:cmd", (e) => {
         const cmd = e.payload?.cmd;
         if (cmd === "toggle") onToggleRef.current?.();
+        else if (cmd === "prev") onPrevRef.current?.();
+        else if (cmd === "next") onNextRef.current?.();
         else if (cmd === "close") void closeLyricOverlay();
         else if (cmd === "unlock") void setLyricLock(false);
       });

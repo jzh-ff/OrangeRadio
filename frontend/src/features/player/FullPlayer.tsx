@@ -247,7 +247,11 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           >
             {annotateLoading ? "…" : annotatedMap.size > 0 ? "译注 ✓" : "译注"}
           </button>
-          <button type="button" className="fp-close" onClick={() => setFullPlayer(false)} title="关闭 (Esc)">✕</button>
+          <button type="button" className="fp-close" onClick={() => setFullPlayer(false)} title="关闭 (Esc)" aria-label="关闭">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -262,7 +266,11 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
               <div className="fp-ai-bg-card fp-ai-bg-card--cinema">
                 <span className="fp-ai-bg-label">AI 背景</span>
                 <span className="fp-ai-bg-text">{aiBackground}</span>
-                <button className="fp-ai-bg-close" onClick={() => setAiBackground(null)} title="关闭">✕</button>
+                <button className="fp-ai-bg-close" onClick={() => setAiBackground(null)} title="关闭" aria-label="关闭">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
               </div>
             )}
           </div>
@@ -290,7 +298,12 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                       <div className="fp-cinema-lyric-trans fp-cinema-lyric-trans--ai">{ann.translation}</div>
                     )}
                     {ann?.annotation && (
-                      <div className="fp-cinema-lyric-annot">💡 {ann.annotation}</div>
+                      <div className="fp-cinema-lyric-annot">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ marginRight: 6, verticalAlign: -2 }}>
+                          <path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2zm-2 19a2 2 0 0 0 4 0h-4z" />
+                        </svg>
+                        {ann.annotation}
+                      </div>
                     )}
                   </>
                 );
@@ -305,20 +318,27 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           </div>
           {/* 视觉控制台（右上角，鼠标移开隐藏） */}
           <VisualConsole />
-          {/* 评论抽屉按钮 */}
+          {/* 评论抽屉按钮（零 emoji SVG icon） */}
           <button
             className="fp-comment-toggle"
             onClick={() => setShowComments((v) => !v)}
             title="热门评论"
+            aria-label="热门评论"
           >
-            💬
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
           </button>
           {/* 评论抽屉（cinema/immersive 共用） */}
           {showComments && (
             <div className="fp-comment-drawer" onClick={(e) => e.stopPropagation()}>
               <div className="fp-comment-drawer-head">
                 <span>热门评论</span>
-                <button onClick={() => setShowComments(false)}>✕</button>
+                <button onClick={() => setShowComments(false)} aria-label="关闭">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
               </div>
               <CommentList songId={songId} compact />
             </div>
@@ -353,7 +373,11 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
               <div className="fp-ai-bg-card">
                 <span className="fp-ai-bg-label">AI 背景</span>
                 <span className="fp-ai-bg-text">{aiBackground}</span>
-                <button className="fp-ai-bg-close" onClick={() => setAiBackground(null)} title="关闭">✕</button>
+                <button className="fp-ai-bg-close" onClick={() => setAiBackground(null)} title="关闭" aria-label="关闭">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
               </div>
             )}
             {lines.length > 0 ? (
@@ -362,18 +386,24 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                   const ann = annotatedMap.get(l.text.trim());
                   const hasAnnot = !!ann?.annotation;
                   const expanded = expandedLines.has(i);
+                  // 当前行 offset 决定字号/不透明度递变（对标 MineRadio 上下文衰减）
+                  const offset = activeIndex >= 0 ? i - activeIndex : 0;
+                  const absOff = Math.abs(offset);
+                  // 距离越远越淡，超过 3 行基本不可见
+                  const ctxOpacity = Math.max(0.22, 1 - absOff * 0.18);
                   return (
                     <div
                       key={i}
                       ref={el => { lyricLineRefs.current[i] = el; }}
-                      className={`fp-lyric-line ${i === activeIndex ? "fp-lyric-line--active" : ""}`}
-                      style={{ opacity: Math.max(0.45, 1 - Math.abs(i - activeIndex) * 0.12) }}
+                      className={`fp-lyric-line ${i === activeIndex ? "fp-lyric-line--active" : ""} fp-lyric-line--ctx-${absOff}`}
+                      data-offset={offset}
+                      style={{ opacity: ctxOpacity }}
                       onClick={() => engineRef.seek(l.time)}
                       title={`跳转到 ${fmtLyricTime(l.time)}`}
                     >
                       <span className="fp-lyric-time">{fmtLyricTime(l.time)}</span>
                       <div className="fp-lyric-content">
-                        <div className="fp-lyric-text">{l.text}</div>
+                        <div className="fp-lyric-text" style={lyricStyle(i === activeIndex, i === activeIndex ? activeProgress : 0)}>{l.text}</div>
                         {l.translation && <div className="fp-lyric-trans">{l.translation}</div>}
                         {/* AI 译注翻译只在原生翻译缺失时补充（避免与原生翻译重复显示两行） */}
                         {!l.translation && ann?.translation && (
@@ -383,6 +413,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                           <button
                             className={`fp-annot-toggle ${expanded ? "fp-annot-toggle--on" : ""}`}
                             title="AI 注解（点击展开/收起）"
+                            aria-label="AI 注解"
                             onClick={(e) => {
                               e.stopPropagation();
                               setExpandedLines((prev) => {
@@ -393,7 +424,9 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                               });
                             }}
                           >
-                            💡
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                              <path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2zm-2 19a2 2 0 0 0 4 0h-4z" />
+                            </svg>
                           </button>
                         )}
                       </div>
@@ -438,11 +471,28 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           />
         </div>
         <div className="fp-ctrl-btns">
-          <button type="button" className="fp-ctrl-btn" onClick={() => engineRef.prev()} title="上一首">⏮</button>
-          <button type="button" className="fp-ctrl-btn fp-ctrl-btn--play" onClick={() => engineRef.toggle()} title={isPlaying ? "暂停" : "播放"}>
-            {isPlaying ? "⏸" : "▶"}
+          <button type="button" className="fp-ctrl-btn" onClick={() => engineRef.prev()} title="上一首" aria-label="上一首">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+            </svg>
           </button>
-          <button type="button" className="fp-ctrl-btn" onClick={() => engineRef.next()} title="下一首">⏭</button>
+          <button type="button" className="fp-ctrl-btn fp-ctrl-btn--play" onClick={() => engineRef.toggle()} title={isPlaying ? "暂停" : "播放"} aria-label={isPlaying ? "暂停" : "播放"}>
+            {isPlaying ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="6" y="5" width="4" height="14" rx="1" />
+                <rect x="14" y="5" width="4" height="14" rx="1" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+          <button type="button" className="fp-ctrl-btn" onClick={() => engineRef.next()} title="下一首" aria-label="下一首">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M16 6h2v12h-2zM6 18l8.5-6L6 6v12z" />
+            </svg>
+          </button>
         </div>
       </footer>
     </div>
