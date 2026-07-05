@@ -61,6 +61,7 @@
   overflow-y: auto;
   padding: 30px 38px 118px;
   scroll-behavior: smooth;
+  background: rgba(var(--glass-rgb), var(--ui-opacity, 0.8));
 }
 
 @media (max-width: 980px) {
