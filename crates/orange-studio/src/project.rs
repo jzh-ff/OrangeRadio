@@ -58,27 +58,23 @@ impl StudioProject {
     /// 保存到 `.orp` 文件（JSON 格式，pretty print）
     pub fn save_to_path(&self, path: &std::path::Path) -> orange_core::Result<()> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                orange_core::CoreError::AiService(format!("创建工程目录失败: {e}"))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| orange_core::CoreError::AiService(format!("创建工程目录失败: {e}")))?;
         }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| orange_core::CoreError::AiService(format!("序列化工程失败: {e}")))?;
-        std::fs::write(path, json).map_err(|e| {
-            orange_core::CoreError::AiService(format!("写入工程文件失败: {e}"))
-        })?;
+        std::fs::write(path, json)
+            .map_err(|e| orange_core::CoreError::AiService(format!("写入工程文件失败: {e}")))?;
         tracing::info!("工程已保存: {}", path.display());
         Ok(())
     }
 
     /// 从 `.orp` 文件加载
     pub fn load_from_path(path: &std::path::Path) -> orange_core::Result<Self> {
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            orange_core::CoreError::AiService(format!("读取工程文件失败: {e}"))
-        })?;
-        let project: Self = serde_json::from_str(&content).map_err(|e| {
-            orange_core::CoreError::AiService(format!("解析工程文件失败: {e}"))
-        })?;
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| orange_core::CoreError::AiService(format!("读取工程文件失败: {e}")))?;
+        let project: Self = serde_json::from_str(&content)
+            .map_err(|e| orange_core::CoreError::AiService(format!("解析工程文件失败: {e}")))?;
         tracing::info!("工程已加载: {}", path.display());
         Ok(project)
     }

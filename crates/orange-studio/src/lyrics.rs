@@ -172,17 +172,18 @@ impl LyricsGenerator {
                  [\"chorus\", [\"副歌第一句\", \"副歌第二句\"]]\n\
                ]\n\
              }}",
-            theme = if request.theme.is_empty() { "自由发挥" } else { &request.theme },
+            theme = if request.theme.is_empty() {
+                "自由发挥"
+            } else {
+                &request.theme
+            },
             mood = request.mood,
             style = request.style,
             language = request.language,
             structure = structure_hint,
         );
 
-        let url = format!(
-            "{}/v1/messages",
-            self.llm_api_base.trim_end_matches('/')
-        );
+        let url = format!("{}/v1/messages", self.llm_api_base.trim_end_matches('/'));
         let body = serde_json::json!({
             "model": self.llm_model,
             "max_tokens": 4096,
@@ -214,9 +215,8 @@ impl LyricsGenerator {
             )));
         }
 
-        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-            orange_core::CoreError::AiService(format!("解析 AI 写词响应失败: {e}"))
-        })?;
+        let v: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| orange_core::CoreError::AiService(format!("解析 AI 写词响应失败: {e}")))?;
 
         // Anthropic content 数组 → 文本
         let content = v
@@ -230,9 +230,8 @@ impl LyricsGenerator {
             .unwrap_or("");
 
         let json_str = extract_json_object(content);
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
-            orange_core::CoreError::AiService(format!("解析歌词 JSON 失败: {e}"))
-        })?;
+        let parsed: serde_json::Value = serde_json::from_str(&json_str)
+            .map_err(|e| orange_core::CoreError::AiService(format!("解析歌词 JSON 失败: {e}")))?;
 
         let title = parsed
             .get("title")
@@ -267,10 +266,7 @@ impl LyricsGenerator {
                         .unwrap_or_default();
                     (kind.to_string(), lines)
                 } else {
-                    let kind = item
-                        .get("kind")
-                        .and_then(|k| k.as_str())
-                        .unwrap_or("verse");
+                    let kind = item.get("kind").and_then(|k| k.as_str()).unwrap_or("verse");
                     let lines = item
                         .get("lines")
                         .and_then(|l| l.as_array())
@@ -337,7 +333,10 @@ mod tests {
     fn test_section_from_str_loose() {
         assert_eq!(SongSection::from_str_loose("Verse"), SongSection::Verse);
         assert_eq!(SongSection::from_str_loose("chorus"), SongSection::Chorus);
-        assert_eq!(SongSection::from_str_loose("pre-chorus"), SongSection::PreChorus);
+        assert_eq!(
+            SongSection::from_str_loose("pre-chorus"),
+            SongSection::PreChorus
+        );
         assert_eq!(SongSection::from_str_loose("Bridge"), SongSection::Bridge);
         assert_eq!(SongSection::from_str_loose("unknown"), SongSection::Verse);
     }

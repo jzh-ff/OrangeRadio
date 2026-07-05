@@ -60,7 +60,12 @@ pub fn decode_file(path: &Path) -> Result<DecodedAudio> {
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|e| orange_core::CoreError::Internal(format!("探测音频格式失败: {e}")))?;
     let mut format = probed.format;
 
@@ -73,11 +78,7 @@ pub fn decode_file(path: &Path) -> Result<DecodedAudio> {
         .codec_params
         .sample_rate
         .ok_or_else(|| orange_core::CoreError::Unsupported("音频流缺少采样率".into()))?;
-    let nch = track
-        .codec_params
-        .channels
-        .map(|c| c.count())
-        .unwrap_or(2);
+    let nch = track.codec_params.channels.map(|c| c.count()).unwrap_or(2);
     let track_id = track.id;
 
     let mut decoder = symphonia::default::get_codecs()
@@ -96,8 +97,7 @@ pub fn decode_file(path: &Path) -> Result<DecodedAudio> {
         };
         let ch = decoded.spec().channels.count().max(1);
         // SampleBuffer 每包重建（需要 SignalSpec）；单位是 frames
-        let mut sample_buf =
-            SampleBuffer::<i16>::new(decoded.capacity() as u64, *decoded.spec());
+        let mut sample_buf = SampleBuffer::<i16>::new(decoded.capacity() as u64, *decoded.spec());
         sample_buf.copy_interleaved_ref(decoded);
         let raw = sample_buf.samples(); // &[i16] interleaved
         let n_frames = raw.len() / ch;

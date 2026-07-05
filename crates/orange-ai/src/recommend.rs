@@ -33,11 +33,7 @@ impl AiRecommendationEngine {
 
 #[async_trait]
 impl RecommendationEngine for AiRecommendationEngine {
-    async fn recommend(
-        &self,
-        profile: &UserProfile,
-        ctx: &RecommendContext,
-    ) -> Result<Vec<Track>> {
+    async fn recommend(&self, profile: &UserProfile, ctx: &RecommendContext) -> Result<Vec<Track>> {
         let recent: HashSet<String> = ctx.recent_track_ids.iter().cloned().collect();
         let empty_fb = ListenFeedback::default();
         let mut scored: Vec<(f32, Track)> = ctx
@@ -118,7 +114,11 @@ fn score(
         }
     }
     // 负反馈：跳过率高的艺人/流派
-    if profile.skip_patterns.iter().any(|p| p.as_str() == artist && !artist.is_empty()) {
+    if profile
+        .skip_patterns
+        .iter()
+        .any(|p| p.as_str() == artist && !artist.is_empty())
+    {
         s -= 0.5;
     }
     if profile.skip_patterns.iter().any(|p| genre_hit(p)) {

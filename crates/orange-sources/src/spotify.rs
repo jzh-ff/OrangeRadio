@@ -82,8 +82,9 @@ impl SpotifySource {
             .get(AUTH_SOURCE_KEY)
             .await
             .ok_or_else(|| orange_core::CoreError::AuthFailed("Spotify 凭据未保存".into()))?;
-        let (cid, secret) = parse_creds(&auth.cookie)
-            .ok_or_else(|| orange_core::CoreError::AuthFailed("AuthStore 中 Spotify 凭据格式损坏".into()))?;
+        let (cid, secret) = parse_creds(&auth.cookie).ok_or_else(|| {
+            orange_core::CoreError::AuthFailed("AuthStore 中 Spotify 凭据格式损坏".into())
+        })?;
         tracing::info!("Spotify 从 AuthStore 恢复 Client Credentials");
         *self.client_id.write().await = Some(cid.clone());
         *self.client_secret.write().await = Some(secret.clone());
@@ -142,18 +143,13 @@ impl SpotifySource {
             return Ok(());
         }
         // 过期或还没拿 —— 用 client_id/secret 重拿
-        let cid = self
-            .client_id
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| orange_core::CoreError::AuthFailed("未配置 Spotify Client ID".into()))?;
-        let secret = self
-            .client_secret
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| orange_core::CoreError::AuthFailed("未配置 Spotify Client Secret".into()))?;
+        let cid =
+            self.client_id.read().await.clone().ok_or_else(|| {
+                orange_core::CoreError::AuthFailed("未配置 Spotify Client ID".into())
+            })?;
+        let secret = self.client_secret.read().await.clone().ok_or_else(|| {
+            orange_core::CoreError::AuthFailed("未配置 Spotify Client Secret".into())
+        })?;
         let (token, expires_in) = fetch_token(&self.client, &cid, &secret)
             .await
             .map_err(|e| {
@@ -192,11 +188,7 @@ fn now_secs() -> i64 {
 }
 
 /// 调用 Spotify token endpoint
-async fn fetch_token(
-    client: &reqwest::Client,
-    cid: &str,
-    secret: &str,
-) -> Result<(String, i64)> {
+async fn fetch_token(client: &reqwest::Client, cid: &str, secret: &str) -> Result<(String, i64)> {
     #[derive(Deserialize)]
     struct TokenResp {
         access_token: String,

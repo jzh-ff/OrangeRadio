@@ -121,8 +121,8 @@ impl NeteaseSource {
             .await
         {
             Ok(v) => {
-                let valid = v["code"].as_i64() == Some(200)
-                    && v["account"]["id"].as_i64().is_some();
+                let valid =
+                    v["code"].as_i64() == Some(200) && v["account"]["id"].as_i64().is_some();
                 Ok(valid)
             }
             Err(orange_core::CoreError::AuthFailed(_)) => Ok(false),
@@ -731,7 +731,10 @@ impl AuthSource for NeteaseSource {
 
         // 二维码内容：网易云 APP 扫码后会自动打开此 URL 完成登录
         let qr_image = format!("{}/login?codekey={}", BASE, resp.unikey);
-        tracing::info!("网易云生成扫码 unikey={}（cookie 已种入 qr_client）", resp.unikey);
+        tracing::info!(
+            "网易云生成扫码 unikey={}（cookie 已种入 qr_client）",
+            resp.unikey
+        );
         Ok(QrCodeLogin {
             key: resp.unikey,
             qr_image,

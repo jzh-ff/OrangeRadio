@@ -68,8 +68,7 @@ pub fn run() {
         .plugin(
             // 全局热键（v0.4 P11.3）：前端通过 @tauri-apps/plugin-global-shortcut register/unregister
             // 触发时由前端 callback 直接执行动作（播放/上下曲/音量/全屏/桌面歌词）
-            tauri_plugin_global_shortcut::Builder::default()
-                .build(),
+            tauri_plugin_global_shortcut::Builder::default().build(),
         )
         .register_asynchronous_uri_scheme_protocol("orangeradio", |_ctx, request, responder| {
             // handler 是同步的，但 reqwest 拉流是异步的 → tokio::spawn 异步执行

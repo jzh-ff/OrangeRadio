@@ -1018,7 +1018,10 @@ fn fnv_hash(s: &str) -> u64 {
 pub async fn hue_discover() -> Result<Vec<serde_json::Value>, String> {
     let mgr = orange_hue::HueManager::new();
     let bridges = mgr.discover().await.map_err(|e| e.to_string())?;
-    Ok(bridges.into_iter().map(|b| serde_json::json!({ "ip": b.ip })).collect())
+    Ok(bridges
+        .into_iter()
+        .map(|b| serde_json::json!({ "ip": b.ip }))
+        .collect())
 }
 
 /// 配对 Hue Bridge（需先按 Bridge 顶部 link button）→ 返回 username token
@@ -1044,7 +1047,12 @@ pub async fn hue_set_state(
         &ip,
         &token,
         &light_id,
-        &orange_hue::LightState { on, bri, hue: hue_val, sat },
+        &orange_hue::LightState {
+            on,
+            bri,
+            hue: hue_val,
+            sat,
+        },
     )
     .await
     .map_err(|e| e.to_string())
@@ -1075,9 +1083,19 @@ pub fn wallpaper_save(
     // 安全文件名：只保留字母数字汉字和点横下划线，避免路径穿越
     let safe_name: String = name
         .chars()
-        .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '-' || *c == '_' || ('\u{4e00}'..='\u{9fff}').contains(c))
+        .filter(|c| {
+            c.is_alphanumeric()
+                || *c == '.'
+                || *c == '-'
+                || *c == '_'
+                || ('\u{4e00}'..='\u{9fff}').contains(c)
+        })
         .collect();
-    let safe_name = if safe_name.is_empty() { "wallpaper".to_string() } else { safe_name };
+    let safe_name = if safe_name.is_empty() {
+        "wallpaper".to_string()
+    } else {
+        safe_name
+    };
     let dest = wallpapers_dir.join(format!("{ts}-{safe_name}"));
     fs::copy(&src_path, &dest).map_err(|e| format!("复制壁纸文件失败: {e}"))?;
     Ok(dest.to_string_lossy().into_owned())
@@ -1180,7 +1198,10 @@ pub async fn studio_generate_lyrics(
         language,
         ..Default::default()
     };
-    let draft = generator.generate(&request).await.map_err(|e| e.to_string())?;
+    let draft = generator
+        .generate(&request)
+        .await
+        .map_err(|e| e.to_string())?;
     serde_json::to_value(&draft).map_err(|e| e.to_string())
 }
 
@@ -1215,7 +1236,9 @@ pub async fn studio_generate_music(
         .generate(&request)
         .await
         .map_err(|e| e.to_string())?;
-    let audio_url = result.audio_url.ok_or_else(|| "MiniMax 未返回音频".to_string())?;
+    let audio_url = result
+        .audio_url
+        .ok_or_else(|| "MiniMax 未返回音频".to_string())?;
 
     // 下载到本地缓存
     let cache_dir = studio_cache_dir(&app)?;
@@ -1314,7 +1337,10 @@ pub fn studio_project_save(
     let safe_name: String = name
         .chars()
         .filter(|c| {
-            c.is_alphanumeric() || *c == '.' || *c == '-' || *c == '_'
+            c.is_alphanumeric()
+                || *c == '.'
+                || *c == '-'
+                || *c == '_'
                 || ('\u{4e00}'..='\u{9fff}').contains(c)
         })
         .collect();
@@ -1324,9 +1350,7 @@ pub fn studio_project_save(
         safe_name
     };
     let dest = cache_dir.join(format!("{safe_name}.orp"));
-    project
-        .save_to_path(&dest)
-        .map_err(|e| e.to_string())?;
+    project.save_to_path(&dest).map_err(|e| e.to_string())?;
     Ok(dest.to_string_lossy().into_owned())
 }
 
