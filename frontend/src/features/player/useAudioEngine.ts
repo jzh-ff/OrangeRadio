@@ -1,34 +1,9 @@
 import { useRef, useCallback, useEffect } from "react";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import type { Track } from "../../stores/libraryStore";
 import { recordPlayback } from "../../lib/playback";
-
-/**
- * 把后端返回的播放源 URL 转成 webview 实际能加载的 URL。
- *
- * 三种情况：
- * 1. `http(s)://` 直链 —— 原样返回（网易云 / 电台 / 远端 URL）。
- * 2. 自定义协议 `<scheme>://localhost/...`（QQ 音乐的 `orangeradio://localhost/qqstream?url=...`）——
- *    Tauri 2 在 Windows/Android 上把自定义协议路由成 `http://<scheme>.localhost/...`，
- *    直接喂 `orangeradio://` 给 `<audio>` 既不被识别、又被 convertFileSrc 误包成 asset URL，
- *    这是 QQ 音乐“双击播放没反应”的根因。这里按平台拼正确形式。
- * 3. 其他（本地文件路径）—— 走 convertFileSrc（asset 协议）。
- */
-function toWebviewUrl(raw: string): string {
-  if (/^https?:\/\//i.test(raw)) return raw;
-  const m = raw.match(/^([a-z][a-z0-9+.-]*):\/\/localhost\//i);
-  if (m) {
-    const scheme = m[1].toLowerCase();
-    const rest = raw.slice(m[0].length); // 保留 path?query
-    const isWinLike =
-      navigator.userAgent.includes("Windows") || /Android/i.test(navigator.userAgent);
-    return isWinLike
-      ? `http://${scheme}.localhost/${rest}`
-      : `${scheme}://localhost/${rest}`;
-  }
-  return convertFileSrc(raw);
-}
+import { toWebviewUrl } from "../../lib/webviewUrl";
 
 /**
  * Web Audio 播放引擎（v4：真实频谱）

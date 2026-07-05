@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  scanWallpaperEngine,
+  type WallpaperEngineEntry,
+} from "../lib/wallpaperEngine";
 
 /** 壁纸类型 */
 export interface Wallpaper {
@@ -20,10 +24,16 @@ interface WallpaperState {
   addWallpaper: (w: Wallpaper) => void;
   removeWallpaper: (id: string) => void;
   reload: () => void;
+  engineDirs: string[];
+  engineEntries: WallpaperEngineEntry[];
+  engineScanning: boolean;
+  scanWallpaperEngine: () => Promise<void>;
+  addEngineDir: (dir: string) => void;
 }
 
 const STORAGE_KEY = "orangeradio_wallpapers";
 const ACTIVE_KEY = "orangeradio_active_wallpaper";
+const ENGINE_DIRS_KEY = "orangeradio_wallpaper_engine_dirs";
 
 /** 内置壁纸清单（从 frontend/public/wallpapers/manifest.json 加载） */
 async function loadBuiltinWallpapers(): Promise<Wallpaper[]> {
@@ -75,6 +85,40 @@ export const useWallpaperStore = create<WallpaperState>((set, get) => ({
     Promise.all([loadBuiltinWallpapers(), loadUserWallpapers()]).then(([builtin, user]) => {
       set({ list: [...builtin, ...user] });
     });
+  },
+  engineDirs: (() => {
+    try {
+      return JSON.parse(localStorage.getItem(ENGINE_DIRS_KEY) || "[]") as string[];
+    } catch {
+      return [] as string[];
+    }
+  })(),
+  engineEntries: [],
+  engineScanning: false,
+  scanWallpaperEngine: async () => {
+    if (get().engineScanning) return;
+    set({ engineScanning: true });
+    try {
+      const { engineDirs } = get();
+      const result = await scanWallpaperEngine(engineDirs.length > 0 ? engineDirs : null);
+      // 首次自动发现:把 discovered_dirs 写回 engineDirs 持久化
+      if (engineDirs.length === 0 && result.discovered_dirs.length > 0) {
+        const next = result.discovered_dirs;
+        localStorage.setItem(ENGINE_DIRS_KEY, JSON.stringify(next));
+        set({ engineDirs: next });
+      }
+      set({ engineEntries: result.entries });
+    } catch (e) {
+      console.warn("[Wallpaper Engine] 扫描失败:", e);
+      set({ engineEntries: [] });
+    } finally {
+      set({ engineScanning: false });
+    }
+  },
+  addEngineDir: (dir) => {
+    const next = Array.from(new Set([...get().engineDirs, dir]));
+    localStorage.setItem(ENGINE_DIRS_KEY, JSON.stringify(next));
+    set({ engineDirs: next });
   },
 }));
 
