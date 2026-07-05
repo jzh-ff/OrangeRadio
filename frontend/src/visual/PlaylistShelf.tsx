@@ -111,6 +111,13 @@ function CardMesh({ card, index, centerIdx, onSelect }: {
   const placeholderTex = useMemo(() => makeCardTexture(card, null), [card]);
   const tex = useMemo(() => makeCardTexture(card, coverTex), [card, coverTex]);
 
+  // 显存清理：CanvasTexture 在 memo 重建 / 组件卸载时必须 dispose，
+  // 否则每张卡片切换封面都会泄漏一个 canvas 纹理（GPU 显存累积）。
+  useEffect(() => () => { placeholderTex.dispose(); }, [placeholderTex]);
+  useEffect(() => () => { tex.dispose(); }, [tex]);
+  // loadCoverTexture 加载的真实封面贴图存进 coverTex state，卸载时也要释放
+  useEffect(() => () => { if (coverTex) coverTex.dispose(); }, [coverTex]);
+
   // 异步加载真实封面
   useEffect(() => {
     if (!card.cover) return;

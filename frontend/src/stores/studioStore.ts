@@ -7,6 +7,21 @@ import {
   type LyricsDraft,
 } from "../lib/studio";
 
+/**
+ * 从 invoke reject 出来的错误对象里提取可读文案。
+ * Tauri 2 reject 字符串错误时通常是 string；若是对象，尽量取 message。
+ * 纯 String(e) 在对象情况下会得到 "[object Object]"，这里兜底。
+ */
+function extractError(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string" && m) return m;
+  }
+  return String(e);
+}
+
 interface StudioState {
   /** 用户输入的创作提示词 */
   prompt: string;
@@ -74,7 +89,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       const text = draftToText(draft);
       set({ lyrics: draft, lyricsText: text });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: extractError(e) });
     } finally {
       set({ generatingLyrics: false });
     }
@@ -102,7 +117,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       });
       set({ audioPath: result.audio_path });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: extractError(e) });
     } finally {
       set({ generatingMusic: false });
     }
@@ -130,7 +145,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         },
       });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: extractError(e) });
     } finally {
       set({ separating: false });
     }

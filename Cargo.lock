@@ -2915,6 +2915,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 
@@ -2946,6 +2947,7 @@ dependencies = [
  "orange-studio",
  "orange-sync",
  "parking_lot",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",

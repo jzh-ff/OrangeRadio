@@ -16,6 +16,50 @@ use std::time::Duration;
 use crate::provider::*;
 use async_trait::async_trait;
 
+/// 把 MiniMax 返回的音频 URL 规范化为合法的绝对 http(s) URL。
+///
+/// 处理三种异常情况（否则会漏到下载阶段，被 reqwest 报成无意义的
+/// "builder error"）：
+/// - 空字符串 / 仅空白 → Err("audio_url 为空")
+/// - 合法绝对 http(s) URL → 原样返回
+/// - 相对路径（如第三方代理返回 `/files/xxx.mp3`）→ 拼接到 `api_base`
+/// - 非 http(s) scheme 或无法解析 → Err
+fn normalize_audio_url(raw: &str, api_base: &str) -> Result<String, &'static str> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("audio_url 为空字符串");
+    }
+    // 已经是合法绝对 URL 且 http(s)
+    if let Ok(u) = url::Url::parse(trimmed) {
+        if matches!(u.scheme(), "http" | "https") {
+            return Ok(trimmed.to_string());
+        }
+        return Err("audio_url 非 http(s) scheme");
+    }
+    // 否则当作相对路径，拼到 api_base（去掉多余斜杠）
+    if trimmed.starts_with('/') {
+        let base = api_base.trim_end_matches('/');
+        return Ok(format!("{base}{trimmed}"));
+    }
+    Err("audio_url 既非绝对 URL 也非以 / 开头的相对路径")
+}
+
+/// 脱敏 URL 用于日志：保留 scheme://host/path，剥离 query（可能含签名 token）。
+/// 解析失败则只保留前 64 个字符。
+fn sanitize_url_for_log(url: &str) -> String {
+    match url::Url::parse(url.trim()) {
+        Ok(mut u) => {
+            u.set_query(None);
+            u.set_fragment(None);
+            u.to_string()
+        }
+        Err(_) => {
+            let max = url.len().min(64);
+            format!("{}...(无法解析)", &url[..max])
+        },
+    }
+}
+
 /// MiniMax Provider（音乐生成）
 ///
 /// 配置：
@@ -57,15 +101,39 @@ impl MiniMaxProvider {
             std::fs::create_dir_all(parent)
                 .map_err(|e| orange_core::CoreError::AiService(format!("创建缓存目录失败: {e}")))?;
         }
+        // 入口防御：空 / 非绝对 http(s) URL 会触发 reqwest "builder error"，
+        // 这里拦截并报出有意义的错误（generate() 已校验，此处为二次保险，
+        // 也能保护调用方直接传相对路径的场景）。
+        let parsed = url::Url::parse(url).map_err(|e| {
+            orange_core::CoreError::AiService(format!(
+                "下载 URL 非法（无法解析）: {}（原因: {e}）",
+                sanitize_url_for_log(url)
+            ))
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(orange_core::CoreError::AiService(format!(
+                "下载 URL 非 http(s): {}",
+                sanitize_url_for_log(url)
+            )));
+        }
+        let url_for_err = sanitize_url_for_log(url);
         let bytes = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
+            .map_err(|e| {
+                orange_core::CoreError::Network(format!(
+                    "下载音频请求失败（{url_for_err}）: {e}"
+                ))
+            })?
             .bytes()
             .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            .map_err(|e| {
+                orange_core::CoreError::Network(format!(
+                    "读取音频数据失败（{url_for_err}）: {e}"
+                ))
+            })?;
         std::fs::write(dest, &bytes)
             .map_err(|e| orange_core::CoreError::AiService(format!("写入音频文件失败: {e}")))?;
         Ok(dest.to_string_lossy().into_owned())
@@ -178,7 +246,7 @@ impl AudioAIProvider for MiniMaxProvider {
         }
 
         // 提取音频 URL：兼容 data.audio / data.audio_url / data.url
-        let audio_url = v
+        let audio_url_raw = v
             .get("data")
             .and_then(|d| {
                 d.get("audio_url")
@@ -191,8 +259,16 @@ impl AudioAIProvider for MiniMaxProvider {
                     "MiniMax 响应缺少音频 URL: {}",
                     &text[..text.len().min(300)]
                 ))
-            })?
-            .to_string();
+            })?;
+
+        // URL 校验：空字符串或相对路径会漏到下载阶段，被 reqwest 报成无意义的
+        // "builder error"。这里提前拦截并给明确错误；相对路径则尝试拼到 api_base。
+        let audio_url = normalize_audio_url(audio_url_raw, &self.api_base).map_err(|reason| {
+            orange_core::CoreError::AiService(format!(
+                "MiniMax 返回的音频 URL 非法（{reason}），原始响应片段: {}",
+                &text[..text.len().min(300)]
+            ))
+        })?;
 
         // 从 extra_info 提取时长（秒）
         let duration_secs = v
@@ -210,9 +286,20 @@ impl AudioAIProvider for MiniMaxProvider {
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         if let Some(d) = duration_secs {
-            tracing::info!("MiniMax 生成成功: task={}, 时长约 {:.0}s", task_id, d);
+            tracing::info!(
+                "MiniMax 生成成功: task={}, 时长约 {:.0}s, audio_url={} (len={})",
+                task_id,
+                d,
+                sanitize_url_for_log(&audio_url),
+                audio_url.len()
+            );
         } else {
-            tracing::info!("MiniMax 生成成功: task={}", task_id);
+            tracing::info!(
+                "MiniMax 生成成功: task={}, audio_url={} (len={})",
+                task_id,
+                sanitize_url_for_log(&audio_url),
+                audio_url.len()
+            );
         }
 
         Ok(GenerationResult {

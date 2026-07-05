@@ -1,7 +1,7 @@
 import { useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { usePlayerStore } from "../stores/playerStore";
+import { readSpectrum } from "../stores/spectrumBus";
 
 /**
  * 粒子流动背景 —— 随音频频谱律动。
@@ -31,7 +31,7 @@ function ParticleField() {
       pointsRef.current.rotation.x = Math.sin(t * 0.1) * 0.1;
     }
     // 频谱驱动：取低频能量放大粒子
-    const spectrum = usePlayerStore.getState().spectrum;
+    const spectrum = readSpectrum();
     const bass = (spectrum[0] || 0) / 255;
     if (matRef.current) {
       const base = 0.05;
@@ -69,7 +69,7 @@ function GlowOrbs() {
   const orbB = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
-    const spectrum = usePlayerStore.getState().spectrum;
+    const spectrum = readSpectrum();
     const bass = (spectrum[0] || 0) / 255;
     const mid = (spectrum[8] || 0) / 255;
     if (orbA.current) {

@@ -49,6 +49,7 @@ impl NeteaseSource {
     ) -> Self {
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .timeout(std::time::Duration::from_secs(15))
             .build()
             .unwrap_or_default();
 
@@ -58,6 +59,7 @@ impl NeteaseSource {
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_default();
 
@@ -400,7 +402,8 @@ impl NeteaseSource {
         if song_id.trim().is_empty() || !song_id.trim().chars().all(|c| c.is_ascii_digit()) {
             return Err(orange_core::CoreError::Unsupported("歌曲 ID 无效".into()));
         }
-        self.manipulate_track(playlist_id, song_id.trim(), "add").await
+        self.manipulate_track(playlist_id, song_id.trim(), "add")
+            .await
     }
 
     /// 调 /weapi/w/nuser/account/get + /weapi/user/playlist 获取「我喜欢的音乐」歌单 ID

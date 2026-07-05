@@ -149,14 +149,12 @@ impl GequbaoSource {
                 &text[..text.len().min(200)]
             )));
         }
-        let v: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|e| orange_core::CoreError::AiService(format!("解析歌曲宝取流响应失败: {e}")))?;
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            orange_core::CoreError::AiService(format!("解析歌曲宝取流响应失败: {e}"))
+        })?;
         let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
         if code != 1 {
-            let msg = v
-                .get("msg")
-                .and_then(|m| m.as_str())
-                .unwrap_or("取流失败");
+            let msg = v.get("msg").and_then(|m| m.as_str()).unwrap_or("取流失败");
             return Err(orange_core::CoreError::AiService(format!(
                 "歌曲宝取流错误 [code={code}]: {msg}"
             )));
@@ -165,9 +163,7 @@ impl GequbaoSource {
             .get("data")
             .and_then(|d| d.get("url"))
             .and_then(|u| u.as_str())
-            .ok_or_else(|| {
-                orange_core::CoreError::AiService("歌曲宝取流响应缺少 url".into())
-            })?
+            .ok_or_else(|| orange_core::CoreError::AiService("歌曲宝取流响应缺少 url".into()))?
             .to_string();
         Ok(mp3_url)
     }
@@ -371,10 +367,7 @@ fn urlencode(s: &str) -> String {
 }
 
 /// 给已构造的 Track 补充详情页元数据（封面 / 歌词），供 IPC 层调用
-pub async fn enrich_track_detail(
-    source: &GequbaoSource,
-    track: &mut Track,
-) -> Result<()> {
+pub async fn enrich_track_detail(source: &GequbaoSource, track: &mut Track) -> Result<()> {
     let detail = source.fetch_detail(&track.source_track_id).await?;
     if let Some(cover) = detail.cover {
         track.meta.artwork = Some(Artwork {

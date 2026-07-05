@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
-import { writeSpectrum, writeBeat, readBeat } from "../../stores/spectrumBus";
+import { writeSpectrum, writeBeat, readBeat, resetSpectrumBus } from "../../stores/spectrumBus";
 import type { Track } from "../../stores/libraryStore";
 import { recordPlayback } from "../../lib/playback";
 import { toWebviewUrl } from "../../lib/webviewUrl";
@@ -26,6 +26,8 @@ export function useAudioEngine(autoNext?: () => void) {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number>(0);
   const graphOkRef = useRef(false);
+  // 保存 MediaStreamSource 节点引用，用于卸载时 disconnect（避免 Web Audio 资源泄漏）
+  const srcNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   // 立即创建 audio 元素
   if (!audioRef.current && typeof Audio !== "undefined") {
@@ -59,6 +61,7 @@ export function useAudioEngine(autoNext?: () => void) {
       src.connect(analyser);
       // 注意：不连 destination（声音已由 <audio> 输出，避免双重发声）
       analyserRef.current = analyser;
+      srcNodeRef.current = src; // 保存以便卸载时断开
       graphOkRef.current = true;
       console.log("[频谱] 真实频谱已连接（captureStream）");
     } catch (e) {
@@ -318,6 +321,18 @@ export function useAudioEngine(autoNext?: () => void) {
       audio.removeEventListener("ended", onEnd);
       audio.removeEventListener("error", onError);
       cancelAnimationFrame(rafRef.current);
+      // 释放 Web Audio 资源：断开节点 + 关闭 AudioContext（避免多次重载累积泄漏）
+      try {
+        srcNodeRef.current?.disconnect();
+      } catch { /* 已断开 */ }
+      try {
+        analyserRef.current?.disconnect();
+      } catch { /* 已断开 */ }
+      // 重置频谱 bus，清掉残留视觉
+      resetSpectrumBus();
+      if (ctxRef.current && ctxRef.current.state !== "closed") {
+        ctxRef.current.close().catch(() => { /* 忽略关闭失败 */ });
+      }
     };
   }, [next]);
 

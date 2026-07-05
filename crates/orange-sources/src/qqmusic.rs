@@ -39,6 +39,7 @@ impl QqMusicSource {
     ) -> Self {
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 13_0 like Mac OS X)")
+            .timeout(std::time::Duration::from_secs(15))
             .build()
             .unwrap_or_default();
 
@@ -462,6 +463,7 @@ impl QqMusicSource {
             .redirect(reqwest::redirect::Policy::none())
             .cookie_store(true)
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 

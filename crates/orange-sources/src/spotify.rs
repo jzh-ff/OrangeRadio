@@ -47,6 +47,7 @@ impl SpotifySource {
     ) -> Self {
         let client = reqwest::Client::builder()
             .user_agent("OrangeRadio/0.3")
+            .timeout(std::time::Duration::from_secs(15))
             .build()
             .unwrap_or_default();
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { FixedSizeList as List, type ListChildComponentProps } from "react-window";
 import type { Track } from "../stores/libraryStore";
 import "../styles/library.css";
@@ -25,7 +25,19 @@ interface TrackRowProps {
   cols?: 4 | 5;            // 列数（5 默认含专辑列；4 无专辑列，用于歌曲宝/电台）
 }
 
-export function TrackRow({ track, index, active, isPlaying, onPlay, children, style, cols = 5 }: TrackRowProps) {
+// 用 memo 包裹：浅比较 props，避免父级（VirtualTrackList）因非相关状态变化重渲时
+// 把所有可见行连带重渲。注意 children（renderRow 返回值）每次是新节点，
+// 真正能挡住的是 track/index/active/onPlay/style/cols 都没变的情况（如滚动时 style 变）。
+export const TrackRow = memo(function TrackRow({
+  track,
+  index,
+  active,
+  isPlaying,
+  onPlay,
+  children,
+  style,
+  cols = 5,
+}: TrackRowProps) {
   return (
     <div
       style={style}
@@ -45,7 +57,7 @@ export function TrackRow({ track, index, active, isPlaying, onPlay, children, st
       {children}
     </div>
   );
-}
+});
 
 /**
  * 虚拟化歌曲列表（基于 react-window FixedSizeList）。
@@ -87,6 +99,40 @@ interface VirtualTrackListProps {
 
 const ROW_HEIGHT = 48;
 
+/** 打包给 react-window 的行数据（Row 通过 props.data 读取，便于 memo） */
+interface RowItemData {
+  tracks: Track[];
+  activeId?: string;
+  isPlaying: boolean;
+  onPlay: (track: Track, index: number) => void;
+  renderRow: (track: Track, index: number) => ReactNode;
+  cols: 4 | 5;
+}
+
+/**
+ * 模块级 memo Row：从 props.data 取依赖，避免内联 Row 在父级每次重渲时
+ * 被重新创建（新函数引用 → react-window 判定所有可见行 props 变化 → 全部重渲）。
+ * 配合下方 itemData 的 useMemo，只有真正变化的字段（如 isPlaying）才触发重渲。
+ */
+const MemoRow = memo(({ index, style, data }: ListChildComponentProps<RowItemData>) => {
+  const t = data.tracks[index];
+  if (!t) return null;
+  const active = !!data.activeId && data.activeId === t.id;
+  return (
+    <TrackRow
+      track={t}
+      index={index}
+      active={active}
+      isPlaying={data.isPlaying}
+      onPlay={data.onPlay}
+      style={style}
+      cols={data.cols}
+    >
+      {data.renderRow(t, index)}
+    </TrackRow>
+  );
+});
+
 export function VirtualTrackList({
   tracks,
   activeId,
@@ -116,15 +162,12 @@ export function VirtualTrackList({
     return () => ro.disconnect();
   }, [height]);
 
-  const Row = ({ index, style }: ListChildComponentProps) => {
-    const t = tracks[index];
-    const active = !!activeId && activeId === t.id;
-    return (
-      <TrackRow track={t} index={index} active={active} isPlaying={isPlaying} onPlay={onPlay} style={style} cols={cols}>
-        {renderRow(t, index)}
-      </TrackRow>
-    );
-  };
+  // 把依赖打包进 itemData 并 memo：引用稳定时，react-window 不会重渲任何行。
+  // 只有 tracks/activeId/isPlaying/onPlay/renderRow/cols 真正变化时才生成新引用。
+  const itemData = useMemo<RowItemData>(
+    () => ({ tracks, activeId, isPlaying, onPlay, renderRow, cols }),
+    [tracks, activeId, isPlaying, onPlay, renderRow, cols]
+  );
 
   return (
     <div ref={containerRef} className={className} style={{ height: height ?? autoHeight }}>
@@ -134,9 +177,10 @@ export function VirtualTrackList({
         itemSize={ROW_HEIGHT}
         width="100%"
         overscanCount={8}
+        itemData={itemData}
         onItemsRendered={onItemsRendered}
       >
-        {Row}
+        {MemoRow}
       </List>
     </div>
   );

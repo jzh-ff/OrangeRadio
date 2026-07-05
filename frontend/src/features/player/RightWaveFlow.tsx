@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "../../stores/playerStore";
+import { readSpectrum } from "../../stores/spectrumBus";
 
 interface RightWaveFlowProps {
   /** bar 数量（横向排列的条数），默认 56 */
@@ -17,7 +18,7 @@ interface RightWaveFlowProps {
  *       之后逐帧把整组 bar 向左推一格。最新的能量永远出现在最右侧，
  *       老的能量向左"流出"，形成方向感明确的声波瀑布。
  *
- * 数据源：usePlayerStore.spectrum（useAudioEngine 的 RAF 里写的 64-bin FFT）
+ * 数据源：spectrumBus（useAudioEngine 的 RAF 里写的 64-bin FFT）
  * - 数据是真实的：Web Audio AnalyserNode + captureStream 绕过 CORS
  * - 不播放时降到一个低值底（避免"画布消失"），同时透明度也压低
  *
@@ -29,7 +30,6 @@ interface RightWaveFlowProps {
  */
 export function RightWaveFlow({ bars = 56, height = 160, intensity = 0.95 }: RightWaveFlowProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const spectrum = usePlayerStore((s) => s.spectrum);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   // history：长度 = bars，最右（index = bars - 1）是最新能量
   const historyRef = useRef<Float32Array>(new Float32Array(bars));
@@ -60,7 +60,7 @@ export function RightWaveFlow({ bars = 56, height = 160, intensity = 0.95 }: Rig
       const h = rect.height;
       ctx.clearRect(0, 0, w, h);
 
-      const data = spectrum;
+      const data = readSpectrum();
       const binCount = data.length;
 
       // === 推进 history（每 1 ~ 2 帧向左推一次，营造"瀑布"流速）===
@@ -135,7 +135,7 @@ export function RightWaveFlow({ bars = 56, height = 160, intensity = 0.95 }: Rig
       cancelAnimationFrame(rafRef.current);
       ro.disconnect();
     };
-  }, [spectrum, isPlaying, bars, intensity]);
+  }, [isPlaying, bars, intensity]);
 
   return (
     <div className="home-hero__wave" aria-hidden style={{ height }}>
