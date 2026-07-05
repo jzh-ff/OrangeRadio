@@ -13,7 +13,7 @@ import type { Wallpaper } from "../stores/wallpaperStore";
  */
 
 /** 从视频 URL 提取首帧作 thumbnail（data URL） */
-function extractVideoThumbnail(videoUrl: string): Promise<string | undefined> {
+export function extractVideoThumbnail(videoUrl: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
     video.crossOrigin = "anonymous";

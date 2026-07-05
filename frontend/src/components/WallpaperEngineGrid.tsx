@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useWallpaperStore } from "../stores/wallpaperStore";
 import {
-  weFileUrl, weKindLabel, formatSize, type WeKind, type WallpaperEngineEntry,
+  weFileUrl, weKindLabel, formatSize, importWeToLocal, type WeKind, type WallpaperEngineEntry,
 } from "../lib/wallpaperEngine";
 import { toWebviewUrl } from "../lib/webviewUrl";
 import type { Wallpaper } from "../stores/wallpaperStore";
@@ -98,10 +98,12 @@ export function WallpaperEngineGrid() {
   );
 }
 
-/** 单卡片:预览图懒加载 + 名字 + 格式色标 + 大小 */
+/** 单卡片:预览图懒加载 + 名字 + 格式色标 + 大小 + 收藏到本地 */
 function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const addWallpaper = useWallpaperStore((s) => s.addWallpaper);
 
   useEffect(() => {
     const el = ref.current;
@@ -118,8 +120,22 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
   const imgSrc = previewRel ? toWebviewUrl(weFileUrl(entry.source_dir, previewRel)) : null;
   const kindCls = `we-card__kind we-card__kind--${entry.kind}`;
 
+  const onImport = async (ev: MouseEvent) => {
+    ev.stopPropagation();
+    if (importing) return;
+    setImporting(true);
+    try {
+      const result = await importWeToLocal(entry);
+      if (result) addWallpaper(result.wallpaper);
+    } catch (e) {
+      console.warn("[WE] 收藏到本地失败:", e);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
-    <button type="button" className="we-card" onClick={onApply} title={entry.title}>
+    <div className="we-card" onClick={onApply} role="button" tabIndex={0} title={entry.title}>
       <div className="we-card__cover" ref={ref}>
         {visible && imgSrc ? (
           <img src={imgSrc} alt={entry.title} loading="lazy" />
@@ -130,6 +146,17 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
       <span className={kindCls}>{weKindLabel(entry.kind)}</span>
       <span className="we-card__name">{entry.title}</span>
       <span className="we-card__size">{formatSize(entry.size_bytes)}</span>
-    </button>
+      {entry.applicable && (
+        <button
+          type="button"
+          className="we-card__fav"
+          onClick={onImport}
+          disabled={importing}
+          title="收藏到本地(永久内置,Steam 卸载也能用)"
+        >
+          {importing ? "…" : "⭐"}
+        </button>
+      )}
+    </div>
   );
 }
