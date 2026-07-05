@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { Track } from "./libraryStore";
 
 export type PlaybackMode =
@@ -165,7 +166,7 @@ interface PlayerState {
   mode: PlaybackMode;
   view: "player" | "studio";
   /** 播放器内子页面 */
-  subView: "home" | "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "user_playlist" | "search" | "wallpaper";
+  subView: "home" | "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "gequbao" | "user_playlist" | "search" | "wallpaper";
   /** 当前查看的用户歌单 ID */
   currentPlaylistId: string | null;
   spectrum: number[];
@@ -188,18 +189,37 @@ interface PlayerState {
   /** 当前播放队列 + 索引（用于上/下一首） */
   tracks: Track[];
   currentIndex: number;
+  /** 电台队列（与单曲队列隔离，互不干扰） */
+  radioTracks: Track[];
+  radioIndex: number;
+  /** 当前活跃的队列类型（驱动 next/prev 路由到 tracks 或 radioTracks） */
+  activeQueue: "tracks" | "radio";
   /** 请求重新登录的音源：view 监听变化后切到扫码 UI */
   pendingLoginSource: ReloginSource;
   /** 设置弹窗是否打开 */
   settingsOpen: boolean;
   /** 热键设置弹窗是否打开 */
   hotkeysModalOpen: boolean;
+  /** 侧栏智能动作激活态（"AI 推荐" / "懂你模式" 等动作项的高亮标记,与 subView 解耦) */
+  smartAction: "recommend" | "understand_you" | null;
 
   setView: (v: "player" | "studio") => void;
-  setSubView: (v: "home" | "library" | "wallpaper" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "user_playlist" | "search") => void;
+  setSubView: (v: "home" | "library" | "wallpaper" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "gequbao" | "user_playlist" | "search") => void;
   setMode: (m: PlaybackMode) => void;
   setCurrent: (t: Track, index: number) => void;
   setQueue: (tracks: Track[]) => void;
+  /** 设置电台队列并切到电台活跃队列（与单曲队列隔离） */
+  setRadioQueue: (tracks: Track[]) => void;
+  /** 追加单曲到队尾 */
+  addToQueue: (track: Track) => void;
+  /** 批量追加到队尾 */
+  addManyToQueue: (tracks: Track[]) => void;
+  /** 插入到当前位置之后（"下一首播放"） */
+  insertNext: (track: Track) => void;
+  /** 删除指定位置的单曲 */
+  removeAt: (index: number) => void;
+  /** 清空单曲队列 */
+  clearQueue: () => void;
   setBeat: (b: Partial<BeatState>) => void;
   /** 设置节拍图谱（null 清空 → 退化用实时检测） */
   setBeatmap: (hits: BeatHit[] | null) => void;
@@ -209,6 +229,7 @@ interface PlayerState {
   setFullLayout: (l: FullLayout) => void;
   setSettingsOpen: (open: boolean) => void;
   setHotkeysModalOpen: (open: boolean) => void;
+  setSmartAction: (a: "recommend" | "understand_you" | null) => void;
   /** 请求某个 source 触发重新登录（toast / settings 用） */
   requestRelogin: (source: Exclude<ReloginSource, null>) => void;
   /** 清掉重新登录请求（view 处理完后调） */
@@ -216,7 +237,9 @@ interface PlayerState {
   patch: (s: Partial<PlayerState>) => void;
 }
 
-export const usePlayerStore = create<PlayerState>((set, get) => ({
+export const usePlayerStore = create<PlayerState>()(
+  persist(
+    (set, get) => ({
   currentTrack: null,
   isPlaying: false,
   position: 0,
@@ -237,15 +260,38 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   queueOpen: false,
   tracks: [],
   currentIndex: -1,
+  radioTracks: [],
+  radioIndex: -1,
+  activeQueue: "tracks",
   pendingLoginSource: null,
   settingsOpen: false,
   hotkeysModalOpen: false,
+  smartAction: null,
 
   setView: (view) => set({ view }),
   setSubView: (subView) => set({ view: "player", subView }),
   setMode: (mode) => set({ mode }),
   setCurrent: (currentTrack, currentIndex) => set({ currentTrack, currentIndex }),
-  setQueue: (tracks) => set({ tracks }),
+  setQueue: (tracks) => set({ tracks, activeQueue: "tracks" }),
+  setRadioQueue: (radioTracks) => set({ radioTracks, activeQueue: "radio" }),
+  addToQueue: (track) => set((s) => ({ tracks: [...s.tracks, track] })),
+  addManyToQueue: (tracks) => set((s) => ({ tracks: [...s.tracks, ...tracks] })),
+  insertNext: (track) => set((s) => {
+    const at = Math.max(0, s.currentIndex + 1);
+    const tracks = [...s.tracks];
+    tracks.splice(at, 0, track);
+    // 插入点在 currentIndex 之前或等于时，currentIndex 后移（保持指向原曲）
+    const currentIndex = s.currentIndex >= 0 && at <= s.currentIndex ? s.currentIndex + 1 : s.currentIndex;
+    return { tracks, currentIndex };
+  }),
+  removeAt: (index) => set((s) => {
+    const tracks = s.tracks.filter((_, i) => i !== index);
+    let currentIndex = s.currentIndex;
+    if (index < currentIndex) currentIndex -= 1;
+    else if (index === currentIndex) currentIndex = -1; // 删的是当前播放
+    return { tracks, currentIndex };
+  }),
+  clearQueue: () => set({ tracks: [], currentIndex: -1 }),
   setBeat: (b) => set({ beat: { ...get().beat, ...b } }),
   setBeatmap: (beatmap) =>
     set({
@@ -263,7 +309,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setFullLayout: (fullLayout: FullLayout) => set({ fullLayout }),
   setSettingsOpen: (open: boolean) => set({ settingsOpen: open }),
   setHotkeysModalOpen: (hotkeysModalOpen: boolean) => set({ hotkeysModalOpen }),
+  setSmartAction: (smartAction) => set({ smartAction }),
   requestRelogin: (source) => set({ pendingLoginSource: source }),
   clearRelogin: () => set({ pendingLoginSource: null }),
   patch: (s) => set(s),
-}));
+    }),
+    {
+      name: "orangeradio_player",
+      storage: createJSONStorage(() => localStorage),
+      // 只持久化队列与播放偏好，排除 spectrum/beat/beatmap 等高频瞬时态
+      partialize: (s) => ({
+        tracks: s.tracks,
+        currentIndex: s.currentIndex,
+        radioTracks: s.radioTracks,
+        radioIndex: s.radioIndex,
+        activeQueue: s.activeQueue,
+        mode: s.mode,
+        volume: s.volume,
+        currentTrack: s.currentTrack,
+      }),
+    }
+  )
+);

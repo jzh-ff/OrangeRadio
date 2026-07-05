@@ -13,15 +13,16 @@ import {
 } from "../lib/lyricWindow";
 import "./LyricOverlay.css";
 
-/** 主窗口推过来的播放状态 */
+/** 主窗口推过来的播放状态（含节拍强度，驱动悬浮窗呼吸/扫光） */
 interface LyricState {
   track: Track | null;
   position: number;
   isPlaying: boolean;
   duration: number;
+  beatIntensity?: number;
 }
 
-/** 拉***词，按 source_kind 分发网易云 / QQ；无匹配音源或失败 → 置空 */
+/** 拉歌词，按 source_kind 分发网易云 / QQ；无匹配音源或失败 → 置空 */
 async function fetchLyric(
   track: Track,
   setRaw: (s: string | null) => void,
@@ -40,7 +41,6 @@ async function fetchLyric(
         songId: tid,
       });
     } else if ((track.meta as { lyrics?: string | null } | undefined)?.lyrics) {
-      // 本地内嵌歌词（扫描时 lofty 提取的 USLT/LRC）
       data = { raw_lrc: (track.meta as { lyrics?: string | null }).lyrics!, translated_lrc: null };
     }
     setRaw(data?.raw_lrc || null);
@@ -51,19 +51,141 @@ async function fetchLyric(
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 设置（localStorage 记忆，悬浮窗独立持久化）
+ * ------------------------------------------------------------------ */
+interface LyricSettings {
+  /** 字号系数（0.7 ~ 1.5） */
+  scale: number;
+  /** 不透明度（0.4 ~ 1.0） */
+  opacity: number;
+  /** 是否显示翻译（双语） */
+  showTranslation: boolean;
+  /** 主题预设：default / warm / cool / mono */
+  theme: "default" | "warm" | "cool" | "mono";
+}
+
+const SETTINGS_KEY = "orangeradio_lyric_settings_v1";
+const DEFAULT_SETTINGS: LyricSettings = {
+  scale: 1,
+  opacity: 0.95,
+  showTranslation: true,
+  theme: "default",
+};
+
+function loadSettings(): LyricSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<LyricSettings>) };
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_SETTINGS;
+}
+
+function saveSettings(s: LyricSettings) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    /* ignore */
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * SVG 图标（零 emoji）
+ * ------------------------------------------------------------------ */
+const Icons = {
+  Prev: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+    </svg>
+  ),
+  Next: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M16 6h2v12h-2zM6 18l8.5-6L6 6v12z" />
+    </svg>
+  ),
+  Play: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  ),
+  Pause: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="5" width="4" height="14" rx="1" />
+    </svg>
+  ),
+  Lock: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  ),
+  Unlock: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 7.5-2" />
+    </svg>
+  ),
+  Settings: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  ),
+  Close: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  ),
+  Drag: (
+    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+      <circle cx="2" cy="3" r="1" />
+      <circle cx="8" cy="3" r="1" />
+      <circle cx="2" cy="7" r="1" />
+      <circle cx="8" cy="7" r="1" />
+      <circle cx="2" cy="11" r="1" />
+      <circle cx="8" cy="11" r="1" />
+    </svg>
+  ),
+};
+
+/* ------------------------------------------------------------------ *
+ * 主题预设
+ * ------------------------------------------------------------------ */
+const THEMES: Record<LyricSettings["theme"], { primary: string; highlight: string; glow: string; secondary: string; label: string }> = {
+  default: { primary: "#f6fdff", highlight: "#ffd9a8", glow: "#9cffdf", secondary: "rgba(246,253,255,0.42)", label: "默认" },
+  warm:    { primary: "#fff5e6", highlight: "#ffae5e", glow: "#ffc97a", secondary: "rgba(255,245,230,0.45)", label: "暖橙" },
+  cool:    { primary: "#e6f5ff", highlight: "#9ed3ff", glow: "#9cffd4", secondary: "rgba(230,245,255,0.45)", label: "冷蓝" },
+  mono:    { primary: "#ffffff", highlight: "#ffffff", glow: "#ffffff", secondary: "rgba(255,255,255,0.4)", label: "纯白" },
+};
+
 /**
  * 桌面歌词悬浮窗根组件（仅 label="lyric-overlay" 窗口渲染）。
  *
- * 数据流：listen("lyric:state") → 把 track/position/isPlaying/duration 写到本窗口的
- * playerStore → useLyrics 订阅 store.position 自动算 activeIndex → 双行渲染。
- * 本地 setInterval 每 250ms 推进 position，避免主窗口 emit 节流导致的卡顿。
+ * 布局（对标 MineRadio desktop-lyrics.html 的"当前行 + 上下文"）：
+ *   ┌─────────────────────────────────────────┐
+ *   │                  ... 上 2 行（小）       │  ← 上下文淡灰
+ *   │                  ... 上 1 行（小）       │
+ *   │  ★ 当前行（大字 + 5 段 CSS 渐变扫光） ★  │
+ *   │                  ... 下 1 行（小）       │
+ *   │                  ... 下 2 行（小）       │
+ *   └─────────────────────────────────────────┘
+ *
+ * 背景完全透明（透出桌面），控件按钮 hover 才浮现。
+ * 设置面板：字号 / 不透明度 / 翻译开关 / 主题预设。
+ *
+ * 数据流：listen("lyric:state") → 本地 playerStore → useLyrics 算 activeIndex + progress。
  */
 export function LyricOverlay() {
   const [rawLrc, setRawLrc] = useState<string | null>(null);
   const [translatedLrc, setTranslatedLrc] = useState<string | null>(null);
   const [locked, setLocked] = useState<boolean>(isLyricLocked());
+  const [settings, setSettings] = useState<LyricSettings>(loadSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // useLyrics 订阅本窗口 playerStore.position；listen 写入 store 后自动重算
+  const beatIntensity = usePlayerStore((s) => s.beat?.intensity ?? 0);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const { lines, activeIndex, activeProgress } = useLyrics(rawLrc, translatedLrc);
 
@@ -73,16 +195,15 @@ export function LyricOverlay() {
 
     (async () => {
       unlisten = await listen<LyricState>("lyric:state", (e) => {
-        const { track, position, isPlaying: playing, duration } = e.payload;
-        // 写到本窗口 store（useLyrics 据此算 activeIndex）
+        const { track, position, isPlaying: playing, duration, beatIntensity: bi } = e.payload;
         usePlayerStore.setState({
           currentTrack: track ?? usePlayerStore.getState().currentTrack,
           isPlaying: playing,
           duration,
           position,
+          beat: { ...usePlayerStore.getState().beat, intensity: bi ?? 0 },
         });
 
-        // 切歌时清空旧词并重新拉取
         const tid = track?.source_track_id ?? "";
         if (track && tid && tid !== lastTrackId) {
           lastTrackId = tid;
@@ -93,7 +214,6 @@ export function LyricOverlay() {
       });
     })();
 
-    // 本地推进 position（主窗口 emit 节流 200ms，这里 250ms 平滑）
     const posTimer = window.setInterval(() => {
       const s = usePlayerStore.getState();
       if (s.isPlaying && s.duration > 0) {
@@ -108,7 +228,11 @@ export function LyricOverlay() {
     };
   }, []);
 
-  // 拖动结束记位置
+  // 设置变更时持久化
+  useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
+
   const onDragEnd = async () => {
     try {
       const pos = await getCurrentWebviewWindow().outerPosition();
@@ -118,7 +242,6 @@ export function LyricOverlay() {
     }
   };
 
-  // 锁定：整窗鼠标穿透；通知主窗口按钮更新态。unlock 走主窗口按钮
   const toggleLock = async () => {
     const next = !locked;
     setLocked(next);
@@ -127,54 +250,211 @@ export function LyricOverlay() {
     void emit("lyric:lock-change", { locked: next });
   };
 
-  const sendCmd = (cmd: "toggle" | "close") => {
+  const sendCmd = (cmd: "toggle" | "close" | "prev" | "next") => {
     void emit("lyric:cmd", { cmd });
   };
 
-  // 双行：当前行（高亮大字 + 卡拉 OK 渐变）+ 下一行（次亮小字）；翻译优先
-  const cur = activeIndex >= 0 ? lines[activeIndex] : null;
-  const nextLine =
-    activeIndex >= 0 && activeIndex + 1 < lines.length ? lines[activeIndex + 1] : null;
+  // 上下文：当前行 + 上下各 2 行（5 行总览）
+  const CONTEXT_RANGE = 2;
   const empty = lines.length === 0;
-  const curText = cur ? (cur.translation || cur.text) : (empty ? "暂无歌词" : "♪");
-  // 卡拉 OK 渐变进度（0-100%）
-  const progressPct = Math.round(activeProgress * 100);
+  const visibleLines = empty
+    ? []
+    : lines
+        .map((l, i) => ({ line: l, index: i }))
+        .filter(({ index }) => index >= activeIndex - CONTEXT_RANGE && index <= activeIndex + CONTEXT_RANGE);
+
+  const cur = activeIndex >= 0 ? lines[activeIndex] : null;
+  const curText = cur ? (settings.showTranslation && cur.translation ? cur.text : cur.translation || cur.text) : (empty ? "暂无歌词" : "♪");
+  const progressPct = (activeProgress * 100).toFixed(1);
+  const beatScale = isPlaying ? 1 + Math.min(beatIntensity, 1) * 0.04 : 1;
+
+  const theme = THEMES[settings.theme];
+
+  // 行切换 key（重播入场动画）
+  const lineKey = `${activeIndex}-${curText}`;
 
   return (
-    <div className={`lyric-overlay${locked ? " lyric-overlay--locked" : ""}`}>
+    <div
+      className={`lyric-overlay${locked ? " lyric-overlay--locked" : ""}${isPlaying ? "" : " lyric-overlay--paused"} lyric-overlay--theme-${settings.theme}`}
+      style={{
+        "--lyric-progress": `${progressPct}%`,
+        "--lyric-beat-scale": beatScale,
+        "--lyric-scale": settings.scale,
+        "--lyric-opacity": settings.opacity,
+        "--lyric-primary": theme.primary,
+        "--lyric-secondary": theme.secondary,
+        "--lyric-highlight": theme.highlight,
+        "--lyric-glow": theme.glow,
+      } as React.CSSProperties}
+    >
+      {/* 主体：5 行上下文（透明背景） */}
       <div
-        className="lyric-overlay__drag"
+        className="lyric-overlay__stage"
         data-tauri-drag-region
         onPointerUp={onDragEnd}
-        style={{ "--lyric-progress": `${progressPct}%` } as React.CSSProperties}
       >
-        <div className="lyric-overlay__lines">
-          <div className={`lyric-line lyric-line--cur${empty ? " is-empty" : ""}`}>
-            <span className="lyric-line__bg">{curText}</span>
-            <span className="lyric-line__fill" style={{ width: `${progressPct}%` }}>{curText}</span>
-          </div>
-          <div className="lyric-line lyric-line--next">
-            {nextLine ? nextLine.translation || nextLine.text : ""}
-          </div>
+        {/* 顶部装饰：拖拽手柄 + 锁定状态指示（hover 才显） */}
+        <div className="lyric-overlay__drag-handle" data-tauri-drag-region>
+          <span className="lyric-overlay__drag-dots">{Icons.Drag}</span>
+          <span className="lyric-overlay__lock-state">
+            {locked ? "LOCKED · 鼠标穿透" : "UNLOCKED · 可交互"}
+          </span>
         </div>
+
+        {/* 歌词 5 行 */}
+        <div className="lyric-overlay__lines" key={lineKey}>
+          {empty ? (
+            <div className="lyric-line lyric-line--empty">♪  暂无歌词</div>
+          ) : (
+            visibleLines.map(({ line, index }) => {
+              const isCur = index === activeIndex;
+              const offset = index - activeIndex; // -2 ~ +2
+              const showTrans = settings.showTranslation && line.translation;
+              return (
+                <div
+                  key={index}
+                  className={`lyric-line ${isCur ? "lyric-line--cur" : "lyric-line--ctx"} lyric-line--offset-${offset}${isCur ? " lyric-line--in" : ""}`}
+                  data-offset={offset}
+                >
+                  <span className="lyric-line__bg" data-text={line.text}>
+                    {line.text}
+                  </span>
+                  {isCur && (
+                    <span
+                      className="lyric-line__fill"
+                      data-text={line.text}
+                      style={{ "--p": `${progressPct}%` } as React.CSSProperties}
+                    >
+                      {line.text}
+                    </span>
+                  )}
+                  {showTrans && (
+                    <div className={`lyric-line__trans ${isCur ? "lyric-line__trans--cur" : ""}`}>
+                      {line.translation}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* 控件条（hover 才显，未锁定） */}
+        {!locked && (
+          <div className="lyric-overlay__controls">
+            <button
+              className="lyric-btn"
+              onClick={() => sendCmd("prev")}
+              title="上一首"
+              aria-label="上一首"
+            >
+              {Icons.Prev}
+            </button>
+            <button
+              className="lyric-btn lyric-btn--play"
+              onClick={() => sendCmd("toggle")}
+              title={isPlaying ? "暂停" : "播放"}
+              aria-label={isPlaying ? "暂停" : "播放"}
+            >
+              {isPlaying ? Icons.Pause : Icons.Play}
+            </button>
+            <button
+              className="lyric-btn"
+              onClick={() => sendCmd("next")}
+              title="下一首"
+              aria-label="下一首"
+            >
+              {Icons.Next}
+            </button>
+            <div className="lyric-btn-divider" />
+            <button
+              className="lyric-btn"
+              onClick={() => setSettingsOpen((v) => !v)}
+              title="设置"
+              aria-label="设置"
+            >
+              {Icons.Settings}
+            </button>
+            <button
+              className="lyric-btn"
+              onClick={toggleLock}
+              title="锁定（鼠标穿透）"
+              aria-label="锁定"
+            >
+              {locked ? Icons.Lock : Icons.Unlock}
+            </button>
+            <button
+              className="lyric-btn"
+              onClick={() => sendCmd("close")}
+              title="关闭桌面歌词"
+              aria-label="关闭"
+            >
+              {Icons.Close}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* 控件：锁定时不渲染（整窗穿透，解锁走主窗口） */}
-      {!locked && (
-        <div className="lyric-overlay__controls">
-          <button
-            className="lyric-btn"
-            onClick={() => sendCmd("toggle")}
-            title={isPlaying ? "暂停" : "播放"}
-          >
-            {isPlaying ? "❚❚" : "▶"}
-          </button>
-          <button className="lyric-btn" onClick={toggleLock} title="锁定（鼠标穿透）">
-            🔒
-          </button>
-          <button className="lyric-btn" onClick={() => sendCmd("close")} title="关闭">
-            ✕
-          </button>
+      {/* 设置面板（齿轮按钮触发） */}
+      {settingsOpen && !locked && (
+        <div className="lyric-overlay__settings" onClick={(e) => e.stopPropagation()}>
+          <div className="lyric-setting">
+            <label className="lyric-setting__label">字号</label>
+            <input
+              type="range"
+              min="0.7"
+              max="1.5"
+              step="0.05"
+              value={settings.scale}
+              onChange={(e) => setSettings((s) => ({ ...s, scale: parseFloat(e.target.value) }))}
+              className="lyric-setting__range"
+            />
+            <span className="lyric-setting__value">{settings.scale.toFixed(2)}×</span>
+          </div>
+          <div className="lyric-setting">
+            <label className="lyric-setting__label">不透明度</label>
+            <input
+              type="range"
+              min="0.4"
+              max="1"
+              step="0.05"
+              value={settings.opacity}
+              onChange={(e) => setSettings((s) => ({ ...s, opacity: parseFloat(e.target.value) }))}
+              className="lyric-setting__range"
+            />
+            <span className="lyric-setting__value">{Math.round(settings.opacity * 100)}%</span>
+          </div>
+          <div className="lyric-setting">
+            <label className="lyric-setting__label">翻译</label>
+            <button
+              className={`lyric-setting__toggle ${settings.showTranslation ? "is-on" : ""}`}
+              onClick={() => setSettings((s) => ({ ...s, showTranslation: !s.showTranslation }))}
+              type="button"
+            >
+              {settings.showTranslation ? "显示" : "隐藏"}
+            </button>
+          </div>
+          <div className="lyric-setting">
+            <label className="lyric-setting__label">主题</label>
+            <div className="lyric-setting__themes">
+              {(Object.keys(THEMES) as Array<keyof typeof THEMES>).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={`lyric-setting__theme ${settings.theme === k ? "is-active" : ""}`}
+                  onClick={() => setSettings((s) => ({ ...s, theme: k }))}
+                  data-theme={k}
+                  title={THEMES[k].label}
+                >
+                  <span
+                    className="lyric-setting__theme-dot"
+                    style={{ background: `linear-gradient(135deg, ${THEMES[k].highlight}, ${THEMES[k].glow})` }}
+                  />
+                  {THEMES[k].label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

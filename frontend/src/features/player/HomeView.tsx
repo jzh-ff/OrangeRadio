@@ -5,6 +5,7 @@ import { useLibraryStore, type Track } from "../../stores/libraryStore";
 import { getCoverUrl } from "./useCover";
 import { engineRef } from "../../App";
 import { HeroSpectrum } from "./HeroSpectrum";
+import { RightWaveFlow } from "./RightWaveFlow";
 import "../../styles/home.css";
 
 interface UserProfile {
@@ -241,17 +242,21 @@ export function HomeView() {
           </div>
         </div>
 
-        {heroCover && (
-          <div className="home-hero__vinyl" aria-hidden>
-            <div className="home-hero__vinyl-shadow">
-              <img src={heroCover} alt="" />
+        <div className="home-hero__stage" aria-hidden>
+          {/* 从右往左的声波瀑布：spectrum 数据驱动，真实跟随音乐 */}
+          <RightWaveFlow />
+          {heroCover && (
+            <div className="home-hero__vinyl">
+              <div className="home-hero__vinyl-shadow">
+                <img src={heroCover} alt="" />
+              </div>
+              <div className="home-hero__vinyl-disc">
+                <img src={heroCover} alt="" />
+              </div>
+              <span className="home-hero__vinyl-folio">FOLIO · NO.01</span>
             </div>
-            <div className="home-hero__vinyl-disc">
-              <img src={heroCover} alt="" />
-            </div>
-            <span className="home-hero__vinyl-folio">FOLIO · NO.01</span>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="home-hero__corner home-hero__corner--br">
           <span>FREQ 92.6 MHz</span>

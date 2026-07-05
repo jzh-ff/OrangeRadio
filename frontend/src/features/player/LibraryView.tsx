@@ -1,7 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { useLibraryStore, type Track } from "../../stores/libraryStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
+import { VirtualTrackList } from "../../components/TrackRow";
+import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import "../../styles/library.css";
 
 const fmtTime = (s?: number) => {
@@ -20,14 +22,22 @@ const QUALITY_BADGE: Record<string, { label: string; cls: string }> = {
 };
 
 export function LibraryView() {
-  const { tracks, loading, searchKeyword, loadTracks, scanLocal, doSearch, setSearchKeyword } =
+  const { tracks, loading, searchKeyword, loadTracks, loadMore, hasMore, scanLocal, doSearch, setSearchKeyword } =
     useLibraryStore();
-  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
 
   useEffect(() => {
     loadTracks();
   }, [loadTracks]);
+
+  // 无限滚动（仅非搜索时分页加载本地库）
+  const onLoadMore = useCallback(() => { loadMore(); }, [loadMore]);
+  const onItemsRendered = useVirtualInfiniteScroll({
+    hasMore,
+    loading,
+    onLoadMore,
+  });
 
   const handlePlay = (track: Track, index: number) => {
     engineRef.playTrack(track, index);
@@ -96,35 +106,27 @@ export function LibraryView() {
             </span>
           </div>
           <div className="lib-rows">
-            {tracks.map((t, i) => {
-              const active = currentIndex === i;
-              const q = QUALITY_BADGE[t.quality] || QUALITY_BADGE.standard;
-              return (
-                <div
-                  key={t.id}
-                  className={`lib-row ${active ? "lib-row--active" : ""}`}
-                  onDoubleClick={() => handlePlay(t, i)}
-                >
-                  <span className="col-i">
-                    {active && isPlaying ? (
-                      <span className="eq-bars"><i></i><i></i><i></i></span>
-                    ) : (
-                      <>
-                        <span className="idx">{i + 1}</span>
-                        <svg className="play-hover" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                      </>
-                    )}
-                  </span>
-                  <span className="col-title" onClick={() => handlePlay(t, i)}>
-                    <span className="col-title__txt">{t.meta.title}</span>
-                    <span className={`q-badge ${q.cls}`}>{q.label}</span>
-                  </span>
-                  <span className="col-artist">{t.meta.artist}</span>
-                  <span className="col-album">{t.meta.album || "—"}</span>
-                  <span className="col-dur">{fmtTime(t.meta.duration_secs)}</span>
-                </div>
-              );
-            })}
+            <VirtualTrackList
+              tracks={tracks}
+              activeId={currentTrack?.id}
+              isPlaying={isPlaying}
+              onPlay={handlePlay}
+              onItemsRendered={searchKeyword.trim() ? undefined : onItemsRendered}
+              renderRow={(t, i) => {
+                const q = QUALITY_BADGE[t.quality] || QUALITY_BADGE.standard;
+                return (
+                  <>
+                    <span className="col-title" onClick={() => handlePlay(t, i)}>
+                      <span className="col-title__txt">{t.meta.title}</span>
+                      <span className={`q-badge ${q.cls}`}>{q.label}</span>
+                    </span>
+                    <span className="col-artist">{t.meta.artist}</span>
+                    <span className="col-album">{t.meta.album || "—"}</span>
+                    <span className="col-dur">{fmtTime(t.meta.duration_secs)}</span>
+                  </>
+                );
+              }}
+            />
           </div>
         </div>
       )}

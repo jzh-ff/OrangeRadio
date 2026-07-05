@@ -72,7 +72,11 @@ export default function App() {
   // 全局节拍检测（驱动粒子等视觉）
   useBeatDetector();
   // 桌面歌词桥：主窗口推播放状态给 lyric-overlay，接收悬浮窗控件命令
-  useLyricBridge({ onToggle: () => engineRef.toggle() });
+  useLyricBridge({
+    onToggle: () => engineRef.toggle(),
+    onPrev: () => engineRef.prev(),
+    onNext: () => engineRef.next(),
+  });
   // 壁纸激活态（响应式：切换壁纸时重渲染背景层）
   const wallpaperActive = useWallpaperStore((s) => !!s.activeId);
   // 3D 歌单架（右键唤起，对标 MineRadio 右键 shelf）
@@ -204,6 +208,8 @@ export default function App() {
           playUrl = await invoke<string>("netease_stream", { trackId: track.source_track_id });
         } else if (kind === "qq_music") {
           playUrl = await invoke<string>("qqmusic_stream", { trackId: track.source_track_id });
+        } else if (kind === "gequbao") {
+          playUrl = await invoke<string>("gequbao_stream", { songPath: track.source_track_id });
         } else {
           playUrl = track.source_track_id;
         }

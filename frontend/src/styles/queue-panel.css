@@ -57,6 +57,19 @@
   font-size: 13px;
 }
 
+.qp-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+}
+.qp-section .qp-count { flex: none; }
+
 .qp-item {
   display: flex;
   align-items: center;
@@ -65,6 +78,8 @@
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s ease;
+  height: 56px;           /* 固定行高（虚拟化：封面40 + padding 8*2） */
+  box-sizing: border-box;
 }
 .qp-item:hover { background: rgba(255, 255, 255, 0.05); }
 .qp-item--active {
@@ -94,3 +109,11 @@
 
 .qp-item__indicator { width: 24px; text-align: center; flex-shrink: 0; }
 .qp-item__index { font-size: 11px; color: rgba(255, 255, 255, 0.25); }
+.qp-item__remove {
+  width: 20px; height: 20px; border: none; background: transparent;
+  color: rgba(255, 255, 255, 0.25); cursor: pointer; font-size: 12px;
+  border-radius: 6px; flex-shrink: 0;
+  opacity: 0; transition: opacity 0.15s ease, color 0.15s ease;
+}
+.qp-item:hover .qp-item__remove { opacity: 1; }
+.qp-item__remove:hover { color: #ff6b6b; background: rgba(255, 80, 80, 0.1); }

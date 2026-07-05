@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Track } from "../../stores/libraryStore";
+import { usePlayerStore } from "../../stores/playerStore";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
 /**
@@ -9,8 +10,9 @@ import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
  * - 网易云歌曲：爱心 → 收藏到网易云远端「我喜欢的音乐」
  * - 本地歌曲：爱心 → 本地收藏（toggle_liked）
  * - ＋：添加到本地歌单（所有歌曲通用）
+ * - ▶▸：下一首播放（插入到当前播放位置之后）
  */
-export function TrackActions({ track, size = 15, showLike = true }: { track: Track; size?: number; showLike?: boolean }) {
+export function TrackActions({ track, size = 15, showLike = true, showPlayNext = true }: { track: Track; size?: number; showLike?: boolean; showPlayNext?: boolean }) {
   const [liked, setLiked] = useState(track.liked);
   const [showAdd, setShowAdd] = useState(false);
   const [liking, setLiking] = useState(false);
@@ -52,6 +54,18 @@ export function TrackActions({ track, size = 15, showLike = true }: { track: Tra
           >
             <svg width={size} height={size} viewBox="0 0 24 24" fill={liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+          </button>
+        )}
+        {showPlayNext && (
+          <button
+            className="ta-btn"
+            onClick={(e) => { e.stopPropagation(); usePlayerStore.getState().insertNext(track); }}
+            title="下一首播放"
+          >
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 4l10 8-10 8V4z" fill="currentColor" />
+              <path d="M19 5v14" strokeLinecap="round" />
             </svg>
           </button>
         )}

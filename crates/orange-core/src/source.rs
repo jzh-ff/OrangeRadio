@@ -32,6 +32,8 @@ pub enum SourceKind {
     WebRadio,
     /// 播客 RSS
     Podcast,
+    /// 歌曲宝（第三方聚合音源，HTML 抓取）
+    Gequbao,
     /// 自定义 / 插件音源
     Plugin,
 }

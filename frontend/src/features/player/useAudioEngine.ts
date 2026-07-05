@@ -172,18 +172,26 @@ export function useAudioEngine(autoNext?: () => void) {
   // next/prev 只选歌 + 设置 currentTrack，实际播放由 onTrackChange 回调处理
   // 这样网易云/QQ可以在回调里先解析播放地址
   const next = useCallback((onPlay?: (track: any, index: number) => void) => {
-    const { tracks, currentIndex, mode, currentTrack } = usePlayerStore.getState();
+    const st = usePlayerStore.getState();
+    const { mode, currentTrack } = st;
+    // 队列路由：电台走 radioTracks/radioIndex，单曲走 tracks/currentIndex
+    const isRadio = st.activeQueue === "radio";
+    const list = isRadio ? st.radioTracks : st.tracks;
+    const idx = isRadio ? st.radioIndex : st.currentIndex;
+    const setIdx = (i: number) =>
+      usePlayerStore.setState(isRadio ? { radioIndex: i } : { currentIndex: i });
     // 顺序/循环的兜底选歌
     const fallback = () => {
-      if (tracks.length === 0) return;
-      const ni = currentIndex + 1 >= tracks.length ? 0 : currentIndex + 1;
-      const t = tracks[ni];
-      usePlayerStore.setState({ currentIndex: ni, currentTrack: t });
+      if (list.length === 0) return;
+      const ni = idx + 1 >= list.length ? 0 : idx + 1;
+      const t = list[ni];
+      setIdx(ni);
+      usePlayerStore.setState({ currentTrack: t });
       if (onPlay) onPlay(t, ni);
       else playPath(t.source_track_id);
     };
-    // 懂你模式：异步拉推荐（基于用户画像 + 跳过反馈）
-    if (mode === "understand_you") {
+    // 懂你模式：异步拉推荐（基于用户画像 + 跳过反馈，仅单曲队列生效）
+    if (mode === "understand_you" && !isRadio) {
       void invoke<Track[]>("recommend_next", {
         limit: 1,
         currentTrackId: (currentTrack as { id?: string } | null)?.id,
@@ -200,19 +208,20 @@ export function useAudioEngine(autoNext?: () => void) {
         .catch(() => fallback());
       return;
     }
-    if (tracks.length === 0) return;
+    if (list.length === 0) return;
     if (mode === "shuffle") {
-      const ni = Math.floor(Math.random() * tracks.length);
-      const t = tracks[ni];
-      usePlayerStore.setState({ currentIndex: ni, currentTrack: t });
+      const ni = Math.floor(Math.random() * list.length);
+      const t = list[ni];
+      setIdx(ni);
+      usePlayerStore.setState({ currentTrack: t });
       if (onPlay) onPlay(t, ni);
       else playPath(t.source_track_id);
       return;
     }
     if (mode === "single_loop") {
-      const t = tracks[currentIndex];
+      const t = list[idx];
       usePlayerStore.setState({ currentTrack: t });
-      if (onPlay) onPlay(t, currentIndex);
+      if (onPlay) onPlay(t, idx);
       else playPath(t.source_track_id);
       return;
     }
@@ -220,11 +229,15 @@ export function useAudioEngine(autoNext?: () => void) {
   }, [playPath]);
 
   const prev = useCallback((onPlay?: (track: any, index: number) => void) => {
-    const { tracks, currentIndex } = usePlayerStore.getState();
-    if (tracks.length === 0) return;
-    const pi = currentIndex - 1 < 0 ? tracks.length - 1 : currentIndex - 1;
-    const t = tracks[pi];
-    usePlayerStore.setState({ currentIndex: pi, currentTrack: t });
+    const st = usePlayerStore.getState();
+    const isRadio = st.activeQueue === "radio";
+    const list = isRadio ? st.radioTracks : st.tracks;
+    const idx = isRadio ? st.radioIndex : st.currentIndex;
+    if (list.length === 0) return;
+    const pi = idx - 1 < 0 ? list.length - 1 : idx - 1;
+    const t = list[pi];
+    usePlayerStore.setState(isRadio ? { radioIndex: pi } : { currentIndex: pi });
+    usePlayerStore.setState({ currentTrack: t });
     if (onPlay) onPlay(t, pi);
     else playPath(t.source_track_id);
   }, [playPath]);

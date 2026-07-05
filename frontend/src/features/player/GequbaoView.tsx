@@ -7,9 +7,9 @@ import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
-/** 网络电台视图（RadioBrowser） */
-export function RadioView() {
-  const [stations, setStations] = useState<Track[]>([]);
+/** 歌曲宝视图（第三方聚合音源，免登录） */
+export function GequbaoView() {
+  const [songs, setSongs] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [error, setError] = useState("");
@@ -17,7 +17,7 @@ export function RadioView() {
   const [hasMore, setHasMore] = useState(false);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
-  const setRadioQueue = usePlayerStore((s) => s.setRadioQueue);
+  const setQueue = usePlayerStore((s) => s.setQueue);
 
   useEffect(() => {
     loadPopular();
@@ -28,11 +28,11 @@ export function RadioView() {
     setError("");
     setHasMore(false);
     try {
-      const list = await invoke<Track[]>("radio_popular", { limit: 30 });
-      setStations(list);
-      setRadioQueue(list);
-    } catch (e: any) {
-      setError(e?.message || String(e));
+      const list = await invoke<Track[]>("gequbao_popular", { limit: 30 });
+      setSongs(list);
+      setQueue(list);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -47,12 +47,12 @@ export function RadioView() {
     setError("");
     setPage(1); setHasMore(true);
     try {
-      const list = await invoke<Track[]>("radio_search", { keyword, page: 1 });
+      const list = await invoke<Track[]>("gequbao_search", { keyword, page: 1 });
       if (list.length === 0) setHasMore(false);
-      setStations(list);
-      setRadioQueue(list);
-    } catch (e: any) {
-      setError(e?.message || String(e));
+      setSongs(list);
+      setQueue(list);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -63,11 +63,11 @@ export function RadioView() {
     const next = page + 1;
     setLoading(true);
     try {
-      const list = await invoke<Track[]>("radio_search", { keyword, page: next });
+      const list = await invoke<Track[]>("gequbao_search", { keyword, page: next });
       if (list.length === 0) setHasMore(false);
       else {
-        setStations((prev) => [...prev, ...list]);
-        usePlayerStore.getState().setRadioQueue([...usePlayerStore.getState().radioTracks, ...list]);
+        setSongs((prev) => [...prev, ...list]);
+        usePlayerStore.getState().addManyToQueue(list);
         setPage(next);
       }
     } catch { /* 静默 */ }
@@ -77,10 +77,6 @@ export function RadioView() {
   const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
 
   const handlePlay = (track: Track, index: number) => {
-    // 确保点击电台时切到电台活跃队列（用户可能在别处切走过）
-    if (usePlayerStore.getState().activeQueue !== "radio") {
-      usePlayerStore.setState({ activeQueue: "radio" });
-    }
     engineRef.playTrack(track, index);
   };
 
@@ -94,14 +90,14 @@ export function RadioView() {
           </svg>
           <input
             className="library__search-input"
-            placeholder="搜索全球电台（Jazz / Rock / 中国…）"
+            placeholder="搜索歌曲（周杰伦 / 晴天…）"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
           />
         </div>
         <button className="btn-scan" onClick={loadPopular} disabled={loading}>
-          📻 {loading ? "加载中…" : "热门电台"}
+          🎵 {loading ? "加载中…" : "热门推荐"}
         </button>
       </div>
 
@@ -111,36 +107,35 @@ export function RadioView() {
         </div>
       )}
 
-      {stations.length === 0 && !loading ? (
+      {songs.length === 0 && !loading ? (
         <div className="library__empty">
-          <div className="library__empty-icon">📻</div>
-          <div className="library__empty-title">{error ? "加载失败" : "正在加载电台…"}</div>
-          <div className="library__empty-desc">RadioBrowser · 全球 4 万+ 网络电台</div>
+          <div className="library__empty-icon">🎵</div>
+          <div className="library__empty-title">{error ? "加载失败" : "正在加载…"}</div>
+          <div className="library__empty-desc">歌曲宝 · 第三方聚合音源</div>
         </div>
       ) : (
         <div className="library__list">
-          <div className="lib-header">
+          <div className="lib-header cols-4">
             <span className="col-i">#</span>
-            <span className="col-title">电台</span>
-            <span className="col-artist">地区</span>
-            <span className="col-album">类型</span>
-            <span className="col-dur">码率</span>
+            <span className="col-title">歌曲</span>
+            <span className="col-artist">歌手</span>
+            <span className="col-dur">音质</span>
           </div>
           <div className="lib-rows">
             <VirtualTrackList
-              tracks={stations}
+              tracks={songs}
               activeId={currentTrack?.id}
               isPlaying={isPlaying}
               onPlay={handlePlay}
+              cols={4}
               onItemsRendered={keyword.trim() ? onItemsRendered : undefined}
               renderRow={(t, i) => (
                 <>
                   <span className="col-title" onClick={() => handlePlay(t, i)}>
                     <span className="col-title__txt">{t.meta.title}</span>
-                    <span className="q-badge q-std">LIVE</span>
+                    <span className="q-badge q-hi">HQ</span>
                   </span>
                   <span className="col-artist">{t.meta.artist}</span>
-                  <span className="col-album">{t.meta.album || "—"}</span>
                   <span className="col-dur">{t.quality === "high" ? "HQ" : "STD"}</span>
                 </>
               )}

@@ -66,10 +66,23 @@ pub struct QrStatusInfo {
     pub message: String,
 }
 
-/// 获取本地库全部曲目
+/// 获取本地库全部曲目（支持分页：不传参返回全量；传 offset+limit 则分页）
 #[tauri::command]
-pub async fn library_tracks(state: tauri::State<'_, AppState>) -> Result<Vec<Track>, String> {
-    Ok(state.library.all())
+pub async fn library_tracks(
+    state: tauri::State<'_, AppState>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<Vec<Track>, String> {
+    match (offset, limit) {
+        (Some(o), Some(l)) => Ok(state
+            .library
+            .all()
+            .into_iter()
+            .skip(o)
+            .take(l)
+            .collect()),
+        _ => Ok(state.library.all()),
+    }
 }
 
 /// 本地库数量
@@ -78,15 +91,16 @@ pub async fn library_count(state: tauri::State<'_, AppState>) -> Result<usize, S
     Ok(state.library.count())
 }
 
-/// 搜索（本地库）
+/// 搜索（本地库，支持分页，page 默认 1）
 #[tauri::command]
 pub async fn search(
     state: tauri::State<'_, AppState>,
     keyword: String,
+    page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
     let query = SearchQuery {
         keyword,
-        page: 1,
+        page: page.unwrap_or(1),
         page_size: 100,
         ..Default::default()
     };
@@ -113,15 +127,16 @@ pub fn log_path() -> String {
 
 // ===== 网络电台命令 =====
 
-/// 搜索网络电台（RadioBrowser）
+/// 搜索网络电台（RadioBrowser，支持分页，page 默认 1）
 #[tauri::command]
 pub async fn radio_search(
     state: tauri::State<'_, AppState>,
     keyword: String,
+    page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
     let query = SearchQuery {
         keyword,
-        page: 1,
+        page: page.unwrap_or(1),
         page_size: 50,
         ..Default::default()
     };
@@ -141,6 +156,68 @@ pub async fn radio_popular(
 ) -> Result<Vec<Track>, String> {
     state
         .web_radio
+        .recommendations(limit.unwrap_or(30))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ===== 歌曲宝命令（第三方聚合音源，无需登录） =====
+
+/// 搜索歌曲宝（支持分页，page 默认 1）
+#[tauri::command]
+pub async fn gequbao_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+    page: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    let query = SearchQuery {
+        keyword,
+        page: page.unwrap_or(1),
+        page_size: 50,
+        ..Default::default()
+    };
+    let result = state
+        .gequbao
+        .search(&query)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+/// 获取歌曲宝真实播放 URL（两步：详情页取 play_id → 换 mp3 直链）
+///
+/// `song_path` 是 Track.source_track_id（形如 `music/39466`）。
+#[tauri::command]
+pub async fn gequbao_stream(
+    state: tauri::State<'_, AppState>,
+    song_path: String,
+) -> Result<String, String> {
+    use orange_core::source::AudioSource;
+    // 构造最小 Track 供 resolve_stream 使用（只需 source_track_id + source_id）
+    let track = Track::new(
+        state.gequbao.id(),
+        song_path,
+        orange_core::track::TrackMeta::default(),
+    );
+    match state
+        .gequbao
+        .resolve_stream(&track)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        orange_core::source::StreamLocation::Url { url, .. } => Ok(url),
+        _ => Err("歌曲宝返回了非 URL 流地址".into()),
+    }
+}
+
+/// 获取歌曲宝推荐（首页 /hot-music）
+#[tauri::command]
+pub async fn gequbao_popular(
+    state: tauri::State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    state
+        .gequbao
         .recommendations(limit.unwrap_or(30))
         .await
         .map_err(|e| e.to_string())
@@ -175,16 +252,17 @@ pub async fn netease_status(state: tauri::State<'_, AppState>) -> Result<bool, S
     Ok(state.netease.is_ready())
 }
 
-/// 网易云搜索
+/// 网易云搜索（支持分页，page 默认 1）
 #[tauri::command]
 pub async fn netease_search(
     state: tauri::State<'_, AppState>,
     keyword: String,
+    page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
     use orange_core::AudioSource;
     let query = SearchQuery {
         keyword,
-        page: 1,
+        page: page.unwrap_or(1),
         page_size: 30,
         ..Default::default()
     };
@@ -312,6 +390,20 @@ pub async fn netease_like_track(
         .map_err(|e| e.to_string())
 }
 
+/// 网易云添加歌曲到任意用户歌单（自建/收藏的远端歌单，不含「我喜欢的音乐」）
+#[tauri::command]
+pub async fn netease_add_track_to_playlist(
+    state: tauri::State<'_, AppState>,
+    playlist_id: i64,
+    song_id: String,
+) -> Result<bool, String> {
+    state
+        .netease
+        .add_track_to_playlist(playlist_id, &song_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ===== 本地收藏 + 歌单系统 =====
 
 /// 切换喜欢状态
@@ -396,16 +488,22 @@ pub async fn remove_from_playlist(
         .map_err(|e| e.to_string())
 }
 
-/// 歌单曲目列表
+/// 歌单曲目列表（支持分页：不传参返回全量；传 offset+limit 则分页）
 #[tauri::command]
 pub async fn playlist_tracks(
     state: tauri::State<'_, AppState>,
     playlist_id: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
 ) -> Result<Vec<Track>, String> {
-    state
+    let mut tracks = state
         .library
         .playlist_tracks(&playlist_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if let (Some(o), Some(l)) = (offset, limit) {
+        tracks = tracks.into_iter().skip(o).take(l).collect();
+    }
+    Ok(tracks)
 }
 
 /// 全部用户歌单
@@ -500,11 +598,12 @@ pub async fn qqmusic_status(state: tauri::State<'_, AppState>) -> Result<bool, S
 pub async fn qqmusic_search(
     state: tauri::State<'_, AppState>,
     keyword: String,
+    page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
     use orange_core::AudioSource;
     let query = SearchQuery {
         keyword,
-        page: 1,
+        page: page.unwrap_or(1),
         page_size: 30,
         ..Default::default()
     };
@@ -648,17 +747,18 @@ pub async fn qqmusic_qrcode_check(
 
 // ===== 聚合搜索 =====
 
-/// 多源聚合搜索（并发查询所有已就绪音源）
+/// 多源聚合搜索（并发查询所有已就绪音源，支持分页，page 默认 1）
 #[tauri::command]
 pub async fn search_all(
     state: tauri::State<'_, AppState>,
     keyword: String,
+    page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
     use orange_core::{source::SearchQuery, AudioSource};
     let query = SearchQuery {
         keyword: keyword.clone(),
         kind: None,
-        page: 1,
+        page: page.unwrap_or(1),
         page_size: 30,
     };
 
@@ -709,8 +809,15 @@ pub async fn search_all(
         radio.search(&radio_query).await
     });
 
+    // 歌曲宝（免登录聚合音源）
+    let gequbao = state.gequbao.clone();
+    let gequbao_query = query.clone();
+    let gequbao_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
+        gequbao.search(&gequbao_query).await
+    });
+
     // 并发执行
-    let (local_res, qq_res, ne_res, sp_res, radio_res) = tokio::join!(
+    let (local_res, qq_res, ne_res, sp_res, radio_res, gequbao_res) = tokio::join!(
         async { local_task.await.unwrap_or_default() },
         async {
             match qq_task.await {
@@ -742,6 +849,12 @@ pub async fn search_all(
                 _ => vec![],
             }
         },
+        async {
+            match gequbao_task.await {
+                Ok(Ok(r)) => r.tracks,
+                _ => vec![],
+            }
+        },
     );
 
     let mut all = Vec::new();
@@ -750,6 +863,7 @@ pub async fn search_all(
     all.extend(ne_res);
     all.extend(sp_res);
     all.extend(radio_res);
+    all.extend(gequbao_res);
     tracing::info!("聚合搜索 '{}' 共 {} 条结果", keyword, all.len());
     Ok(all)
 }
@@ -778,11 +892,12 @@ pub async fn spotify_status(state: tauri::State<'_, AppState>) -> Result<bool, S
 pub async fn spotify_search(
     state: tauri::State<'_, AppState>,
     keyword: String,
+    page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
     use orange_core::AudioSource;
     let query = SearchQuery {
         keyword,
-        page: 1,
+        page: page.unwrap_or(1),
         page_size: 20,
         ..Default::default()
     };
@@ -1410,6 +1525,9 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             log_path,
             radio_search,
             radio_popular,
+            gequbao_search,
+            gequbao_stream,
+            gequbao_popular,
             netease_login,
             netease_logout,
             netease_status,
@@ -1421,6 +1539,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_lyric,
             netease_comments,
             netease_like_track,
+            netease_add_track_to_playlist,
             netease_qrcode_create,
             netease_qrcode_check,
             toggle_liked,

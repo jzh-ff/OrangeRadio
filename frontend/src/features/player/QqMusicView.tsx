@@ -1,13 +1,15 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { TrackActions } from "./TrackActions";
+import { VirtualTrackList } from "../../components/TrackRow";
+import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
-type View = "search" | "playlists";
+type View = "search" | "playlists" | "playlist";
 type LoginMode = "cookie" | "qrcode" | null;
 
 interface PlaylistInfo {
@@ -34,7 +36,10 @@ export function QqMusicView() {
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const [currentPlaylist, setCurrentPlaylist] = useState("");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
@@ -104,8 +109,39 @@ export function QqMusicView() {
   const doSearch = async () => {
     if (!keyword.trim()) return;
     setLoading(true); setError(""); setView("search");
+    setPage(1); setHasMore(true);
     try {
-      const list = await invoke<Track[]>("qqmusic_search", { keyword });
+      const list = await invoke<Track[]>("qqmusic_search", { keyword, page: 1 });
+      if (list.length === 0) setHasMore(false);
+      setTracks(list); setQueue(list);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+
+  /** 加载下一页搜索结果 */
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore || view !== "search") return;
+    const next = page + 1;
+    setLoading(true);
+    try {
+      const list = await invoke<Track[]>("qqmusic_search", { keyword, page: next });
+      if (list.length === 0) setHasMore(false);
+      else {
+        setTracks((prev) => [...prev, ...list]);
+        usePlayerStore.getState().addManyToQueue(list);
+        setPage(next);
+      }
+    } catch { /* 静默 */ }
+    finally { setLoading(false); }
+  }, [page, hasMore, loading, keyword, view]);
+
+  const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
+
+  /** 打开歌单详情（修复：原卡片无 onClick） */
+  const openPlaylist = async (id: string, name: string) => {
+    setLoading(true); setError(""); setView("playlist"); setCurrentPlaylist(name);
+    try {
+      const list = await invoke<Track[]>("qqmusic_playlist_detail", { playlistId: id });
       setTracks(list); setQueue(list);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
@@ -174,10 +210,25 @@ export function QqMusicView() {
   // ===== 已登录 =====
   return (
     <div className="library">
-      {/* 导航栏 */}
+      {/* 导航栏（零 emoji，全部 SVG icon） */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <button className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`} onClick={() => setView("search")}>🔍 搜索</button>
-        <button className={`nav-pill ${view === "playlists" ? "nav-pill--active" : ""}`} onClick={loadPlaylists}>🎵 我的歌单</button>
+        <button className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`} onClick={() => setView("search")}>
+          <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          搜索
+        </button>
+        <button className={`nav-pill ${view === "playlists" ? "nav-pill--active" : ""}`} onClick={loadPlaylists}>
+          <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 6h13" />
+            <path d="M3 12h13" />
+            <path d="M3 18h9" />
+            <path d="M17 14v6" />
+            <path d="M14 17h6" />
+          </svg>
+          我的歌单
+        </button>
         <div style={{ flex: 1 }} />
         <button className="nav-pill nav-pill--ghost" onClick={async () => { await invoke("qqmusic_logout" as any).catch(() => {}); setLoggedIn(false); }}>退出</button>
       </div>
@@ -207,7 +258,7 @@ export function QqMusicView() {
           </div>
           <div className="pl-grid">
             {playlists.map((p) => (
-              <div key={p.id} className="pl-card">
+              <div key={p.id} className="pl-card" onClick={() => openPlaylist(p.id, p.name)}>
                 <div className="pl-card__cover">
                   {p.cover ? <img src={p.cover} alt={p.name} loading="lazy" /> : <div className="pl-card__cover-placeholder">🎵</div>}
                 </div>
@@ -223,18 +274,20 @@ export function QqMusicView() {
         </>
       )}
 
-      {/* 歌曲列表 */}
+      {/* 歌曲列表（搜索，带分页） */}
       {view === "search" && tracks.length > 0 && (
         <div className="library__list">
           <div className="lib-header"><span className="col-i">#</span><span className="col-title">标题</span>
             <span className="col-artist">歌手</span><span className="col-album">专辑</span><span className="col-dur">操作</span></div>
           <div className="lib-rows">
-            {tracks.map((t, i) => {
-              const active = currentIndex === i;
-              const d = t.meta.duration_secs;
-              return (
-                <div key={t.id + i} className={`lib-row ${active ? "lib-row--active" : ""}`} onDoubleClick={() => handlePlay(t, i)}>
-                  <span className="col-i">{active && isPlaying ? <span className="eq-bars"><i></i><i></i><i></i></span> : <><span className="idx">{i + 1}</span><svg className="play-hover" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></>}</span>
+            <VirtualTrackList
+              tracks={tracks}
+              activeId={currentTrack?.id}
+              isPlaying={isPlaying}
+              onPlay={handlePlay}
+              onItemsRendered={onItemsRendered}
+              renderRow={(t, i) => (
+                <>
                   <span className="col-title">
                     <span className="col-title__txt">{t.meta.title}</span>
                     <span className="q-badge q-high">QQ</span>
@@ -242,11 +295,46 @@ export function QqMusicView() {
                   <span className="col-artist">{t.meta.artist}</span>
                   <span className="col-album">{t.meta.album || "—"}</span>
                   <span className="col-dur"><TrackActions track={t} /></span>
-                </div>
-              );
-            })}
+                </>
+              )}
+            />
           </div>
         </div>
+      )}
+
+      {/* 歌单详情列表（修复：原 view 缺 playlist） */}
+      {view === "playlist" && tracks.length > 0 && (
+        <>
+          <div className="section-title">
+            <h3>{currentPlaylist}</h3>
+            <span className="section-title__sub">{tracks.length} 首</span>
+            <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
+              onClick={() => handlePlay(tracks[0], 0)}>▶ 播放全部</button>
+          </div>
+          <div className="library__list">
+            <div className="lib-header"><span className="col-i">#</span><span className="col-title">标题</span>
+              <span className="col-artist">歌手</span><span className="col-album">专辑</span><span className="col-dur">操作</span></div>
+            <div className="lib-rows">
+              <VirtualTrackList
+                tracks={tracks}
+                activeId={currentTrack?.id}
+                isPlaying={isPlaying}
+                onPlay={handlePlay}
+                renderRow={(t, i) => (
+                  <>
+                    <span className="col-title">
+                      <span className="col-title__txt">{t.meta.title}</span>
+                      <span className="q-badge q-high">QQ</span>
+                    </span>
+                    <span className="col-artist">{t.meta.artist}</span>
+                    <span className="col-album">{t.meta.album || "—"}</span>
+                    <span className="col-dur"><TrackActions track={t} /></span>
+                  </>
+                )}
+              />
+            </div>
+          </div>
+        </>
       )}
 
       {loading && tracks.length === 0 && view === "search" && (
