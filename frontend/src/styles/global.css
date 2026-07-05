@@ -70,6 +70,7 @@
 
   /* 玻璃三层级（对标 MineRadio --glass-* + --saved-panel-glass-*，saturate+brightness 让玻璃通透） */
   --glass-bg: linear-gradient(112deg, rgba(72, 74, 76, 0.62), rgba(24, 27, 30, 0.7) 48%, rgba(8, 12, 14, 0.74));
+  --glass-rgb: 24, 27, 30; /* 单色玻璃 rgb(从 --glass-bg 渐变中间色提取),供各前景容器 alpha 叠加用 */
   --glass-bg-focus: linear-gradient(112deg, rgba(88, 91, 92, 0.68), rgba(28, 32, 35, 0.76) 50%, rgba(8, 13, 15, 0.82));
   --glass-border: rgba(0, 245, 212, 0.3);
   --glass-border-soft: rgba(255, 255, 255, 0.095);
