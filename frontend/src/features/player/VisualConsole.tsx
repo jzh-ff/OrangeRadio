@@ -244,6 +244,15 @@ export function VisualConsole() {
               onChange={(v) => setVisualParams({ sensitivity: v })} />
             <Slider label="辉光强度" value={visualParams.bloomStrength} min={0} max={3} step={0.1}
               onChange={(v) => setVisualParams({ bloomStrength: v })} />
+            <div className="vc-section__title vc-section__title--sub">前景透明度</div>
+            <Slider label="侧栏" value={visualParams.sidebarOpacity} min={0} max={1} step={0.05}
+              onChange={(v) => setVisualParams({ sidebarOpacity: v })} />
+            <Slider label="底栏" value={visualParams.playerBarOpacity} min={0} max={1} step={0.05}
+              onChange={(v) => setVisualParams({ playerBarOpacity: v })} />
+            <Slider label="主视图" value={visualParams.mainOpacity} min={0} max={1} step={0.05}
+              onChange={(v) => setVisualParams({ mainOpacity: v })} />
+            <Slider label="全屏页" value={visualParams.fullPlayerOpacity} min={0} max={1} step={0.05}
+              onChange={(v) => setVisualParams({ fullPlayerOpacity: v })} />
             <div className="vc-section__title vc-section__title--sub">壁纸</div>
             <WallpaperPicker compact />
             <button type="button" className="vc-wallpaper-link" onClick={openWallpaperPage}>
