@@ -53,6 +53,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const dominantColor = usePlayerStore((s) => s.dominantColor);
+  const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
 
   // 切歌时提取封面主色 → 写入 store（驱动 fp-blur-bg + BeatParticles auto 主题）
   useDominantColor(currentTrack);
@@ -209,7 +210,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const activeLayout = LAYOUT_OPTIONS.find((o) => o.id === fullLayout)!;
 
   return (
-    <div className={`fp-overlay fp-overlay--editorial fp-overlay--${fullLayout}`}>
+    <div
+      className={`fp-overlay fp-overlay--editorial fp-overlay--${fullLayout}`}
+      style={{ "--ui-opacity": fullPlayerOpacity } as React.CSSProperties}
+    >
       {/* cinema 模式：全屏粒子背景（CoverParticles 内部按封面有无/CORS 自动回退 BeatParticles）
           + StarRiver 冷色星河叠层（对标 MineRadio stageLyrics.starRiver） */}
       {fullLayout === "cinema" && (
