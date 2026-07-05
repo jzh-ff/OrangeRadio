@@ -104,7 +104,7 @@ export const useWallpaperStore = create<WallpaperState>((set, get) => ({
       // 首次自动发现:把 discovered_dirs 写回 engineDirs 持久化
       if (engineDirs.length === 0 && result.discovered_dirs.length > 0) {
         const next = result.discovered_dirs;
-        localStorage.setItem(ENGINE_DIRS_KEY, JSON.stringify(next));
+        try { localStorage.setItem(ENGINE_DIRS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
         set({ engineDirs: next });
       }
       set({ engineEntries: result.entries });
@@ -117,7 +117,7 @@ export const useWallpaperStore = create<WallpaperState>((set, get) => ({
   },
   addEngineDir: (dir) => {
     const next = Array.from(new Set([...get().engineDirs, dir]));
-    localStorage.setItem(ENGINE_DIRS_KEY, JSON.stringify(next));
+    try { localStorage.setItem(ENGINE_DIRS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
     set({ engineDirs: next });
   },
 }));
