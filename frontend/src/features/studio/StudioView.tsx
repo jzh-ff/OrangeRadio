@@ -1,9 +1,17 @@
-import { useEffect, type PointerEvent } from "react";
+import { useEffect, useState, type PointerEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { open as openInShell } from "@tauri-apps/plugin-shell";
 import { useStudioStore } from "../../stores/studioStore";
 import { getStudioConfig } from "../../lib/studio";
 import type { ToastKind } from "../../components/Toast";
 import "../../styles/studio.css";
+
+/** 取一个文件绝对路径的父目录（用于在资源管理器中打开）。 */
+function parentDir(p: string): string {
+  const norm = p.replace(/[\\/]+$/, "");
+  const idx = Math.max(norm.lastIndexOf("\\"), norm.lastIndexOf("/"));
+  return idx > 0 ? norm.slice(0, idx) : norm;
+}
 
 const PROMPTS = [
   "深夜电台感的 synthwave，BPM 108，女声，副歌有城市霓虹的画面。",
@@ -39,6 +47,17 @@ export function StudioView({ pushToast }: StudioViewProps) {
     doGenerateMusic,
     doSeparateVocal,
   } = useStudioStore();
+
+  const [showLyrics, setShowLyrics] = useState(false);
+
+  const onOpenFolder = async () => {
+    if (!audioPath) return;
+    try {
+      await openInShell(parentDir(audioPath));
+    } catch (e) {
+      pushToast?.(`打开目录失败: ${e instanceof Error ? e.message : String(e)}`, "error", 6000);
+    }
+  };
 
   // 错误 → Toast
   useEffect(() => {
@@ -185,6 +204,25 @@ export function StudioView({ pushToast }: StudioViewProps) {
               controls
               autoPlay
             />
+            <div className="studio-result__actions">
+              <button
+                className="studio-prompt__btn studio-prompt__btn--ghost"
+                onClick={onOpenFolder}
+              >
+                📂 打开目录
+              </button>
+              {lyricsText && (
+                <button
+                  className="studio-prompt__btn studio-prompt__btn--ghost"
+                  onClick={() => setShowLyrics((v) => !v)}
+                >
+                  {showLyrics ? "隐藏歌词" : "查看歌词"}
+                </button>
+              )}
+            </div>
+            {showLyrics && lyricsText && (
+              <pre className="studio-result__lyrics">{lyricsText}</pre>
+            )}
             <p className="studio-result__path">本地缓存：{audioPath}</p>
           </div>
         ) : (
