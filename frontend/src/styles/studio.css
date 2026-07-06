@@ -495,6 +495,34 @@
   word-break: break-all;
 }
 
+.studio-result__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.studio-result__actions .studio-prompt__btn {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.studio-result__lyrics {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--bg-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-1, #ddd);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 .studio-stems {
   display: flex;
   flex-direction: column;

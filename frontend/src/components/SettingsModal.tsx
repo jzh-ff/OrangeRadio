@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openInShell } from "@tauri-apps/plugin-shell";
 import { usePlayerStore } from "../stores/playerStore";
+import { pickOutputDir } from "../lib/studio";
 import "./SettingsModal.css";
 
 interface AuthStatusItem {
@@ -66,6 +68,8 @@ export function SettingsModal() {
   // 音乐生成配置（Studio 创作台用，与上面共用同一个 Key）
   const [musicBase, setMusicBase] = useState(() => localStorage.getItem("orangeradio_minimax_music_base") || "https://api.minimaxi.com");
   const [musicModel, setMusicModel] = useState(() => localStorage.getItem("orangeradio_minimax_music_model") || "music-2.6-free");
+  // 创作输出目录（为空表示用应用数据目录默认值 app_data_dir/studio）
+  const [outputDir, setOutputDir] = useState(() => localStorage.getItem("orangeradio_studio_output_dir") || "");
   const [keySaved, setKeySaved] = useState(false);
 
   // 打开时拉一次鉴权状态 + 听歌画像（懂你模式用）
@@ -314,6 +318,67 @@ export function SettingsModal() {
             </div>
             <div className="settings-note">
               💡 默认 <code>music-2.6-free</code> 限免版（有 RPM 限制）；额度耗尽可切 <code>music-2.6</code> 正式版。
+            </div>
+          </section>
+
+          {/* 创作输出目录（生成的音频 / 歌词 / 工程文件落盘位置） */}
+          <section className="settings-section">
+            <h3 className="settings-section__title">📁 创作输出目录（Studio 创作台）</h3>
+            <div className="settings-meta settings-ai-form">
+              <div className="settings-note" style={{ marginBottom: 8 }}>
+                生成的音乐、歌词、分轨、工程文件都会存到这里。留空则使用应用数据目录默认值。
+              </div>
+              <label className="settings-ai-row">
+                <span className="settings-ai-label">输出目录</span>
+                <input
+                  type="text"
+                  className="settings-ai-input"
+                  placeholder="（留空 = 应用数据目录 /studio）"
+                  value={outputDir}
+                  readOnly
+                  spellCheck={false}
+                />
+              </label>
+              <div className="settings-ai-row" style={{ flexWrap: "wrap", gap: 8 }}>
+                <button
+                  type="button"
+                  className="settings-mini-btn"
+                  onClick={async () => {
+                    const dir = await pickOutputDir();
+                    if (dir) {
+                      setOutputDir(dir);
+                      localStorage.setItem("orangeradio_studio_output_dir", dir);
+                    }
+                  }}
+                >
+                  选择…
+                </button>
+                <button
+                  type="button"
+                  className="settings-mini-btn"
+                  disabled={!outputDir}
+                  onClick={() => {
+                    setOutputDir("");
+                    localStorage.removeItem("orangeradio_studio_output_dir");
+                  }}
+                >
+                  清除（用默认）
+                </button>
+                <button
+                  type="button"
+                  className="settings-mini-btn"
+                  disabled={!outputDir}
+                  onClick={async () => {
+                    try {
+                      await openInShell(outputDir);
+                    } catch (e) {
+                      setError(`打开目录失败: ${e instanceof Error ? e.message : String(e)}`);
+                    }
+                  }}
+                >
+                  打开
+                </button>
+              </div>
             </div>
           </section>
 

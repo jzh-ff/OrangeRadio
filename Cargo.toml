@@ -66,6 +66,9 @@ reqwest = { version = "0.12", features = ["json", "stream", "cookies"] }
 # URL 解析（MiniMax 音频下载前校验 / 相对路径拼接）
 url = "2"
 
+# hex 解码（MiniMax music_generation 在 hex 模式下 data.audio 是 hex 字节流）
+hex = "0.4"
+
 # 异步 trait
 async-trait = "0.1"
 
