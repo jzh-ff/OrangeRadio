@@ -300,6 +300,29 @@
 .settings-ai-input::placeholder {
   color: #6f6c80;
 }
+.settings-ai-input[readonly] {
+  opacity: 0.85;
+  cursor: default;
+}
+.settings-mini-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f1f1f5;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.settings-mini-btn:hover:not(:disabled) {
+  border-color: rgba(255, 107, 26, 0.5);
+  background: rgba(255, 107, 26, 0.08);
+}
+.settings-mini-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .settings-ai-saved {
   flex-shrink: 0;
   font-size: 11px;

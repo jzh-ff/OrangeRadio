@@ -1390,8 +1390,20 @@ pub async fn emotion_analyze(
 
 // ===== OrangeStudio AI 创作工作站（v0.6，MiniMax） =====
 
-/// 工作室缓存目录（{app_data_dir}/studio/），用于存放生成的音频和工程文件
-fn studio_cache_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+/// 工作室输出目录：优先使用用户在设置里配置的 `custom` 目录（非空时），
+/// 否则回退到 `{app_data_dir}/studio/`。用于存放生成的音频、分轨、歌词、工程文件。
+///
+/// `custom` 为空字符串或全空白时视作未配置。目录不存在会自动创建。
+fn studio_output_dir(
+    app: &tauri::AppHandle,
+    custom: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(dir) = custom.map(str::trim).filter(|s| !s.is_empty()) {
+        let path = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&path)
+            .map_err(|e| format!("创建输出目录失败（{}）: {e}", path.display()))?;
+        return Ok(path);
+    }
     let data_dir = app
         .path()
         .app_data_dir()
@@ -1399,6 +1411,12 @@ fn studio_cache_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String
     let dir = data_dir.join("studio");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建 studio 目录失败: {e}"))?;
     Ok(dir)
+}
+
+/// 兼容旧调用点的薄包装（固定用默认 app_data_dir/studio）。
+#[allow(dead_code)]
+fn studio_cache_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    studio_output_dir(app, None)
 }
 
 /// AI 写词 → 结构化歌词草稿
@@ -1434,11 +1452,27 @@ pub async fn studio_generate_lyrics(
     serde_json::to_value(&draft).map_err(|e| e.to_string())
 }
 
-/// 音乐生成 → 本地 mp3 路径
+/// 音乐生成 → 本地 mp3 路径 + 歌词
 ///
 /// 调用 MiniMax music_generation（同步接口，约 30-90 秒）。
 /// 返回的 `audio_path` 是本地缓存文件路径，前端用 `convertFileSrc` 播放。
+///
+/// ## 自动写词（`auto_lyrics`）
+/// MiniMax `music_generation` 响应**不返回歌词**（官方文档确认），请求里传的词或
+/// `lyrics_optimizer` 自动写的词都拿不回来。为让用户能"听到 = 看到"，当：
+///   - 用户没传歌词（`lyrics` 为空），且
+///   - `auto_lyrics = true`，且
+///   - 非纯伴奏模式（`is_instrumental != true`）
+/// 时，本命令会**先**调一次 LLM（`lyrics_api_*` 配置，复用写词端点）生成一版
+/// 结构化歌词，再把它同时用于：① 塞进 `GenerationRequest.lyrics` 喂给 MiniMax
+/// 演唱；② 写进返回 JSON 的 `lyrics` 字段回传前端展示。
+/// 写词失败不阻断音乐生成 —— 降级为让 MiniMax 自己 `lyrics_optimizer` 盲写
+/// （此时返回的 `lyrics` 为 null，前端歌词区为空）。
+///
+/// ## 输出目录（`output_dir`）
+/// 用户可在设置里配置创作输出目录；为空时回退 `{app_data_dir}/studio/`。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri 命令需把前端各项配置作为独立参数接收
 pub async fn studio_generate_music(
     app: tauri::AppHandle,
     prompt: String,
@@ -1447,19 +1481,58 @@ pub async fn studio_generate_music(
     api_base: String,
     api_key: String,
     model: String,
+    output_dir: Option<String>,
+    auto_lyrics: Option<bool>,
+    lyrics_api_base: Option<String>,
+    lyrics_api_key: Option<String>,
+    lyrics_model: Option<String>,
 ) -> Result<serde_json::Value, String> {
     use orange_studio::{AudioAIProvider, GenerationRequest, MiniMaxProvider};
     if api_key.is_empty() {
         return Err("未配置 MiniMax API Key，请先在设置中填写".into());
     }
+
+    let is_instrumental = is_instrumental.unwrap_or(false);
+    let user_lyrics_empty = lyrics.as_deref().map(str::trim).unwrap_or("").is_empty();
+
+    // —— 自动写词：用户没给词 + 开启 auto_lyrics + 非纯伴奏 ——
+    // 用 LLM 写一版结构化歌词，渲染成 MiniMax 格式，同时用于演唱和回传。
+    // 写词失败降级为 None（让 MiniMax 自己 lyrics_optimizer 盲写），不阻断。
+    let mut final_lyrics = lyrics;
+    let mut auto_lyrics_note: Option<String> = None;
+    let want_auto = auto_lyrics.unwrap_or(true) && !is_instrumental && user_lyrics_empty;
+    if want_auto {
+        match resolve_auto_lyrics(
+            &prompt,
+            lyrics_api_base.as_deref(),
+            lyrics_api_key.as_deref(),
+            lyrics_model.as_deref(),
+            &api_key,
+        )
+        .await
+        {
+            Ok(text) => {
+                tracing::info!(
+                    "自动写词成功（{} 字符），将用于 MiniMax 演唱并回传",
+                    text.len()
+                );
+                final_lyrics = Some(text);
+            }
+            Err(e) => {
+                tracing::warn!("自动写词失败，降级为 MiniMax lyrics_optimizer 盲写: {e}");
+                auto_lyrics_note = Some(format!("自动写词失败（{e}），已改用 MiniMax 自动补词"));
+            }
+        }
+    }
+
     let provider = MiniMaxProvider::new(api_key, api_base, model);
     let request = GenerationRequest {
         style_prompt: prompt,
         duration_secs: None,
         need_stems: false,
-        lyrics,
+        lyrics: final_lyrics.clone(),
         reference_audio_url: None,
-        params: serde_json::json!({ "is_instrumental": is_instrumental.unwrap_or(false) }),
+        params: serde_json::json!({ "is_instrumental": is_instrumental }),
     };
     let result = provider
         .generate(&request)
@@ -1469,26 +1542,72 @@ pub async fn studio_generate_music(
         .audio_url
         .ok_or_else(|| "MiniMax 未返回音频".to_string())?;
 
-    // 下载到本地缓存
-    let cache_dir = studio_cache_dir(&app)?;
+    // 落盘到输出目录（用户配置或默认 app_data_dir/studio）
+    let out_dir = studio_output_dir(&app, output_dir.as_deref())?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let dest = cache_dir.join(format!("{ts}-{task_id}.mp3", task_id = result.task_id));
-    tracing::info!(
-        "开始下载 MiniMax 音频到本地: dest={}",
-        dest.display()
-    );
+    let dest = out_dir.join(format!("{ts}-{task_id}.mp3", task_id = result.task_id));
+    tracing::info!("开始下载 MiniMax 音频到本地: dest={}", dest.display());
     let audio_path = provider
         .download_audio(&audio_url, &dest)
         .await
         .map_err(|e| e.to_string())?;
 
+    // 同步把歌词存成 .txt（与音频同名），方便用户在输出目录里翻看
+    if let Some(ref text) = final_lyrics {
+        let ldest = out_dir.join(format!("{ts}-{task_id}.txt", task_id = result.task_id));
+        if let Err(e) = std::fs::write(&ldest, text.as_bytes()) {
+            tracing::warn!("写入歌词文件失败（{}）: {e}", ldest.display());
+        }
+    }
+
     Ok(serde_json::json!({
         "audio_path": audio_path,
         "task_id": result.task_id,
+        "lyrics": final_lyrics,
+        "lyrics_note": auto_lyrics_note,
     }))
+}
+
+/// 解析自动写词的 LLM 配置：优先用前端显式传入的 `lyrics_api_*`，
+/// 缺失时回退到与 music 端点相同的 `api_key`（但 base/model 仍需前端给，
+/// 因为写词走 Anthropic 兼容端点，默认与 music 端点不同）。
+async fn resolve_auto_lyrics(
+    prompt: &str,
+    lyrics_api_base: Option<&str>,
+    lyrics_api_key: Option<&str>,
+    lyrics_model: Option<&str>,
+    fallback_key: &str,
+) -> Result<String, String> {
+    use orange_studio::{LyricsGenerator, LyricsRequest};
+    let base = lyrics_api_base
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "lyrics_api_base 未配置".to_string())?;
+    let key = lyrics_api_key
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(fallback_key);
+    if key.is_empty() {
+        return Err("未配置写词用 API Key".into());
+    }
+    let model = lyrics_model
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("MiniMax-M1");
+    let generator = LyricsGenerator::new(base, key, model);
+    let request = LyricsRequest {
+        theme: prompt.to_string(),
+        ..Default::default()
+    };
+    let draft = generator
+        .generate(&request)
+        .await
+        .map_err(|e| e.to_string())?;
+    // 渲染成 MiniMax 格式（[Verse]\n... 形式），既喂 MiniMax 又回传前端
+    Ok(draft.to_minimax_lyrics())
 }
 
 /// 人声/伴奏分轨 → 两个本地 mp3 路径
@@ -1503,6 +1622,7 @@ pub async fn studio_separate_vocal(
     api_base: String,
     api_key: String,
     model: String,
+    output_dir: Option<String>,
 ) -> Result<serde_json::Value, String> {
     use orange_studio::{MiniMaxProvider, StemSeparator};
     if api_key.is_empty() {
@@ -1515,16 +1635,18 @@ pub async fn studio_separate_vocal(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 下载两轨到本地缓存（provider 在 separator 内部已 drop，这里单独构造仅用于下载）
-    let cache_dir = studio_cache_dir(&app)?;
+    // 下载两轨到输出目录（provider 在 separator 内部已 drop，这里单独构造仅用于下载）
+    let out_dir = studio_output_dir(&app, output_dir.as_deref())?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let downloader = MiniMaxProvider::new("", "", "");
+    // provider 返回的引用可能是 http(s) URL（URL 模式）或 file://（hex 模式落 temp）
+    let is_remote_like = |s: &str| s.starts_with("http") || s.starts_with("file:");
     let vocals_path = match stems.vocals.as_deref() {
-        Some(url) if url.starts_with("http") => {
-            let dest = cache_dir.join(format!("{ts}-vocals.mp3"));
+        Some(url) if is_remote_like(url) => {
+            let dest = out_dir.join(format!("{ts}-vocals.mp3"));
             tracing::info!("开始下载人声轨: dest={}", dest.display());
             downloader
                 .download_audio(url, &dest)
@@ -1535,8 +1657,8 @@ pub async fn studio_separate_vocal(
         None => return Err("人声轨生成失败".into()),
     };
     let instrumental_path = match stems.other.as_deref() {
-        Some(url) if url.starts_with("http") => {
-            let dest = cache_dir.join(format!("{ts}-instrumental.mp3"));
+        Some(url) if is_remote_like(url) => {
+            let dest = out_dir.join(format!("{ts}-instrumental.mp3"));
             tracing::info!("开始下载伴奏轨: dest={}", dest.display());
             downloader
                 .download_audio(url, &dest)
@@ -1557,17 +1679,19 @@ pub async fn studio_separate_vocal(
 ///
 /// `project_json` 是前端序列化的完整 StudioProject JSON。
 /// `name` 用于生成文件名（安全过滤）。
+/// `output_dir` 为用户配置的输出目录，为空则回退默认 `{app_data_dir}/studio/`。
 /// 返回保存的文件绝对路径。
 #[tauri::command]
 pub fn studio_project_save(
     app: tauri::AppHandle,
     project_json: serde_json::Value,
     name: String,
+    output_dir: Option<String>,
 ) -> Result<String, String> {
     use orange_studio::StudioProject;
     let project: StudioProject =
         serde_json::from_value(project_json).map_err(|e| format!("解析工程 JSON 失败: {e}"))?;
-    let cache_dir = studio_cache_dir(&app)?;
+    let out_dir = studio_output_dir(&app, output_dir.as_deref())?;
     // 安全文件名
     let safe_name: String = name
         .chars()
@@ -1584,7 +1708,7 @@ pub fn studio_project_save(
     } else {
         safe_name
     };
-    let dest = cache_dir.join(format!("{safe_name}.orp"));
+    let dest = out_dir.join(format!("{safe_name}.orp"));
     project.save_to_path(&dest).map_err(|e| e.to_string())?;
     Ok(dest.to_string_lossy().into_owned())
 }

@@ -8,13 +8,41 @@
 //! 实现 AudioAIProvider trait，未来可被其他厂商替代。
 //!
 //! ## 接口语义
-//! MiniMax music_generation 是**同步**接口：一次 POST 直接返回生成的音频 URL
+//! MiniMax music_generation 是**同步**接口：一次 POST 直接返回生成的音频
 //! （耗时约 30-90 秒）。因此 `query()` 保留 trait 形状但返回 `Unsupported`。
+//!
+//! ## 返回格式（重要，曾踩坑）
+//! MiniMax 通过请求体的 `stream` 字段控制返回方式：
+//! - `stream: false`（本项目默认）→ `data.audio_url` 是一个 24h 内有效的下载 URL。
+//! - `stream: true` → 走 SSE 分片，`data.audio` 是 hex 编码的字节流（仅此模式可用）。
+//!
+//! 实测中即便我们传 `stream: false`，个别账号/网关也会把 hex 字节直接塞进
+//! `data.audio` 字段返回（而非走 URL）。因此本实现的响应解析做**双模兼容**：
+//! 先按 URL 解析 `data.audio_url`/`data.url`/`data.audio`；若 `data.audio` 不是
+//! 合法 URL 而是一串 hex，则就地解码落盘（不经过 download_audio）。
+//! 这样无论 MiniMax 返回哪种格式都能正确产出本地音频文件。
 
 use std::time::Duration;
 
 use crate::provider::*;
 use async_trait::async_trait;
+
+/// 判断 MiniMax 返回的字符串是「URL 或路径」还是「hex 字节流」。
+///
+/// 判定准则（保守，宁可误判为 URL 走 normalize 再失败，也不要把真 URL 当 hex 解码）：
+/// - 以 `http://` / `https://` / `file://` 开头 → URL
+/// - 以 `/` 开头（绝对路径或相对路径）→ 路径
+/// - 其他 → 视为 hex，交给 hex 解码处理
+///
+/// 注意：MiniMax 的 hex 字节流通常极长（几十 KB 起步）且只含 0-9a-f，
+/// 不会以 http(s):// 或 / 开头，所以这个判据在实践中是可靠的。
+fn looks_like_url_or_path(s: &str) -> bool {
+    let t = s.trim();
+    t.starts_with("http://")
+        || t.starts_with("https://")
+        || t.starts_with("file://")
+        || t.starts_with('/')
+}
 
 /// 把 MiniMax 返回的音频 URL 规范化为合法的绝对 http(s) URL。
 ///
@@ -56,7 +84,7 @@ fn sanitize_url_for_log(url: &str) -> String {
         Err(_) => {
             let max = url.len().min(64);
             format!("{}...(无法解析)", &url[..max])
-        },
+        }
     }
 }
 
@@ -91,7 +119,13 @@ impl MiniMaxProvider {
         }
     }
 
-    /// 下载远程音频到本地缓存目录，返回本地路径
+    /// 下载远程音频到本地缓存目录，返回本地路径。
+    ///
+    /// 支持三种来源：
+    /// - `http(s)://` —— 走 reqwest 下载（MiniMax URL 模式返回的 24h 有效链接）。
+    /// - `file://` —— 本地文件，直接复制到 `dest`（hex 模式下 generate() 已先把
+    ///   字节解码到系统 temp 目录，再以 file:// 形式回传给下游；这样下游调用链
+    ///   stems.rs / commands.rs 完全无需感知 hex 模式）。
     pub async fn download_audio(
         &self,
         url: &str,
@@ -101,7 +135,7 @@ impl MiniMaxProvider {
             std::fs::create_dir_all(parent)
                 .map_err(|e| orange_core::CoreError::AiService(format!("创建缓存目录失败: {e}")))?;
         }
-        // 入口防御：空 / 非绝对 http(s) URL 会触发 reqwest "builder error"，
+        // 入口防御：空 / 无法解析的 URL 会触发 reqwest "builder error"，
         // 这里拦截并报出有意义的错误（generate() 已校验，此处为二次保险，
         // 也能保护调用方直接传相对路径的场景）。
         let parsed = url::Url::parse(url).map_err(|e| {
@@ -110,11 +144,30 @@ impl MiniMaxProvider {
                 sanitize_url_for_log(url)
             ))
         })?;
-        if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(orange_core::CoreError::AiService(format!(
-                "下载 URL 非 http(s): {}",
-                sanitize_url_for_log(url)
-            )));
+        match parsed.scheme() {
+            "http" | "https" => {}
+            "file" => {
+                let src = parsed.to_file_path().map_err(|()| {
+                    orange_core::CoreError::AiService(format!(
+                        "file:// 路径转换失败: {}",
+                        sanitize_url_for_log(url)
+                    ))
+                })?;
+                std::fs::copy(&src, dest).map_err(|e| {
+                    orange_core::CoreError::AiService(format!(
+                        "复制本地音频失败（{} → {}）: {e}",
+                        src.display(),
+                        dest.display()
+                    ))
+                })?;
+                return Ok(dest.to_string_lossy().into_owned());
+            }
+            other => {
+                return Err(orange_core::CoreError::AiService(format!(
+                    "下载 URL 协议不支持（{other}）: {}",
+                    sanitize_url_for_log(url)
+                )));
+            }
         }
         let url_for_err = sanitize_url_for_log(url);
         let bytes = self
@@ -123,20 +176,53 @@ impl MiniMaxProvider {
             .send()
             .await
             .map_err(|e| {
-                orange_core::CoreError::Network(format!(
-                    "下载音频请求失败（{url_for_err}）: {e}"
-                ))
+                orange_core::CoreError::Network(format!("下载音频请求失败（{url_for_err}）: {e}"))
             })?
             .bytes()
             .await
             .map_err(|e| {
-                orange_core::CoreError::Network(format!(
-                    "读取音频数据失败（{url_for_err}）: {e}"
-                ))
+                orange_core::CoreError::Network(format!("读取音频数据失败（{url_for_err}）: {e}"))
             })?;
         std::fs::write(dest, &bytes)
             .map_err(|e| orange_core::CoreError::AiService(format!("写入音频文件失败: {e}")))?;
         Ok(dest.to_string_lossy().into_owned())
+    }
+
+    /// 把 MiniMax hex 模式返回的音频字节流解码后写到系统 temp 目录，
+    /// 返回该 temp 文件的 `file://` URL。
+    ///
+    /// 当 MiniMax 在非流式请求里返回 `data.audio` 为 hex 字符串时（部分账号/网关
+    /// 实际行为），不能走 `download_audio` 的网络分支 —— 直接解码写入 temp，
+    /// 再由下游 `download_audio` 识别 file:// 协议复制到最终缓存目录。
+    fn save_hex_to_temp(hex_str: &str, task_id: &str) -> orange_core::Result<String> {
+        let bytes = hex::decode(hex_str.trim()).map_err(|e| {
+            orange_core::CoreError::AiService(format!(
+                "MiniMax data.audio 既不是合法 URL，hex 解码也失败: {e}"
+            ))
+        })?;
+        if bytes.is_empty() {
+            return Err(orange_core::CoreError::AiService(
+                "MiniMax 返回的 hex 音频数据为空".into(),
+            ));
+        }
+        let mut tmp = std::env::temp_dir();
+        tmp.push(format!("orangeradio-minimax-{task_id}.mp3"));
+        if let Some(parent) = tmp.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                orange_core::CoreError::AiService(format!("创建 temp 目录失败: {e}"))
+            })?;
+        }
+        std::fs::write(&tmp, &bytes).map_err(|e| {
+            orange_core::CoreError::AiService(format!("写入 temp 音频文件失败: {e}"))
+        })?;
+        // to_file_path 反过来用 Path → file:// URL：手工拼装，避免跨平台 URL 解析差异
+        let path_str = tmp.to_string_lossy().replace('\\', "/");
+        let prefixed = if path_str.starts_with('/') {
+            format!("file://{path_str}")
+        } else {
+            format!("file:///{path_str}")
+        };
+        Ok(prefixed)
     }
 }
 
@@ -181,9 +267,14 @@ impl AudioAIProvider for MiniMaxProvider {
             "lyrics": lyrics,
             "is_instrumental": is_instrumental,
             "lyrics_optimizer": true,
-            // format 是「音频编码格式」(mp3/wav/pcm/flac)，不是返回方式。
-            // MiniMax 始终通过 data.audio_url 返回 URL，与此字段无关。
-            // 之前传 "url" 会触发服务端 2013: invalid params, audio format: url is not allowed
+            // stream: false → 明确请求 MiniMax 返回 URL 形式（data.audio_url），
+            // URL 在 24 小时内有效。stream:true 才会返回 hex 字节流。
+            // （即便如此，部分网关仍可能把 hex 塞进 data.audio，下方响应解析做双模兼容。）
+            "stream": false,
+            // format 是「音频编码格式」(mp3/wav/pcm/flac)，**不是**「返回方式」。
+            // 控制返回方式的是上面的 stream 字段。
+            // 早期误把 format 当返回方式传 "url" 会触发服务端
+            //   2013: invalid params, audio format: url is not allowed
             "audio_setting": {
                 "sample_rate": 44100,
                 "bitrate": 256000,
@@ -245,8 +336,15 @@ impl AudioAIProvider for MiniMaxProvider {
             }
         }
 
-        // 提取音频 URL：兼容 data.audio / data.audio_url / data.url
-        let audio_url_raw = v
+        // 提取音频：MiniMax 有两种返回形态，本实现做双模兼容 ——
+        //   (1) URL 模式（stream:false 的预期形态）：data.audio_url（或 data.url）
+        //       是一个 http(s) 绝对 URL，24h 内可下载。
+        //   (2) hex 模式（stream:true 的预期形态，但部分网关即便 stream:false
+        //       也会返回）：data.audio 是一串 hex 编码的音频字节流。
+        // 因此先按字段优先级取候选字符串，再根据内容形态分发处理。
+        // 注意：data.audio 既可能是 URL（少见），也可能是 hex（实测踩坑），
+        // 必须先看内容而不是字段名。
+        let audio_raw = v
             .get("data")
             .and_then(|d| {
                 d.get("audio_url")
@@ -256,19 +354,38 @@ impl AudioAIProvider for MiniMaxProvider {
             .and_then(|u| u.as_str())
             .ok_or_else(|| {
                 orange_core::CoreError::AiService(format!(
-                    "MiniMax 响应缺少音频 URL: {}",
+                    "MiniMax 响应缺少音频字段（data.audio_url / data.audio / data.url 均无）: {}",
                     &text[..text.len().min(300)]
                 ))
             })?;
 
-        // URL 校验：空字符串或相对路径会漏到下载阶段，被 reqwest 报成无意义的
-        // "builder error"。这里提前拦截并给明确错误；相对路径则尝试拼到 api_base。
-        let audio_url = normalize_audio_url(audio_url_raw, &self.api_base).map_err(|reason| {
-            orange_core::CoreError::AiService(format!(
-                "MiniMax 返回的音频 URL 非法（{reason}），原始响应片段: {}",
-                &text[..text.len().min(300)]
-            ))
-        })?;
+        // 生成任务 ID（同步接口无 task_id，用本地标识）—— 提前算，hex 落盘要用
+        let task_id = v
+            .get("data")
+            .and_then(|d| d.get("task_id"))
+            .and_then(|t| t.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+        // 双模分发：能解析为 http(s)/file 绝对 URL，或以 / 开头的相对路径 → URL 模式；
+        // 否则一律当作 hex 字节流处理（先 hex 解码校验，失败再报「既不是 URL 也不是 hex」）。
+        let audio_url = if looks_like_url_or_path(audio_raw) {
+            normalize_audio_url(audio_raw, &self.api_base).map_err(|reason| {
+                orange_core::CoreError::AiService(format!(
+                    "MiniMax 返回的音频 URL 非法（{reason}），原始响应片段: {}",
+                    &text[..text.len().min(300)]
+                ))
+            })?
+        } else {
+            // hex 模式：解码后落 temp，回传 file:// URL，由下游 download_audio 复制到缓存目录
+            let hex_len = audio_raw.trim().len();
+            let saved = Self::save_hex_to_temp(audio_raw, &task_id)?;
+            tracing::info!(
+                "MiniMax 返回 hex 模式音频（hex_len={hex_len}），已解码到 temp: {}",
+                sanitize_url_for_log(&saved)
+            );
+            saved
+        };
 
         // 从 extra_info 提取时长（秒）
         let duration_secs = v
@@ -276,14 +393,6 @@ impl AudioAIProvider for MiniMaxProvider {
             .and_then(|e| e.get("audio_length"))
             .and_then(|a| a.as_f64())
             .map(|s| s as f32);
-
-        // 生成任务 ID（同步接口无 task_id，用本地标识）
-        let task_id = v
-            .get("data")
-            .and_then(|d| d.get("task_id"))
-            .and_then(|t| t.as_str())
-            .map(String::from)
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         if let Some(d) = duration_secs {
             tracing::info!(

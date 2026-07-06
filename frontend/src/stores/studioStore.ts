@@ -108,14 +108,23 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     }
     set({ generatingMusic: true, error: null, audioPath: null, stems: null });
     try {
-      // 优先使用用户编辑后的歌词文本
-      const lyrics = get().lyricsText.trim() || null;
+      // 优先使用用户编辑后的歌词文本；为空时让后端自动写词（autoLyrics 默认开启）
+      const userLyrics = get().lyricsText.trim() || null;
       const result = await generateMusic({
         prompt,
-        lyrics,
+        lyrics: userLyrics,
         isInstrumental: instrumental,
       });
+      // 后端回传的歌词（用户词原样回显，或自动写词的产物）。
+      // 仅当本地 lyricsText 为空时回填，避免覆盖用户正在编辑的内容。
+      if (result.lyrics && !get().lyricsText.trim()) {
+        set({ lyricsText: result.lyrics });
+      }
       set({ audioPath: result.audio_path });
+      // 自动写词降级提示透传到 error（用 Toast 展示，但不阻断播放）
+      if (result.lyrics_note) {
+        set({ error: result.lyrics_note });
+      }
     } catch (e) {
       set({ error: extractError(e) });
     } finally {
