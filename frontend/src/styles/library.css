@@ -24,10 +24,15 @@
   -webkit-backdrop-filter: blur(var(--blur));
   box-shadow: var(--shadow-deep), inset 0 1px 0 rgba(244, 210, 138, 0.08);
   overflow: hidden;
-  /* 占满父容器剩余高度，让 .library__list 内的滚动条接管 */
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* 当 .library 是 .player-view 的唯一子元素时（如歌单视图 UserPlaylistView），
+   占满 player-view 剩余高度，让列表内部滚动。LibraryView 视图下 .library
+   后面还有「核心能力」feature grid,这里不应用 flex: 1。 */
+.player-view > .library:only-child {
   flex: 1;
 }
 
@@ -489,7 +494,8 @@
 .lib-rows {
   /* 从 flex chain 拿剩余高度（替代旧的 max-height: calc(100vh - 420px) 硬上限） */
   flex: 1 1 0;
-  min-height: 0;
+  min-height: 320px; /* 安全网：即使 flex chain 失败也至少显示 5 行 */
+  max-height: calc(100vh - 280px);
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(244, 210, 138, 0.2) transparent;
