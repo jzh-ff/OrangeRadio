@@ -305,14 +305,15 @@ export function PlayerBar() {
         >
           <ActionIcons.Queue />
         </button>
-        {/* 桌面歌词悬浮窗 */}
+        {/* 桌面歌词悬浮窗 —— 用"词"字代替图标（更直观、和右侧按钮区分明确） */}
         <button
-          className="pb-btn"
+          className="pb-btn pb-btn--lyric"
           onClick={onLyricBtn}
           title={lyricLocked ? "桌面歌词已锁定·点此解锁" : "桌面歌词"}
+          aria-label={lyricLocked ? "解锁桌面歌词" : "打开桌面歌词"}
           style={lyricLocked ? { color: "#ff9248" } : undefined}
         >
-          <ActionIcons.Lyrics />
+          <span className="pb-btn__char">词</span>
         </button>
         {/* 一起听 */}
         <button
