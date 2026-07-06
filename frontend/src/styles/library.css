@@ -24,6 +24,11 @@
   -webkit-backdrop-filter: blur(var(--blur));
   box-shadow: var(--shadow-deep), inset 0 1px 0 rgba(244, 210, 138, 0.08);
   overflow: hidden;
+  /* 占满父容器剩余高度，让 .library__list 内的滚动条接管 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 
 /* 噪点纹理层（继承项目已有的 film-grain 系统，复用变量） */
@@ -431,6 +436,11 @@
   box-shadow:
     inset 0 1px 0 rgba(244, 210, 138, 0.06),
     inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  /* 占满 .library 剩余高度（flex chain） */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .lib-header, .lib-row {
@@ -477,7 +487,9 @@
 }
 
 .lib-rows {
-  max-height: calc(100vh - 420px);
+  /* 从 flex chain 拿剩余高度（替代旧的 max-height: calc(100vh - 420px) 硬上限） */
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(244, 210, 138, 0.2) transparent;

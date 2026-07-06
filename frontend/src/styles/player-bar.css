@@ -150,11 +150,38 @@
 .pb-controls { display: flex; align-items: center; gap: 18px; }
 
 .pb-btn {
-  display: flex; align-items: center; justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; border-radius: 50%;
   color: var(--text-2); transition: all 0.15s var(--ease);
+  line-height: 1; /* 文字按钮的基线 */
+  font-family: inherit;
 }
 .pb-btn:hover { color: var(--text); background: var(--bg-hover); transform: translateY(-1px) scale(1.08); }
+
+/* 单字按钮（桌面歌词"词"）—— 视觉权重介于图标和文字按钮之间 */
+.pb-btn--lyric {
+  width: 32px; height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+.pb-btn--lyric:hover {
+  color: var(--amber);
+  border-color: rgba(255, 196, 107, 0.32);
+  background: rgba(255, 107, 26, 0.08);
+}
+.pb-btn__char {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  /* 视觉微调：让单字"词"在按钮圆形内更紧凑、更居中 */
+  padding-bottom: 1px;
+}
 
 .pb-btn--play {
   width: 48px; height: 48px;
