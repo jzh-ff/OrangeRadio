@@ -22,6 +22,11 @@ export interface LyricsDraft {
 export interface MusicGenerationResult {
   audio_path: string;
   task_id: string;
+  /** 实际演唱用的歌词（用户传入的词原样回显，或 autoLyrics 自动写词的产物）。
+   *  null 表示没词（如纯伴奏，或自动写词失败降级）。 */
+  lyrics?: string | null;
+  /** 自动写词降级提示（如 "自动写词失败…已改用 MiniMax 自动补词"），正常时为 null */
+  lyrics_note?: string | null;
 }
 
 /** 人声/伴奏分轨结果 */
@@ -35,6 +40,7 @@ export interface SeparateVocalResult {
  * - LLM 写词/译注用 `orangeradio_minimax_*`（Anthropic 兼容端点）
  * - 音乐生成用 `orangeradio_minimax_music_*`（api.minimaxi.com）
  * 两者共用同一个 API Key。
+ * - 创作输出目录用 `orangeradio_studio_output_dir`（为空表示用应用数据目录默认值）
  */
 export function getStudioConfig() {
   const apiKey = localStorage.getItem("orangeradio_minimax_key") || "";
@@ -46,7 +52,8 @@ export function getStudioConfig() {
     localStorage.getItem("orangeradio_minimax_music_base") || "https://api.minimaxi.com";
   const musicModel =
     localStorage.getItem("orangeradio_minimax_music_model") || "music-2.6-free";
-  return { apiKey, llmBase, llmModel, musicBase, musicModel };
+  const outputDir = localStorage.getItem("orangeradio_studio_output_dir") || "";
+  return { apiKey, llmBase, llmModel, musicBase, musicModel, outputDir };
 }
 
 /** AI 写词 */
@@ -65,18 +72,29 @@ export async function generateLyrics(params: {
   });
 }
 
-/** 音乐生成（MiniMax music_generation，约 30-90 秒） */
+/** 音乐生成（MiniMax music_generation，约 30-90 秒）
+ *
+ * `autoLyrics`（默认 true）：用户没传歌词且非纯伴奏时，后端会先调一次 LLM 写词，
+ * 把词同时用于 MiniMax 演唱和回传展示。用户已传歌词时跳过。
+ */
 export async function generateMusic(params: {
   prompt: string;
   lyrics?: string | null;
   isInstrumental?: boolean;
+  outputDir?: string;
+  autoLyrics?: boolean;
 }): Promise<MusicGenerationResult> {
-  const { apiKey, musicBase, musicModel } = getStudioConfig();
+  const { apiKey, musicBase, musicModel, outputDir, llmBase, llmModel } = getStudioConfig();
   return invoke<MusicGenerationResult>("studio_generate_music", {
     ...params,
     apiBase: musicBase,
     apiKey,
     model: musicModel,
+    outputDir: params.outputDir ?? outputDir,
+    autoLyrics: params.autoLyrics ?? true,
+    lyricsApiBase: llmBase,
+    lyricsApiKey: apiKey,
+    lyricsModel: llmModel,
   });
 }
 
@@ -87,22 +105,44 @@ export async function generateMusic(params: {
 export async function separateVocal(params: {
   prompt: string;
   lyrics?: string | null;
+  outputDir?: string;
 }): Promise<SeparateVocalResult> {
-  const { apiKey, musicBase, musicModel } = getStudioConfig();
+  const { apiKey, musicBase, musicModel, outputDir } = getStudioConfig();
   return invoke<SeparateVocalResult>("studio_separate_vocal", {
     ...params,
     apiBase: musicBase,
     apiKey,
     model: musicModel,
+    outputDir: params.outputDir ?? outputDir,
   });
 }
 
 /** 保存创作工程到 .orp 文件 */
-export async function saveProject(projectJson: unknown, name: string): Promise<string> {
-  return invoke<string>("studio_project_save", { projectJson, name });
+export async function saveProject(
+  projectJson: unknown,
+  name: string,
+  outputDir?: string,
+): Promise<string> {
+  const { outputDir: cfgOutputDir } = getStudioConfig();
+  return invoke<string>("studio_project_save", {
+    projectJson,
+    name,
+    outputDir: outputDir ?? cfgOutputDir,
+  });
 }
 
 /** 从 .orp 文件加载创作工程 */
 export async function loadProject(path: string): Promise<unknown> {
   return invoke<unknown>("studio_project_load", { path });
+}
+
+/**
+ * 弹出文件夹选择器让用户选创作输出目录。
+ * @returns 选中目录的绝对路径；用户取消则返回 null。
+ */
+export async function pickOutputDir(): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const selected = await open({ directory: true, multiple: false });
+  if (!selected) return null;
+  return typeof selected === "string" ? selected : null;
 }
