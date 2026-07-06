@@ -34,6 +34,10 @@ pub enum SourceKind {
     Podcast,
     /// 歌曲宝（第三方聚合音源，HTML 抓取）
     Gequbao,
+    /// 酷狗音乐
+    Kugou,
+    /// 汽水音乐
+    Qishui,
     /// 自定义 / 插件音源
     Plugin,
 }

@@ -5,6 +5,8 @@ import { NeteaseView } from "./NeteaseView";
 import { QqMusicView } from "./QqMusicView";
 import { SpotifyView } from "./SpotifyView";
 import { GequbaoView } from "./GequbaoView";
+import { KugouView } from "./KugouView";
+import { QishuiView } from "./QishuiView";
 import { PodcastView } from "./PodcastView";
 import { UserPlaylistView } from "./UserPlaylistView";
 import { SearchView } from "./SearchView";
@@ -33,6 +35,10 @@ export function PlayerView() {
         <SpotifyView />
       ) : subView === "gequbao" ? (
         <GequbaoView />
+      ) : subView === "kugou" ? (
+        <KugouView />
+      ) : subView === "qishui" ? (
+        <QishuiView />
       ) : subView === "podcast" ? (
         <PodcastView />
       ) : subView === "user_playlist" ? (

@@ -322,6 +322,27 @@ pub async fn netease_daily(state: tauri::State<'_, AppState>) -> Result<Vec<Trac
     state.netease.daily_songs().await.map_err(|e| e.to_string())
 }
 
+/// 网易云官方排行榜列表
+#[tauri::command]
+pub async fn netease_toplists(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<(String, String, String, u64)>, String> {
+    state.netease.toplists().await.map_err(|e| e.to_string())
+}
+
+/// 网易云排行榜详情（歌曲列表）
+#[tauri::command]
+pub async fn netease_toplist_detail(
+    state: tauri::State<'_, AppState>,
+    toplist_id: String,
+) -> Result<Vec<Track>, String> {
+    state
+        .netease
+        .toplist_detail(&toplist_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 网易云歌单详情
 #[tauri::command]
 pub async fn netease_playlist_detail(
@@ -756,6 +777,125 @@ pub async fn qqmusic_qrcode_check(
     Ok(QrStatusInfo { code, message: msg })
 }
 
+// ===== 酷狗音乐命令 =====
+
+#[tauri::command]
+pub async fn kugou_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+    page: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    use orange_core::AudioSource;
+    let query = SearchQuery {
+        keyword,
+        page: page.unwrap_or(1),
+        page_size: 30,
+        ..Default::default()
+    };
+    let result = state
+        .kugou
+        .search(&query)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+#[tauri::command]
+pub async fn kugou_stream(
+    state: tauri::State<'_, AppState>,
+    track_id: String,
+) -> Result<String, String> {
+    use orange_core::AudioSource;
+    let track = Track::new(
+        state.kugou.id(),
+        track_id,
+        orange_core::track::TrackMeta::default(),
+    );
+    let loc = state
+        .kugou
+        .resolve_stream(&track)
+        .await
+        .map_err(|e| e.to_string())?;
+    match loc {
+        orange_core::StreamLocation::Url { url, .. } => Ok(url),
+        _ => Err("不支持的流类型".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn kugou_login(
+    state: tauri::State<'_, AppState>,
+    cookie: String,
+) -> Result<(), String> {
+    use orange_core::AuthSource;
+    state
+        .kugou
+        .login_with_cookie(&cookie)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn kugou_logout(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    use orange_core::AuthSource;
+    state.kugou.logout().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn kugou_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.kugou.is_ready())
+}
+
+// ===== 汽水音乐命令 =====
+
+#[tauri::command]
+pub async fn qishui_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+    page: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    use orange_core::AudioSource;
+    let query = SearchQuery {
+        keyword,
+        page: page.unwrap_or(1),
+        page_size: 30,
+        ..Default::default()
+    };
+    let result = state
+        .qishui
+        .search(&query)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+#[tauri::command]
+pub async fn qishui_stream(
+    state: tauri::State<'_, AppState>,
+    track_id: String,
+) -> Result<String, String> {
+    use orange_core::AudioSource;
+    let track = Track::new(
+        state.qishui.id(),
+        track_id,
+        orange_core::track::TrackMeta::default(),
+    );
+    let loc = state
+        .qishui
+        .resolve_stream(&track)
+        .await
+        .map_err(|e| e.to_string())?;
+    match loc {
+        orange_core::StreamLocation::Url { url, .. } => Ok(url),
+        _ => Err("不支持的流类型".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn qishui_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.qishui.is_ready())
+}
+
 // ===== 聚合搜索 =====
 
 /// 多源聚合搜索（并发查询所有已就绪音源，支持分页，page 默认 1）
@@ -827,8 +967,22 @@ pub async fn search_all(
         gequbao.search(&gequbao_query).await
     });
 
+    // 酷狗音乐（免登录）
+    let kugou = state.kugou.clone();
+    let kugou_query = query.clone();
+    let kugou_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
+        kugou.search(&kugou_query).await
+    });
+
+    // 汽水音乐（占位，当前返回空）
+    let qishui = state.qishui.clone();
+    let qishui_query = query.clone();
+    let qishui_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
+        qishui.search(&qishui_query).await
+    });
+
     // 并发执行
-    let (local_res, qq_res, ne_res, sp_res, radio_res, gequbao_res) = tokio::join!(
+    let (local_res, qq_res, ne_res, sp_res, radio_res, gequbao_res, kugou_res, qishui_res) = tokio::join!(
         async { local_task.await.unwrap_or_default() },
         async {
             match qq_task.await {
@@ -866,6 +1020,18 @@ pub async fn search_all(
                 _ => vec![],
             }
         },
+        async {
+            match kugou_task.await {
+                Ok(Ok(r)) => r.tracks,
+                _ => vec![],
+            }
+        },
+        async {
+            match qishui_task.await {
+                Ok(Ok(r)) => r.tracks,
+                _ => vec![],
+            }
+        },
     );
 
     let mut all = Vec::new();
@@ -875,6 +1041,8 @@ pub async fn search_all(
     all.extend(sp_res);
     all.extend(radio_res);
     all.extend(gequbao_res);
+    all.extend(kugou_res);
+    all.extend(qishui_res);
     tracing::info!("聚合搜索 '{}' 共 {} 条结果", keyword, all.len());
     Ok(all)
 }
@@ -984,6 +1152,34 @@ pub async fn auth_overview(state: tauri::State<'_, AppState>) -> Result<AuthOver
         source_name: "Spotify".into(),
         configured: state.spotify.is_ready(),
         saved_at: sp_saved,
+    });
+
+    // 酷狗音乐
+    let kg_saved = state
+        .auth_store
+        .get("kugou")
+        .await
+        .map(|a| a.saved_at)
+        .unwrap_or(0);
+    items.push(AuthStatusItem {
+        source: "kugou".into(),
+        source_name: "酷狗音乐".into(),
+        configured: state.kugou.is_ready(),
+        saved_at: kg_saved,
+    });
+
+    // 汽水音乐
+    let qs_saved = state
+        .auth_store
+        .get("qishui")
+        .await
+        .map(|a| a.saved_at)
+        .unwrap_or(0);
+    items.push(AuthStatusItem {
+        source: "qishui".into(),
+        source_name: "汽水音乐".into(),
+        configured: state.qishui.is_ready(),
+        saved_at: qs_saved,
     });
 
     Ok(AuthOverview { items })
@@ -1755,6 +1951,8 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_stream,
             netease_playlists,
             netease_daily,
+            netease_toplists,
+            netease_toplist_detail,
             netease_playlist_detail,
             netease_lyric,
             netease_comments,
@@ -1762,6 +1960,14 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_add_track_to_playlist,
             netease_qrcode_create,
             netease_qrcode_check,
+            kugou_search,
+            kugou_stream,
+            kugou_login,
+            kugou_logout,
+            kugou_status,
+            qishui_search,
+            qishui_stream,
+            qishui_status,
             toggle_liked,
             liked_tracks,
             create_playlist,

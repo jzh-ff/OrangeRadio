@@ -13,6 +13,8 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   local: { label: "本地", cls: "q-std" },
   netease_cloud_music: { label: "NE", cls: "q-lossless" },
   qq_music: { label: "QQ", cls: "q-high" },
+  kugou: { label: "KG", cls: "q-high" },
+  qishui: { label: "QS", cls: "q-hires" },
   spotify: { label: "SP", cls: "q-master" },
   web_radio: { label: "LIVE", cls: "q-hires" },
   podcast: { label: "POD", cls: "q-std" },
