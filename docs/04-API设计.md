@@ -72,6 +72,37 @@ interface SourceInfo { id: string; kind: string; name: string; ready: boolean; }
 const sources = await invoke<SourceInfo[]>("sources_list");
 ```
 
+#### `netease_toplists`
+网易云官方排行榜列表。
+```typescript
+const list = await invoke<[ string, string, string, number ][]>("netease_toplists");
+// [id, name, coverUrl, playCount]
+```
+
+#### `netease_toplist_detail`
+排行榜详情（歌曲列表）。
+```typescript
+const tracks = await invoke<Track[]>("netease_toplist_detail", { toplistId: "19723756" });
+```
+
+#### `kugou_search`
+酷狗音乐搜索。
+```typescript
+const tracks = await invoke<Track[]>("kugou_search", { keyword: "晴天", page: 1 });
+```
+
+#### `kugou_stream`
+酷狗音乐取流。
+```typescript
+const url = await invoke<string>("kugou_stream", { trackId: "hash|album_id" });
+```
+
+#### `kugou_login` / `kugou_logout` / `kugou_status`
+酷狗 Cookie 登录、登出、状态查询。
+
+#### `qishui_search` / `qishui_stream` / `qishui_status`
+汽水音乐命令（已注册，接口待填充）。
+
 ### 本地库
 
 #### `library_scan`
