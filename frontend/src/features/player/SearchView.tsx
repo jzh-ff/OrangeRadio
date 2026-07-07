@@ -1,6 +1,7 @@
 import { useSearchStore } from "../../stores/searchStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
+import { ConsoleSearch } from "../../components/ConsoleSearch";
 import { getCoverUrl } from "./useCover";
 import { TrackActions } from "./TrackActions";
 import { VirtualTrackList } from "../../components/TrackRow";
@@ -56,21 +57,14 @@ export function SearchView() {
       </div>
 
       {/* 搜索框 */}
-      <div className="library__toolbar" style={{ marginBottom: 16 }}>
-        <div className="library__search">
-          <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-            <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          <input
-            className="library__search-input"
-            placeholder="搜索本地、网易云、QQ音乐、Spotify、电台…"
-            value={keyword}
-            autoFocus
-            onChange={(e) => setKeyword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && doSearch()}
-          />
-        </div>
+      <div style={{ marginBottom: 16 }}>
+        <ConsoleSearch
+          value={keyword}
+          onChange={setKeyword}
+          onSubmit={doSearch}
+          loading={loading}
+          placeholder="搜索本地、网易云、QQ 音乐、Spotify、电台…"
+        />
       </div>
 
       {/* 各源结果统计 */}

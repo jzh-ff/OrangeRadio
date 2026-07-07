@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { ConsoleSearch } from "../../components/ConsoleSearch";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
