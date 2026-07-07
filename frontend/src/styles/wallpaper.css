@@ -4,7 +4,7 @@
   flex-direction: column;
   gap: 20px;
   padding: 4px 8px 32px;
-  max-width: 1100px;
+  width: 100%;
 }
 
 .wallpaper-view__hero {
