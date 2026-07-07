@@ -220,6 +220,8 @@ export default function App() {
           playUrl = await invoke<string>("gequbao_stream", { songPath: track.source_track_id });
         } else if (kind === "kugou") {
           playUrl = await invoke<string>("kugou_stream", { trackId: track.source_track_id });
+        } else if (kind === "kuwo") {
+          playUrl = await invoke<string>("kuwo_stream", { rid: track.source_track_id });
         } else if (kind === "qishui") {
           playUrl = await invoke<string>("qishui_stream", { trackId: track.source_track_id });
         } else {

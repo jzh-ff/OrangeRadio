@@ -20,10 +20,12 @@
   max-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, rgba(28, 28, 36, 0.96), rgba(20, 20, 28, 0.96));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  background:
+    linear-gradient(180deg, rgba(244, 210, 138, 0.04), transparent 28%),
+    linear-gradient(180deg, rgba(8, 10, 16, 0.96), rgba(14, 16, 24, 0.94));
+  border: 1px solid var(--champagne-soft);
+  border-radius: 22px;
+  box-shadow: var(--shadow-deep, 0 24px 60px rgba(0, 0, 0, 0.55)), inset 0 1px 0 rgba(244, 210, 138, 0.1);
   overflow: hidden;
   animation: modal-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -51,7 +53,7 @@
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #f1f1f5;
+  color: var(--text);
   letter-spacing: 0.5px;
 }
 
@@ -61,7 +63,7 @@
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #aaa7b8;
+  color: var(--text-2);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -90,7 +92,7 @@
   margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
-  color: #d4d2e0;
+  color: var(--text);
   letter-spacing: 0.3px;
 }
 
@@ -98,9 +100,9 @@
   width: 26px;
   height: 26px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--champagne-soft);
   background: transparent;
-  color: #aaa7b8;
+  color: var(--text-2);
   font-size: 14px;
   cursor: pointer;
   transition: all 120ms ease;
@@ -115,7 +117,7 @@
 .settings-error {
   padding: 16px;
   text-align: center;
-  color: #aaa7b8;
+  color: var(--text-2);
   font-size: 13px;
 }
 
@@ -164,7 +166,7 @@
 .auth-item__name {
   font-size: 14px;
   font-weight: 600;
-  color: #f1f1f5;
+  color: var(--text);
   margin-bottom: 4px;
 }
 
@@ -173,7 +175,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #aaa7b8;
+  color: var(--text-2);
   margin-bottom: 4px;
 }
 
@@ -195,7 +197,7 @@
 
 .auth-item__time {
   font-size: 11px;
-  color: #88849a;
+  color: var(--text-3);
 }
 
 .auth-item__time strong {
@@ -216,9 +218,9 @@
 .btn-link {
   padding: 5px 12px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--champagne-soft);
   background: rgba(255, 255, 255, 0.04);
-  color: #d4d2e0;
+  color: var(--text);
   font-size: 12px;
   cursor: pointer;
   transition: all 120ms ease;
@@ -241,7 +243,7 @@
   padding: 12px 14px;
   font-size: 12px;
   line-height: 1.7;
-  color: #aaa7b8;
+  color: var(--text-2);
   background: rgba(255, 255, 255, 0.02);
   border-radius: 8px;
   border-left: 3px solid rgba(255, 167, 38, 0.45);
@@ -252,7 +254,7 @@
   background: rgba(255, 255, 255, 0.02);
   border-radius: 8px;
   font-size: 12px;
-  color: #aaa7b8;
+  color: var(--text-2);
   line-height: 1.9;
   font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
 }
@@ -278,27 +280,31 @@
   flex-shrink: 0;
   width: 70px;
   font-size: 12px;
-  color: #aaa7b8;
+  color: var(--text-2);
   font-weight: 500;
 }
 .settings-ai-input {
   flex: 1;
-  padding: 9px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: #f1f1f5;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--champagne-soft);
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.92), rgba(14, 16, 24, 0.86));
+  color: var(--text);
   font-size: 13px;
-  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-family: var(--font-body);
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
 }
 .settings-ai-input:focus {
-  border-color: rgba(255, 107, 26, 0.5);
-  box-shadow: 0 0 0 3px rgba(255, 107, 26, 0.12);
+  border-color: rgba(255, 157, 69, 0.55);
+  box-shadow: 0 0 0 3px rgba(255, 107, 26, 0.12), 0 0 24px rgba(255, 107, 26, 0.14);
 }
 .settings-ai-input::placeholder {
-  color: #6f6c80;
+  color: var(--text-3);
+  font-style: italic;
+  font-family: var(--font-editorial);
 }
 .settings-ai-input[readonly] {
   opacity: 0.85;
@@ -309,7 +315,7 @@
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);
-  color: #f1f1f5;
+  color: var(--text);
   font-size: 12px;
   font-family: inherit;
   cursor: pointer;

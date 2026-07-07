@@ -44,13 +44,6 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
     ],
   },
   {
-    title: "智能",
-    items: [
-      { label: "AI 推荐", icon: "AI", status: "新", sub: "home", action: "recommend" },
-      { label: "懂你模式", icon: "YOU", status: "画像", sub: "home", action: "understand_you" },
-    ],
-  },
-  {
     title: "音源",
     items: [
       { label: "网络电台", icon: "RAD", sub: "radio" },
