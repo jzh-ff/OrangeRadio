@@ -48,6 +48,18 @@
     ],
     "category": "Music",
     "shortDescription": "沉浸式智能音乐播放器 + AI 音乐创作工作站",
-    "longDescription": "OrangeRadio 是一款全平台沉浸式智能音乐播放器，融合 Hi-Res 高保真音质、AI 智能推荐、沉浸式视觉、社交协作，以及由 MiniMax 驱动的专业级 AI 音乐创作工作站。"
+    "longDescription": "OrangeRadio 是一款全平台沉浸式智能音乐播放器，融合 Hi-Res 高保真音质、AI 智能推荐、沉浸式视觉、社交协作，以及由 MiniMax 驱动的专业级 AI 音乐创作工作站。",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null,
+      "entitlements": null,
+      "dmg": {
+        "background": null,
+        "windowSize": { "width": 540, "height": 380 }
+      }
+    }
   }
 }
