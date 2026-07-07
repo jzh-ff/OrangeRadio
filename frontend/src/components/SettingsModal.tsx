@@ -146,7 +146,7 @@ export function SettingsModal() {
           {/* 鉴权状态总览 */}
           <section className="settings-section">
             <h3 className="settings-section__title">
-              🔑 第三方账号登录状态
+              第三方账号登录状态
               <button
                 className="settings-refresh"
                 onClick={() => invoke<AuthOverview>("auth_overview").then((r) => setAuthItems(r.items)).catch(() => {})}
@@ -157,14 +157,14 @@ export function SettingsModal() {
             </h3>
 
             {loading && <div className="settings-loading">加载中…</div>}
-            {error && <div className="settings-error">⚠️ {error}</div>}
+            {error && <div className="settings-error">{error}</div>}
 
             {!loading && authItems.length > 0 && (
               <div className="auth-list">
                 {authItems.map((item) => (
                   <div key={item.source} className={`auth-item ${item.configured ? "auth-item--ok" : "auth-item--none"}`}>
                     <div className="auth-item__icon">
-                      {item.source === "netease" ? "🎵" : item.source === "qqmusic" ? "🎶" : "🎧"}
+                      {item.source === "netease" ? "NE" : item.source === "qqmusic" ? "QQ" : "SP"}
                     </div>
                     <div className="auth-item__info">
                       <div className="auth-item__name">{item.source_name}</div>
@@ -208,14 +208,14 @@ export function SettingsModal() {
             )}
 
             <div className="settings-note">
-              💡 登录态加密存到本地，下次启动自动恢复。<br />
+              登录态加密存到本地，下次启动自动恢复。<br />
               网易云 / QQ 音乐有后台任务自动续期 cookie；Spotify Client Credentials 1h 自动续 token。
             </div>
           </section>
 
           {/* 听歌画像（驱动「懂你模式」） */}
           <section className="settings-section">
-            <h3 className="settings-section__title">🧠 我的听歌画像</h3>
+            <h3 className="settings-section__title">我的听歌画像</h3>
             {profileLoading && <div className="settings-loading">分析中…</div>}
             {!profileLoading && profile && (
               <div className="settings-meta">
@@ -225,13 +225,13 @@ export function SettingsModal() {
               </div>
             )}
             {!profileLoading && !profile && (
-              <div className="settings-note">多听几首歌，画像会更准（驱动「懂你模式」🧠）</div>
+              <div className="settings-note">多听几首歌，画像会更准（驱动「懂你模式」）</div>
             )}
           </section>
 
           {/* AI 配置（驱动歌词译注/情感分析） */}
           <section className="settings-section">
-            <h3 className="settings-section__title">🤖 AI 配置（MiniMax）</h3>
+            <h3 className="settings-section__title">AI 配置（MiniMax）</h3>
             <div className="settings-meta settings-ai-form">
               <label className="settings-ai-row">
                 <span className="settings-ai-label">API Key</span>
@@ -281,13 +281,13 @@ export function SettingsModal() {
               </label>
             </div>
             <div className="settings-note">
-              💡 Key 仅存本地 localStorage，不进 git、不上传。配置后可在全屏播放页点 🌐 译注当前歌词。
+              Key 仅存本地 localStorage，不进 git、不上传。配置后可在全屏播放页译注当前歌词。
             </div>
           </section>
 
           {/* AI 推荐增强（LLM 重排，懂你模式用） */}
           <section className="settings-section">
-            <h3 className="settings-section__title">🧠 AI 推荐增强（懂你模式 LLM 重排）</h3>
+            <h3 className="settings-section__title">AI 推荐增强（懂你模式 LLM 重排）</h3>
             <div className="settings-meta settings-ai-form">
               <label className="settings-ai-row">
                 <span className="settings-ai-label">Provider</span>
@@ -353,13 +353,13 @@ export function SettingsModal() {
               )}
             </div>
             <div className="settings-note">
-              💡 配置后「懂你模式」会用 LLM 从本地候选 top-20 中选最合适的；未配置则纯本地画像打分，开箱即用。
+              配置后「懂你模式」会用 LLM 从本地候选 top-20 中选最合适的；未配置则纯本地画像打分，开箱即用。
             </div>
           </section>
 
           {/* AI 音乐生成配置（Studio 创作台用） */}
           <section className="settings-section">
-            <h3 className="settings-section__title">🎵 AI 音乐生成（Studio 创作台）</h3>
+            <h3 className="settings-section__title">AI 音乐生成（Studio 创作台）</h3>
             <div className="settings-meta settings-ai-form">
               <div className="settings-note" style={{ marginBottom: 8 }}>
                 与上方共用同一个 API Key。下方 Base / Model 用于音乐生成（music_generation 端点）。
@@ -394,13 +394,13 @@ export function SettingsModal() {
               </label>
             </div>
             <div className="settings-note">
-              💡 默认 <code>music-2.6-free</code> 限免版（有 RPM 限制）；额度耗尽可切 <code>music-2.6</code> 正式版。
+              默认 <code>music-2.6-free</code> 限免版（有 RPM 限制）；额度耗尽可切 <code>music-2.6</code> 正式版。
             </div>
           </section>
 
           {/* 创作输出目录（生成的音频 / 歌词 / 工程文件落盘位置） */}
           <section className="settings-section">
-            <h3 className="settings-section__title">📁 创作输出目录（Studio 创作台）</h3>
+            <h3 className="settings-section__title">创作输出目录（Studio 创作台）</h3>
             <div className="settings-meta settings-ai-form">
               <div className="settings-note" style={{ marginBottom: 8 }}>
                 生成的音乐、歌词、分轨、工程文件都会存到这里。留空则使用应用数据目录默认值。

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import QRCode from "qrcode";
@@ -34,7 +35,7 @@ function fmtPlay(n: number): string {
 }
 
 /** 音乐符号占位（无封面时显示） */
-const MUSIC_GLYPH = "🎵";
+const MUSIC_GLYPH = "♪";
 
 /** 网易云音乐视图 */
 export function NeteaseView() {
@@ -245,13 +246,13 @@ export function NeteaseView() {
   if (!loggedIn) {
     return (
       <div className="library__empty">
-        <div className="library__empty-icon">🎵</div>
+        <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
         <div className="library__empty-title">登录网易云音乐</div>
         <div className="library__empty-desc" style={{ marginBottom: 16 }}>扫码登录最方便，登录态会自动加密保存，下次启动不用重新登录</div>
         {!loginMode && (
           <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="btn-scan" onClick={() => { setLoginMode("qrcode"); startQrLogin(); }}>📱 扫码登录</button>
-            <button className="btn-scan" style={{ background: "#333" }} onClick={() => setLoginMode("cookie")}>🍪 Cookie 登录</button>
+            <button className="btn-scan" onClick={() => { setLoginMode("qrcode"); startQrLogin(); }}>扫码登录</button>
+            <button className="btn-scan" style={{ background: "#333" }} onClick={() => setLoginMode("cookie")}>Cookie 登录</button>
           </div>
         )}
         {/* 扫码登录 */}
@@ -285,7 +286,7 @@ export function NeteaseView() {
             </div>
           </div>
         )}
-        {error && <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>⚠️ {error}</div>}
+        {error && <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>{error}</div>}
       </div>
     );
   }
@@ -357,7 +358,7 @@ export function NeteaseView() {
         </div>
       )}
 
-      {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>⚠️ {error}</div>}
+      {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
 
       {/* 歌单封面网格（MineRadio 风格） */}
       {view === "playlists" && (
@@ -462,7 +463,7 @@ export function NeteaseView() {
               <h3>{view === "playlist" ? currentPlaylist : currentToplist}</h3>
               <span className="section-title__sub">{tracks.length} 首</span>
               <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
-                onClick={() => handlePlay(tracks[0], 0)}>▶ 播放全部</button>
+                onClick={() => handlePlay(tracks[0], 0)}>播放全部</button>
             </div>
           )}
           {view === "daily" && (
@@ -470,7 +471,7 @@ export function NeteaseView() {
               <h3>每日推荐</h3>
               <span className="section-title__sub">{tracks.length} 首</span>
               <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
-                onClick={() => handlePlay(tracks[0], 0)}>▶ 播放全部</button>
+                onClick={() => handlePlay(tracks[0], 0)}>播放全部</button>
             </div>
           )}
           <div className="library__list">

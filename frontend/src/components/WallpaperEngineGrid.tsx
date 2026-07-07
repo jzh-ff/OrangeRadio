@@ -158,7 +158,7 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
           disabled={importing || isFavorited}
           title={isFavorited ? "已收藏到本地" : "收藏到本地(永久内置,Steam 卸载也能用)"}
         >
-          {importing ? "…" : isFavorited ? "✅" : "⭐"}
+          {importing ? "…" : isFavorited ? "已收藏" : "收藏"}
         </button>
       )}
     </div>

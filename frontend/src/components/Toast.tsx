@@ -56,7 +56,7 @@ function ToastView({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numbe
   }, [item.id, effectiveTtl, onDismiss]);
 
   const icon =
-    item.kind === "error" ? "⚠️" : item.kind === "warning" ? "⚠️" : "ℹ️";
+    undefined;
 
   const handleAction = (e: React.MouseEvent) => {
     e.stopPropagation();

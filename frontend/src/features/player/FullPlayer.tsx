@@ -112,7 +112,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
       setAnnotatedMap(map);
       setAiBackground(r?.background || null);
       setExpandedLines(new Set());
-      pushToast?.("译注完成，💡 标记的行可点击查看注解", "info", 4000);
+      pushToast?.("译注完成，标记的行可点击查看注解", "info", 4000);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       const full = "译注失败: " + msg;
@@ -248,7 +248,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
             title="AI 歌词译注"
             disabled={annotateLoading}
           >
-            {annotateLoading ? "…" : annotatedMap.size > 0 ? "译注 ✓" : "译注"}
+            {annotateLoading ? "…" : annotatedMap.size > 0 ? "译注" : "译注"}
           </button>
           <button type="button" className="fp-close" onClick={() => setFullPlayer(false)} title="关闭 (Esc)" aria-label="关闭">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
