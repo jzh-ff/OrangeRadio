@@ -35,6 +35,7 @@ pub struct AppInfo {
 /// 扫描本地音乐库
 #[tauri::command]
 pub async fn library_scan(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     root_dirs: Vec<String>,
 ) -> Result<ScanReport, String> {
@@ -42,7 +43,10 @@ pub async fn library_scan(
         root_dirs,
         ..Default::default()
     };
-    let scanner = LibraryScanner::new();
+    // 封面提取目录走 app.path().app_data_dir()（macOS 落 ~/Library/Application Support/...），
+    // 避免 macOS release 模式下从 CWD 兜底失败。
+    let covers_dir = crate::app_data_subdir(&app, "covers")?;
+    let scanner = LibraryScanner::with_covers_dir(covers_dir);
     let tracks = scanner.scan(&options).await.map_err(|e| e.to_string())?;
     let count = tracks.len() as u32;
     // SQLite 持久化（persist_local 逐条 INSERT）是同步阻塞 IO，
@@ -116,12 +120,9 @@ pub async fn resolve_stream(_track_path: String) -> Result<String, String> {
 
 /// 获取日志文件目录路径（供前端显示/打开日志）
 #[tauri::command]
-pub fn log_path() -> String {
-    let dir = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join(".orangeradio")
-        .join("logs");
-    dir.to_string_lossy().to_string()
+pub fn log_path(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = crate::app_data_subdir(&app, "logs")?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 // ===== 网络电台命令 =====
@@ -823,10 +824,7 @@ pub async fn kugou_stream(
 }
 
 #[tauri::command]
-pub async fn kugou_login(
-    state: tauri::State<'_, AppState>,
-    cookie: String,
-) -> Result<(), String> {
+pub async fn kugou_login(state: tauri::State<'_, AppState>, cookie: String) -> Result<(), String> {
     use orange_core::AuthSource;
     state
         .kugou
@@ -1280,10 +1278,13 @@ pub async fn recommend_next(
 }
 
 /// 分析本地音频文件的节拍图谱（驱动电影运镜预计算）。
-/// 缓存到 `.orangeradio/beatmaps/<key>.json`，键 = fnv(path)+mtime+size。
+/// 缓存到 `<app_data_dir>/beatmaps/<key>.json`，键 = fnv(path)+mtime+size。
 /// 非本地文件（云曲）直接报错跳过。
 #[tauri::command]
-pub async fn analyze_beatmap(track_path: String) -> Result<serde_json::Value, String> {
+pub async fn analyze_beatmap(
+    app: tauri::AppHandle,
+    track_path: String,
+) -> Result<serde_json::Value, String> {
     use std::path::PathBuf;
     let path = PathBuf::from(&track_path);
     if !path.is_file() {
@@ -1300,11 +1301,7 @@ pub async fn analyze_beatmap(track_path: String) -> Result<serde_json::Value, St
     let size = meta.len();
     let key = format!("{:x}-{}-{}", fnv_hash(&track_path), mtime, size);
 
-    let cache_dir = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join(".orangeradio")
-        .join("beatmaps");
-    let _ = std::fs::create_dir_all(&cache_dir);
+    let cache_dir = crate::app_data_subdir(&app, "beatmaps")?;
     let cache_file = cache_dir.join(format!("{key}.json"));
 
     // 命中缓存秒返
@@ -1355,18 +1352,12 @@ fn fnv_hash(s: &str) -> u64 {
 /// 命中缓存（URL 不变）秒返，避免重复下载。
 /// 失败返回 Err，前端 fallback 到 hasCover=false（粒子层用默认色渐变）。
 #[tauri::command]
-pub async fn cover_proxy(url: String) -> Result<String, String> {
-    use std::path::PathBuf;
-
+pub async fn cover_proxy(app: tauri::AppHandle, url: String) -> Result<String, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(format!("仅支持 http(s) URL: {url}"));
     }
 
-    let cache_dir = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(".orangeradio")
-        .join("covers");
-    let _ = std::fs::create_dir_all(&cache_dir);
+    let cache_dir = crate::app_data_subdir(&app, "covers")?;
 
     let key = fnv_hash(&url);
     // 用 URL 后缀推断扩展名（默认 jpg）

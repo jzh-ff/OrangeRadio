@@ -11,7 +11,11 @@
     "tauri:build": "tauri build",
     "dist:win": "tauri build --bundles nsis,msi",
     "dist:nsis": "tauri build --bundles nsis",
-    "dist:msi": "tauri build --bundles msi"
+    "dist:msi": "tauri build --bundles msi",
+    "dist:mac": "tauri build --bundles app,dmg",
+    "dist:app": "tauri build --bundles app",
+    "dist:dmg": "tauri build --bundles dmg",
+    "dist:mac-universal": "tauri build --target universal-apple-darwin --bundles app,dmg"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.3",
