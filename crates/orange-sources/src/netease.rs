@@ -263,6 +263,54 @@ impl NeteaseSource {
         Ok(tracks)
     }
 
+    /// 获取官方排行榜列表
+    ///
+    /// 返回 (id, name, cover, play_count)
+    pub async fn toplists(&self) -> Result<Vec<(String, String, String, u64)>> {
+        let resp = self
+            .weapi_post("/weapi/toplist", r#"{"csrf_token":""}"#)
+            .await?;
+
+        let mut lists = Vec::new();
+        if let Some(arr) = resp["list"].as_array() {
+            for item in arr {
+                let id = item["id"].as_i64().unwrap_or(0).to_string();
+                let name = item["name"].as_str().unwrap_or("未知榜单").to_string();
+                let cover = item["coverImgUrl"]
+                    .as_str()
+                    .map(|u| {
+                        if u.contains('?') {
+                            format!("{}&param=300y300", u)
+                        } else {
+                            format!("{}?param=300y300", u)
+                        }
+                    })
+                    .unwrap_or_default();
+                let play_count = item["playCount"].as_i64().unwrap_or(0) as u64;
+                lists.push((id, name, cover, play_count));
+            }
+        }
+        Ok(lists)
+    }
+
+    /// 获取排行榜详情（歌曲列表）
+    pub async fn toplist_detail(&self, toplist_id: &str) -> Result<Vec<Track>> {
+        let payload = format!(r#"{{"id":{},"csrf_token":""}}"#, toplist_id);
+        let resp = self.weapi_post("/weapi/toplist/detail", &payload).await?;
+
+        let mut tracks = Vec::new();
+        // /weapi/toplist/detail 返回 playlist.tracks
+        if let Some(list) = resp["playlist"]["tracks"].as_array() {
+            for s in list {
+                let mut t = parse_netease_song(s, self.id);
+                t.format = orange_core::audio_format::AudioFormat::Mp3;
+                t.quality = orange_core::audio_format::Quality::High;
+                tracks.push(t);
+            }
+        }
+        Ok(tracks)
+    }
+
     /// 获取歌单详情（歌曲列表）
     pub async fn playlist_detail(&self, playlist_id: &str) -> Result<Vec<Track>> {
         let payload = format!(r#"{{"id":{},"n":100,"s":0,"csrf_token":""}}"#, playlist_id);

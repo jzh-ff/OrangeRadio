@@ -11,13 +11,13 @@ import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
-type View = "search" | "playlists" | "playlist";
+type View = "search" | "playlists" | "playlist" | "daily" | "toplists" | "toplist";
 type LoginMode = "cookie" | "qrcode" | null;
 
 /** 提取歌曲封面 URL */
 function coverOf(t: Track): string | null { return getCoverUrl(t); }
 
-/** 网易云歌单信息（含封面） */
+/** 网易云歌单/榜单信息（含封面） */
 interface PlaylistInfo {
   id: string;
   name: string;
@@ -51,7 +51,9 @@ export function NeteaseView() {
   // 数据
   const [tracks, setTracks] = useState<Track[]>([]);
   const [playlists, setPlaylists] = useState<PlaylistInfo[]>([]);
+  const [toplists, setToplists] = useState<PlaylistInfo[]>([]);
   const [currentPlaylist, setCurrentPlaylist] = useState("");
+  const [currentToplist, setCurrentToplist] = useState("");
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -187,10 +189,19 @@ export function NeteaseView() {
   };
 
   const loadDaily = async () => {
-    setLoading(true); setError(""); setView("search");
+    setLoading(true); setError(""); setView("daily");
     try {
       const list = await invoke<Track[]>("netease_daily");
       setTracks(list); setQueue(list);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+
+  const loadToplists = async () => {
+    setLoading(true); setError(""); setView("toplists"); setCoverErrors({});
+    try {
+      const list = await invoke<[string, string, string, number][]>("netease_toplists");
+      setToplists(list.map(([id, name, cover, playCount]) => ({ id, name, count: 0, cover, playCount })));
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
   };
@@ -202,6 +213,24 @@ export function NeteaseView() {
       setTracks(list); setQueue(list);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
+  };
+
+  const openToplist = async (id: string, name: string) => {
+    setLoading(true); setError(""); setView("toplist"); setCurrentToplist(name);
+    try {
+      const list = await invoke<Track[]>("netease_toplist_detail", { toplistId: id });
+      setTracks(list); setQueue(list);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setLoading(false); }
+  };
+
+  /** 刷新当前歌单/榜单/每日推荐 */
+  const refreshCurrent = () => {
+    if (view === "playlist") openPlaylist(currentPlaylist, currentPlaylist);
+    else if (view === "toplist") openToplist(currentToplist, currentToplist);
+    else if (view === "daily") loadDaily();
+    else if (view === "playlists") loadPlaylists();
+    else if (view === "toplists") loadToplists();
   };
 
   const handlePlay = async (track: Track, index: number) => {
@@ -276,7 +305,7 @@ export function NeteaseView() {
           </svg>
           我的歌单
         </button>
-        <button className="nav-pill nav-pill--green" onClick={loadDaily}>
+        <button className={`nav-pill ${view === "daily" ? "nav-pill--active" : ""} nav-pill--green`} onClick={loadDaily}>
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="5" width="18" height="16" rx="2" />
             <path d="M3 9h18" />
@@ -286,6 +315,12 @@ export function NeteaseView() {
           </svg>
           每日推荐
         </button>
+        <button className={`nav-pill ${view === "toplists" || view === "toplist" ? "nav-pill--active" : ""}`} onClick={loadToplists}>
+          <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+          </svg>
+          排行榜
+        </button>
         <button className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`} onClick={() => setView("search")}>
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
@@ -294,6 +329,17 @@ export function NeteaseView() {
           搜索
         </button>
         <div style={{ flex: 1 }} />
+        {(view === "playlists" || view === "toplists" || view === "playlist" || view === "toplist" || view === "daily") && (
+          <button className="nav-pill nav-pill--ghost" onClick={refreshCurrent} title="刷新">
+            <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 2v6h-6" />
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+              <path d="M3 22v-6h6" />
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+            </svg>
+            刷新
+          </button>
+        )}
         <button className="nav-pill nav-pill--ghost" onClick={async () => { await invoke("netease_logout"); setLoggedIn(false); }}>退出</button>
       </div>
 
@@ -362,12 +408,66 @@ export function NeteaseView() {
         </>
       )}
 
-      {/* 歌曲列表（搜索/每日推荐/歌单详情共用） */}
-      {(view === "search" || view === "playlist") && tracks.length > 0 && (
+      {/* 排行榜封面网格 */}
+      {view === "toplists" && (
         <>
-          {view === "playlist" && (
+          <div className="section-title">
+            <h3>官方排行榜</h3>
+            <span className="section-title__sub">{toplists.length > 0 ? `${toplists.length} 个榜单` : ""}</span>
+          </div>
+          <div className="pl-grid">
+            {toplists.map((p) => {
+              const coverOk = p.cover && !coverErrors[p.id];
+              return (
+                <div key={p.id} className="pl-card" onClick={() => openToplist(p.id, p.name)}>
+                  <div className="pl-card__cover">
+                    {coverOk ? (
+                      <img src={p.cover} alt={p.name} loading="lazy"
+                        onError={() => setCoverErrors((m) => ({ ...m, [p.id]: true }))} />
+                    ) : (
+                      <div className="pl-card__cover-placeholder">{MUSIC_GLYPH}</div>
+                    )}
+                    {p.playCount > 0 && (
+                      <div className="pl-card__plays">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                        {fmtPlay(p.playCount)}
+                      </div>
+                    )}
+                    <button className="pl-card__play" onClick={(e) => { e.stopPropagation(); openToplist(p.id, p.name); }}
+                      title="打开榜单">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                    </button>
+                  </div>
+                  <div className="pl-card__meta">
+                    <div className="pl-card__name">{p.name}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {loading && toplists.length === 0 && (
+            <div className="library__empty"><div className="library__empty-title">加载榜单中…</div></div>
+          )}
+          {!loading && toplists.length === 0 && (
+            <div className="library__empty"><div className="library__empty-title">暂无榜单</div></div>
+          )}
+        </>
+      )}
+
+      {/* 歌曲列表（搜索/每日推荐/歌单详情/榜单详情共用） */}
+      {(view === "search" || view === "playlist" || view === "daily" || view === "toplist") && tracks.length > 0 && (
+        <>
+          {(view === "playlist" || view === "toplist") && (
             <div className="section-title">
-              <h3>{currentPlaylist}</h3>
+              <h3>{view === "playlist" ? currentPlaylist : currentToplist}</h3>
+              <span className="section-title__sub">{tracks.length} 首</span>
+              <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
+                onClick={() => handlePlay(tracks[0], 0)}>▶ 播放全部</button>
+            </div>
+          )}
+          {view === "daily" && (
+            <div className="section-title">
+              <h3>每日推荐</h3>
               <span className="section-title__sub">{tracks.length} 首</span>
               <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
                 onClick={() => handlePlay(tracks[0], 0)}>▶ 播放全部</button>
@@ -375,7 +475,7 @@ export function NeteaseView() {
           )}
           <div className="library__list">
             <div className="lib-header"><span className="col-i">#</span><span className="col-title">标题</span>
-              <span className="col-artist">艺术家</span><span className="col-album">{view === "playlist" ? "专辑" : "专辑"}</span><span className="col-dur">操作</span></div>
+              <span className="col-artist">艺术家</span><span className="col-album">{view === "playlist" || view === "toplist" ? "专辑" : "专辑"}</span><span className="col-dur">操作</span></div>
             <div className="lib-rows">
               <VirtualTrackList
                 tracks={tracks}
@@ -403,7 +503,7 @@ export function NeteaseView() {
         </>
       )}
 
-      {loading && tracks.length === 0 && view !== "playlists" && (
+      {loading && tracks.length === 0 && view !== "playlists" && view !== "toplists" && (
         <div className="library__empty"><div className="library__empty-title">加载中…</div></div>
       )}
     </div>

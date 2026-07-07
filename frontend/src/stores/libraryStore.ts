@@ -21,6 +21,8 @@ export type SourceKind =
   | "apple_music"
   | "web_radio"
   | "podcast"
+  | "kugou"
+  | "qishui"
   | "plugin";
 
 /** 曲目（与 Rust Track 对应的精简结构） */

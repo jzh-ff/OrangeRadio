@@ -218,7 +218,7 @@ interface PlayerState {
   mode: PlaybackMode;
   view: "player" | "studio";
   /** 播放器内子页面 */
-  subView: "home" | "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "gequbao" | "user_playlist" | "search" | "wallpaper";
+  subView: "home" | "library" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "gequbao" | "kugou" | "qishui" | "user_playlist" | "search" | "wallpaper";
   /** 当前查看的用户歌单 ID */
   currentPlaylistId: string | null;
   /**
@@ -268,7 +268,7 @@ interface PlayerState {
   smartAction: "recommend" | "understand_you" | null;
 
   setView: (v: "player" | "studio") => void;
-  setSubView: (v: "home" | "library" | "wallpaper" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "gequbao" | "user_playlist" | "search") => void;
+  setSubView: (v: "home" | "library" | "wallpaper" | "radio" | "netease" | "podcast" | "qqmusic" | "spotify" | "gequbao" | "kugou" | "qishui" | "user_playlist" | "search") => void;
   setMode: (m: PlaybackMode) => void;
   setCurrent: (t: Track, index: number) => void;
   setQueue: (tracks: Track[]) => void;
