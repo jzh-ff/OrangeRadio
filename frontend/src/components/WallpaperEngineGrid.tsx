@@ -158,7 +158,13 @@ function WeCard({ entry, onApply }: { entry: WallpaperEngineEntry; onApply: () =
           disabled={importing || isFavorited}
           title={isFavorited ? "已收藏到本地" : "收藏到本地(永久内置,Steam 卸载也能用)"}
         >
-          {importing ? "…" : isFavorited ? "已收藏" : "收藏"}
+          {importing ? (
+            "…"
+          ) : isFavorited ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17.8 5.9 20.4l1.5-6.8L2.2 9l6.9-.7L12 2z" /></svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17.8 5.9 20.4l1.5-6.8L2.2 9l6.9-.7L12 2z" /></svg>
+          )}
         </button>
       )}
     </div>
