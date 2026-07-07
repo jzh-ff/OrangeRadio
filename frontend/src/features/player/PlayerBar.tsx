@@ -168,6 +168,23 @@ export function PlayerBar() {
 
   // "添加到歌单" 弹窗（v0.4：分区版 支持本地/网易云/QQ）
   const [showAddDialog, setShowAddDialog] = useState(false);
+
+  /**
+   * PlayerBar 折叠态：隐藏封面/元数据/操作台，只保留横向进度条。
+   * 持久化到 localStorage 跨刷新保持（key 用 `:playerbar-collapsed` 与 store 字段隔离）。
+   */
+  const PB_COLLAPSED_KEY = "orangeradio:playerbar-collapsed";
+  const [pbCollapsed, setPbCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(PB_COLLAPSED_KEY) === "1"; }
+    catch { return false; }
+  });
+  const togglePbCollapsed = () => {
+    setPbCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem(PB_COLLAPSED_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
   const handleJoinRoom = () => {
     if (inRoom) {
       leaveRoom();
@@ -198,9 +215,24 @@ export function PlayerBar() {
 
   return (
     <div
-      className={`playerbar ${currentTrack ? "playerbar--visible" : ""}`}
+      className={`playerbar ${currentTrack ? "playerbar--visible" : ""} ${pbCollapsed ? "playerbar--collapsed" : ""}`}
       style={{ "--ui-opacity": playerBarOpacity } as React.CSSProperties}
     >
+      {/* 折叠按钮：贴 playerbar 顶缘中央，48×22 玻璃胶囊，跨刷新保持 */}
+      {currentTrack && (
+        <button
+          type="button"
+          className="pb-toggle"
+          onClick={togglePbCollapsed}
+          title={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
+          aria-label={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
+          aria-expanded={!pbCollapsed}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+      )}
       {/* 左：曲目信息 */}
       <div className="pb-left">
         <div
