@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -65,8 +66,7 @@ export function PodcastView() {
             onKeyDown={(e) => e.key === "Enter" && fetchFeed()}
           />
         </div>
-        <button className="btn-scan" onClick={() => fetchFeed()} disabled={loading}>
-          🎙️ {loading ? "加载中…" : "订阅"}
+        <button className="btn-scan" onClick={() => fetchFeed()} disabled={loading}> {loading ? "加载中…" : "订阅"}
         </button>
       </div>
 
@@ -81,13 +81,13 @@ export function PodcastView() {
 
       {error && (
         <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>
-          ⚠️ {error}
+          {error}
         </div>
       )}
 
       {tracks.length === 0 ? (
         <div className="library__empty">
-          <div className="library__empty-icon">🎙️</div>
+          <div className="library__empty-icon"><EmptyStateIcon kind="podcast" /></div>
           <div className="library__empty-title">订阅播客</div>
           <div className="library__empty-desc">粘贴 RSS 地址，或点上方推荐播客</div>
         </div>

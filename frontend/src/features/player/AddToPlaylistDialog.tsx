@@ -81,7 +81,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
     setMsg("");
     try {
       await invoke("add_to_playlist", { playlistId, track });
-      setMsg("✓ 已添加到本地歌单");
+      setMsg("已添加到本地歌单");
       setTimeout(onClose, 700);
     } catch (e: unknown) {
       const err = e as { message?: string };
@@ -98,7 +98,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
     try {
       const id = await invoke<string>("create_playlist", { name });
       await invoke("add_to_playlist", { playlistId: id, track });
-      setMsg("✓ 已创建并添加");
+      setMsg("已创建并添加");
       setTimeout(onClose, 700);
     } catch (e: unknown) {
       const err = e as { message?: string };
@@ -115,7 +115,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
     setMsg("");
     try {
       await invoke("netease_like_track", { songId: track.source_track_id });
-      setMsg("✓ 已添加到「我喜欢的音乐」");
+      setMsg("已添加到「我喜欢的音乐」");
       setTimeout(onClose, 700);
     } catch (e: unknown) {
       const err = e as { message?: string };
@@ -139,7 +139,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
         playlistId: pid,
         songId: track.source_track_id,
       });
-      setMsg("✓ 已添加到网易云歌单");
+      setMsg("已添加到网易云歌单");
       setTimeout(onClose, 700);
     } catch (e: unknown) {
       const err = e as { message?: string };
@@ -177,7 +177,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
               onClick={() => doAddLocal(p.id)}
               disabled={loading}
             >
-              <span className="atp-item-name">🎵 {p.name}</span>
+              <span className="atp-item-name">{p.name}</span>
               <span className="atp-item-count">{p.track_count} 首</span>
             </button>
           ))}
@@ -231,7 +231,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
                 disabled={loading || !track.source_track_id}
                 title="网易云「我喜欢的音乐」收藏"
               >
-                <span className="atp-item-name">♥ {p.name}</span>
+                <span className="atp-item-name">{p.name}</span>
                 <span className="atp-item-count">{p.count} 首</span>
               </button>
             );
@@ -246,7 +246,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
                 !track.source_track_id ? "需要网易云音源才能添加" : "添加到此歌单"
               }
             >
-              <span className="atp-item-name">🎵 {p.name}</span>
+              <span className="atp-item-name">{p.name}</span>
               <span className="atp-item-count">{p.count} 首</span>
             </button>
           );
@@ -279,7 +279,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
               disabled
               title="QQ 远端添加开发中，v0.5+"
             >
-              <span className="atp-item-name">🔒 {p.name}</span>
+              <span className="atp-item-name">{p.name}</span>
               <span className="atp-item-count">{p.count} 首</span>
             </button>
           ))}
@@ -297,7 +297,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
         <div className="atp-head">
           <span className="atp-title">添加到歌单</span>
           <button className="atp-close" onClick={onClose} aria-label="关闭">
-            ✕
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 6l12 12M18 6L6 18" strokeLinecap="round"/></svg>
           </button>
         </div>
         <div className="atp-track-info">

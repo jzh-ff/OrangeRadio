@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { usePlayerStore } from "../../stores/playerStore";
@@ -164,13 +165,13 @@ export function QqMusicView() {
   if (!loggedIn) {
     return (
       <div className="library__empty">
-        <div className="library__empty-icon">🎵</div>
+        <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
         <div className="library__empty-title">QQ音乐未登录</div>
         <div className="library__empty-desc" style={{ marginBottom: 20 }}>选择登录方式</div>
         {!loginMode && (
           <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="btn-scan" onClick={() => { setLoginMode("qrcode"); startQrLogin(); }}>📱 扫码登录</button>
-            <button className="btn-scan" style={{ background: "#333" }} onClick={() => setLoginMode("cookie")}>🍪 Cookie 登录</button>
+            <button className="btn-scan" onClick={() => { setLoginMode("qrcode"); startQrLogin(); }}>扫码登录</button>
+            <button className="btn-scan" style={{ background: "#333" }} onClick={() => setLoginMode("cookie")}>Cookie 登录</button>
           </div>
         )}
         {/* 扫码登录 */}
@@ -202,7 +203,7 @@ export function QqMusicView() {
             </div>
           </div>
         )}
-        {error && <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>⚠️ {error}</div>}
+        {error && <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>{error}</div>}
       </div>
     );
   }
@@ -247,7 +248,7 @@ export function QqMusicView() {
         </div>
       )}
 
-      {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>⚠️ {error}</div>}
+      {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
 
       {/* 歌单网格 */}
       {view === "playlists" && (
@@ -260,7 +261,7 @@ export function QqMusicView() {
             {playlists.map((p) => (
               <div key={p.id} className="pl-card" onClick={() => openPlaylist(p.id, p.name)}>
                 <div className="pl-card__cover">
-                  {p.cover ? <img src={p.cover} alt={p.name} loading="lazy" /> : <div className="pl-card__cover-placeholder">🎵</div>}
+                  {p.cover ? <img src={p.cover} alt={p.name} loading="lazy" /> : <div className="pl-card__cover-placeholder">♪</div>}
                 </div>
                 <div className="pl-card__meta">
                   <div className="pl-card__name">{p.name}</div>
@@ -309,7 +310,7 @@ export function QqMusicView() {
             <h3>{currentPlaylist}</h3>
             <span className="section-title__sub">{tracks.length} 首</span>
             <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
-              onClick={() => handlePlay(tracks[0], 0)}>▶ 播放全部</button>
+              onClick={() => handlePlay(tracks[0], 0)}>播放全部</button>
           </div>
           <div className="library__list">
             <div className="lib-header"><span className="col-i">#</span><span className="col-title">标题</span>
@@ -341,7 +342,7 @@ export function QqMusicView() {
         <div className="library__empty"><div className="library__empty-title">加载中…</div></div>
       )}
       {!loading && view === "search" && tracks.length === 0 && (
-        <div className="library__empty"><div className="library__empty-icon">🎵</div><div className="library__empty-title">搜索QQ音乐</div></div>
+        <div className="library__empty"><div className="library__empty-icon"><EmptyStateIcon kind="music" /></div><div className="library__empty-title">搜索QQ音乐</div></div>
       )}
     </div>
   );

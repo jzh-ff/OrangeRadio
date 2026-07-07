@@ -152,6 +152,14 @@ export default function App() {
   useEffect(() => {
     engineRef.playPath = engine.playPath;
     engineRef.toggle = () => {
+      // 恢复场景：currentTrack 被 persist 恢复显示在 UI，但 <audio> 元素 src 为空（重启后未加载）
+      // 此时点击播放不能走 togglePlay（会被 !audio.src 挡掉静默失败），改走 playTrack 重新加载
+      if (!engine.hasSrc() && usePlayerStore.getState().currentTrack) {
+        const t = usePlayerStore.getState().currentTrack!;
+        const idx = usePlayerStore.getState().currentIndex;
+        void engineRef.playTrack(t, idx);
+        return;
+      }
       engine.togglePlay();
       if (!applyingRemote && isInRoom()) {
         sendSync({ action: usePlayerStore.getState().isPlaying ? "pause" : "play", ts: Date.now() });

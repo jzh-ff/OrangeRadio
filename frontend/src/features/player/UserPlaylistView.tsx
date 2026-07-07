@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -74,7 +75,7 @@ export function UserPlaylistView() {
   if (!playlistId) {
     return (
       <div className="library__empty">
-        <div className="library__empty-icon">🎵</div>
+        <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
         <div className="library__empty-title">选择一个歌单</div>
         <div className="library__empty-desc">在左侧栏点击你的歌单，或新建一个</div>
       </div>
@@ -95,13 +96,13 @@ export function UserPlaylistView() {
             className="nav-pill nav-pill--active"
             style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
             onClick={() => handlePlay(tracks[0], 0)}
-          >▶ 播放全部</button>
+          >播放全部</button>
         )}
       </div>
 
       {tracks.length === 0 ? (
         <div className="library__empty">
-          <div className="library__empty-icon">🎵</div>
+          <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
           <div className="library__empty-title">歌单是空的</div>
           <div className="library__empty-desc">去网易云或本地库，点击歌曲旁的 + 加入歌单</div>
         </div>

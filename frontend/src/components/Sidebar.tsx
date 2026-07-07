@@ -17,7 +17,7 @@ interface UserPlaylist {
 
 type SubView =
   | "home" | "library" | "wallpaper" | "radio" | "netease"
-  | "podcast" | "qqmusic" | "spotify" | "gequbao" | "kugou" | "qishui";
+  | "podcast" | "qqmusic" | "spotify" | "gequbao" | "kugou" | "kuwo" | "qishui";
 
 interface MenuItem {
   label: string;
@@ -47,7 +47,7 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
     title: "智能",
     items: [
       { label: "AI 推荐", icon: "AI", status: "新", sub: "home", action: "recommend" },
-      { label: "懂你模式", icon: "YOU", status: "🧠", sub: "home", action: "understand_you" },
+      { label: "懂你模式", icon: "YOU", status: "画像", sub: "home", action: "understand_you" },
     ],
   },
   {
@@ -57,6 +57,7 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
       { label: "网易云音乐", icon: "NE", sub: "netease", status: "Beta" },
       { label: "QQ 音乐", icon: "QQ", sub: "qqmusic", status: "Beta" },
       { label: "酷狗音乐", icon: "KG", sub: "kugou", status: "Beta" },
+      { label: "酷我音乐", icon: "KW", sub: "kuwo", status: "Beta" },
       { label: "汽水音乐", icon: "QS", sub: "qishui", status: "Alpha" },
       { label: "Spotify", icon: "SP", sub: "spotify", status: "30s" },
       { label: "歌曲宝", icon: "GQB", sub: "gequbao", status: "Beta" },
