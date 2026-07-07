@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { ConsoleSearch } from "../../components/ConsoleSearch";
 import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";

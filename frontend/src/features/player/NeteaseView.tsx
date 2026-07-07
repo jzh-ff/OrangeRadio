@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { EmptyStateIcon } from "../../components/EmptyState";
+import { ConsoleSearch } from "../../components/ConsoleSearch";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import QRCode from "qrcode";
@@ -349,15 +350,14 @@ export function NeteaseView() {
 
       {/* 搜索框 */}
       {view === "search" && (
-        <div className="library__toolbar" style={{ marginBottom: 16 }}>
-          <div className="library__search">
-            <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-              <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <input className="library__search-input" placeholder="搜索网易云歌曲…" value={keyword}
-              onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} />
-          </div>
+        <div style={{ marginBottom: 16 }}>
+          <ConsoleSearch
+            value={keyword}
+            onChange={setKeyword}
+            onSubmit={doSearch}
+            loading={loading}
+            placeholder="搜索网易云歌曲…"
+          />
         </div>
       )}
 

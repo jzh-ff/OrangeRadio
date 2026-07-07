@@ -294,12 +294,15 @@ impl NeteaseSource {
     }
 
     /// 获取排行榜详情（歌曲列表）
+    ///
+    /// 网易云官方排行榜在数据模型里就是顶层 playlist，ID 与 playlist ID 互通。
+    /// /weapi/toplist/detail 端点返回的是 `{first, second}` 摘要（不是完整 Track），
+    /// 必须改用 /weapi/v6/playlist/detail（同 playlist_detail 端点）才能拿到完整歌曲。
     pub async fn toplist_detail(&self, toplist_id: &str) -> Result<Vec<Track>> {
-        let payload = format!(r#"{{"id":{},"csrf_token":""}}"#, toplist_id);
-        let resp = self.weapi_post("/weapi/toplist/detail", &payload).await?;
+        let payload = format!(r#"{{"id":{},"n":100,"s":0,"csrf_token":""}}"#, toplist_id);
+        let resp = self.weapi_post("/weapi/v6/playlist/detail", &payload).await?;
 
         let mut tracks = Vec::new();
-        // /weapi/toplist/detail 返回 playlist.tracks
         if let Some(list) = resp["playlist"]["tracks"].as_array() {
             for s in list {
                 let mut t = parse_netease_song(s, self.id);
