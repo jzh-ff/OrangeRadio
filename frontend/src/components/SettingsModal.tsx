@@ -65,6 +65,11 @@ export function SettingsModal() {
   const [minimaxKey, setMinimaxKey] = useState(() => localStorage.getItem("orangeradio_minimax_key") || "");
   const [minimaxBase, setMinimaxBase] = useState(() => localStorage.getItem("orangeradio_minimax_base") || "https://api.minimaxi.com/anthropic");
   const [minimaxModel, setMinimaxModel] = useState(() => localStorage.getItem("orangeradio_minimax_model") || "MiniMax-M1");
+  // OpenAI 兼容配置（推荐系统 LLM 重排用，覆盖 GLM/DeepSeek/通义等）
+  const [llmProvider, setLlmProvider] = useState<"minimax" | "openai">(() => (localStorage.getItem("orangeradio_llm_provider") as "minimax" | "openai") || "minimax");
+  const [llmKey, setLlmKey] = useState(() => localStorage.getItem("orangeradio_llm_key") || "");
+  const [llmBase, setLlmBase] = useState(() => localStorage.getItem("orangeradio_llm_base") || "https://open.bigmodel.cn/api/paas/v4");
+  const [llmModel, setLlmModel] = useState(() => localStorage.getItem("orangeradio_llm_model") || "glm-4-flash");
   // 音乐生成配置（Studio 创作台用，与上面共用同一个 Key）
   const [musicBase, setMusicBase] = useState(() => localStorage.getItem("orangeradio_minimax_music_base") || "https://api.minimaxi.com");
   const [musicModel, setMusicModel] = useState(() => localStorage.getItem("orangeradio_minimax_music_model") || "music-2.6-free");
@@ -277,6 +282,78 @@ export function SettingsModal() {
             </div>
             <div className="settings-note">
               💡 Key 仅存本地 localStorage，不进 git、不上传。配置后可在全屏播放页点 🌐 译注当前歌词。
+            </div>
+          </section>
+
+          {/* AI 推荐增强（LLM 重排，懂你模式用） */}
+          <section className="settings-section">
+            <h3 className="settings-section__title">🧠 AI 推荐增强（懂你模式 LLM 重排）</h3>
+            <div className="settings-meta settings-ai-form">
+              <label className="settings-ai-row">
+                <span className="settings-ai-label">Provider</span>
+                <select
+                  className="settings-ai-input"
+                  value={llmProvider}
+                  onChange={(e) => {
+                    const v = e.target.value as "minimax" | "openai";
+                    setLlmProvider(v);
+                    localStorage.setItem("orangeradio_llm_provider", v);
+                  }}
+                >
+                  <option value="minimax">复用上方 MiniMax</option>
+                  <option value="openai">OpenAI 兼容（GLM/DeepSeek/通义等）</option>
+                </select>
+              </label>
+              {llmProvider === "openai" && (
+                <>
+                  <label className="settings-ai-row">
+                    <span className="settings-ai-label">API Key</span>
+                    <input
+                      type="password"
+                      className="settings-ai-input"
+                      placeholder="sk-...（推荐重排用，可为空=纯本地打分）"
+                      value={llmKey}
+                      onChange={(e) => {
+                        setLlmKey(e.target.value);
+                        localStorage.setItem("orangeradio_llm_key", e.target.value);
+                      }}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="settings-ai-row">
+                    <span className="settings-ai-label">API Base</span>
+                    <input
+                      type="text"
+                      className="settings-ai-input"
+                      placeholder="https://open.bigmodel.cn/api/paas/v4"
+                      value={llmBase}
+                      onChange={(e) => {
+                        setLlmBase(e.target.value);
+                        localStorage.setItem("orangeradio_llm_base", e.target.value);
+                      }}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="settings-ai-row">
+                    <span className="settings-ai-label">Model</span>
+                    <input
+                      type="text"
+                      className="settings-ai-input"
+                      placeholder="glm-4-flash / deepseek-chat / qwen-plus"
+                      value={llmModel}
+                      onChange={(e) => {
+                        setLlmModel(e.target.value);
+                        localStorage.setItem("orangeradio_llm_model", e.target.value);
+                      }}
+                      spellCheck={false}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            <div className="settings-note">
+              💡 配置后「懂你模式」会用 LLM 从本地候选 top-20 中选最合适的；未配置则纯本地画像打分，开箱即用。
             </div>
           </section>
 

@@ -62,6 +62,12 @@ pub fn read_track(path: &Path, source_id: SourceId, covers_dir: Option<&Path>) -
                     .and_then(|v| v.value().text().map(|s| vec![s.to_string()]))
                     .unwrap_or_default();
 
+                // BPM（ID3v2 TBPM / VorbisComment BPM / MP4 tmpo）—— 大部分商业音乐有此标签
+                meta.bpm = tag
+                    .get(&ItemKey::Bpm)
+                    .and_then(|v| v.value().text())
+                    .and_then(|s| s.parse::<f32>().ok());
+
                 // 内嵌歌词（USLT/LRC），让本地曲目也能显示歌词（LRC 有时间戳会按行滚动）
                 meta.lyrics = tag
                     .get(&ItemKey::Lyrics)

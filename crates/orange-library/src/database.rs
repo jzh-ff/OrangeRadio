@@ -374,6 +374,39 @@ impl LibraryDb {
         Ok(())
     }
 
+    /// 更新曲目的 BPM（音频分析兜底后写回，DB + 内存同步）
+    pub fn update_track_bpm(&self, track_id: &str, bpm: f32) -> orange_core::Result<()> {
+        let path = match &self.db_path {
+            Some(p) => p.as_ref(),
+            None => return Ok(()),
+        };
+        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let row: Option<(String,)> = conn
+            .query_row(
+                "SELECT data FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get::<_, String>(0)?,)),
+            )
+            .ok();
+        if let Some((json,)) = row {
+            if let Ok(mut t) = serde_json::from_str::<Track>(&json) {
+                t.meta.bpm = Some(bpm);
+                let new_json = serde_json::to_string(&t)?;
+                conn.execute(
+                    "UPDATE tracks SET data=?1 WHERE id=?2",
+                    params![new_json, track_id],
+                )
+                .map_err(sqlite_err)?;
+            }
+        }
+        // 同步内存
+        let mut guard = self.tracks.write();
+        if let Some(t) = guard.iter_mut().find(|t| t.id.0.to_string() == track_id) {
+            t.meta.bpm = Some(bpm);
+        }
+        Ok(())
+    }
+
     /// 喜欢的歌曲
     pub fn liked_tracks(&self) -> Vec<Track> {
         self.tracks
@@ -512,6 +545,8 @@ impl LibraryDb {
         let mut genre_stat: HashMap<String, (f32, u32, u32)> = HashMap::new();
         let mut total_listen = 0f64;
         let mut hourly = [0f32; 24];
+        // BPM 分桶统计（<90=slow / 90-120=medium / 120-140=fast / >140=very_fast）
+        let mut bpm_buckets = [0f32; 4];
 
         for (track_id, played_at, played_secs, completed, skipped) in &entries {
             total_listen += *played_secs;
@@ -551,6 +586,19 @@ impl LibraryDb {
                         s.2 += 1;
                     }
                 }
+                // BPM 分桶（仅当曲目有 bpm 元数据时）
+                if let Some(bpm) = t.meta.bpm {
+                    let idx = if bpm < 90.0 {
+                        0
+                    } else if bpm < 120.0 {
+                        1
+                    } else if bpm < 140.0 {
+                        2
+                    } else {
+                        3
+                    };
+                    bpm_buckets[idx] += weight;
+                }
             }
         }
 
@@ -568,6 +616,17 @@ impl LibraryDb {
             .take(50)
             .map(|t| t.id.0.to_string())
             .collect();
+
+        // BPM 偏好归一化（无数据时保留默认分布）
+        let bpm_total: f32 = bpm_buckets.iter().sum();
+        if bpm_total > 0.0 {
+            profile.bpm_preference = BpmPreference {
+                slow: bpm_buckets[0] / bpm_total,
+                medium: bpm_buckets[1] / bpm_total,
+                fast: bpm_buckets[2] / bpm_total,
+                very_fast: bpm_buckets[3] / bpm_total,
+            };
+        }
 
         Ok(profile)
     }
