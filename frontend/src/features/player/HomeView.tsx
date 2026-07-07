@@ -77,6 +77,20 @@ export function HomeView() {
     invoke<Track[]>("recommend_next", { llmConfig: getLlmConfig() }).then(setRecommend).catch(() => setRecommend(null));
   }, []);
 
+  /** AI 推荐：重新拉取推荐队列并立即播放 */
+  const refreshRecommend = () => {
+    usePlayerStore.getState().setSmartAction("recommend");
+    invoke<Track[]>("recommend_next", { limit: 10, llmConfig: getLlmConfig() })
+      .then((list) => {
+        if (list.length) {
+          setRecommend(list);
+          usePlayerStore.getState().setQueue(list);
+          engineRef.playTrack(list[0], 0);
+        }
+      })
+      .catch(() => {});
+  };
+
   const likedCount = libraryTracks.filter((t) => t.liked).length;
   const recentTracks = tracks.slice(-5).reverse();
   const topArtists = profile?.top_artists?.slice(0, 3) || [];
@@ -226,6 +240,9 @@ export function HomeView() {
           </p>
 
           <div className="home-hero__actions">
+            <button type="button" className="home-btn home-btn--ghost" onClick={refreshRecommend} title="根据听歌画像重新生成推荐">
+              AI 推荐
+            </button>
             {currentTrack ? (
               <>
                 <button type="button" className="home-btn home-btn--primary" onClick={() => setFullPlayer(true)}>

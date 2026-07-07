@@ -54,7 +54,9 @@ export function NeteaseView() {
   const [playlists, setPlaylists] = useState<PlaylistInfo[]>([]);
   const [toplists, setToplists] = useState<PlaylistInfo[]>([]);
   const [currentPlaylist, setCurrentPlaylist] = useState("");
+  const [currentPlaylistId, setCurrentPlaylistId] = useState("");
   const [currentToplist, setCurrentToplist] = useState("");
+  const [currentToplistId, setCurrentToplistId] = useState("");
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -208,7 +210,7 @@ export function NeteaseView() {
   };
 
   const openPlaylist = async (id: string, name: string) => {
-    setLoading(true); setError(""); setView("playlist"); setCurrentPlaylist(name);
+    setLoading(true); setError(""); setView("playlist"); setCurrentPlaylist(name); setCurrentPlaylistId(id);
     try {
       const list = await invoke<Track[]>("netease_playlist_detail", { playlistId: id });
       setTracks(list); setQueue(list);
@@ -217,7 +219,7 @@ export function NeteaseView() {
   };
 
   const openToplist = async (id: string, name: string) => {
-    setLoading(true); setError(""); setView("toplist"); setCurrentToplist(name);
+    setLoading(true); setError(""); setView("toplist"); setCurrentToplist(name); setCurrentToplistId(id);
     try {
       const list = await invoke<Track[]>("netease_toplist_detail", { toplistId: id });
       setTracks(list); setQueue(list);
@@ -227,8 +229,9 @@ export function NeteaseView() {
 
   /** 刷新当前歌单/榜单/每日推荐 */
   const refreshCurrent = () => {
-    if (view === "playlist") openPlaylist(currentPlaylist, currentPlaylist);
-    else if (view === "toplist") openToplist(currentToplist, currentToplist);
+    if (view === "playlist" && currentPlaylistId) openPlaylist(currentPlaylistId, currentPlaylist);
+    else if (view === "toplist" && currentToplistId) openToplist(currentToplistId, currentToplist);
+    else if (view === "search" && keyword.trim()) doSearch();
     else if (view === "daily") loadDaily();
     else if (view === "playlists") loadPlaylists();
     else if (view === "toplists") loadToplists();
