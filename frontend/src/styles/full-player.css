@@ -509,6 +509,13 @@
 .fp-lyric-line:hover {
   background: rgba(255, 255, 255, 0.04);
 }
+/* ★ 切行/切歌瞬间锁定歌词行过渡（JS 在 useLayoutEffect 里挂/摘 .fp-no-lyric-fade）
+   避免"先 scrollTo 到位 → 行高过渡中 → 视觉偏位"的串扰；
+   切行是离散跳转本来就该瞬时，过渡留给用户拖动/网络抖动的被动重渲染 */
+.fp-no-lyric-fade .fp-lyric-line,
+.fp-no-lyric-fade .fp-lyric-line * {
+  transition: none !important;
+}
 
 /* 上下文行：基于 data-offset 递变（对标 MineRadio 3D 舞台的 depth 衰减） */
 .fp-lyric-line--ctx-1 .fp-lyric-text { font-size: 19px; font-weight: 600; }

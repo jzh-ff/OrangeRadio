@@ -187,10 +187,29 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
       container.scrollTo({ top: Math.max(0, target), behavior: "auto" });
     };
 
+    // ★ 切行瞬间锁定字号/颜色过渡，避免"先滚到目标 → 字号增大 → 视觉偏位"的串扰
+    // 原因：active 行字号 22→26（普通）或 22→30（editorial），CSS transition 0.4s。
+    //        useLayoutEffect 同步测量时浏览器 layout 已用最终计算样式，scrollTo 目标正确；
+    //        但 transition 启动后行高渐变，active 行"视觉中心"在动画期间漂移，
+    //        lyric-stream 容器高度只有 ~400px，8px 字号漂移感知度比 triple/immersive(~700px) 强 2 倍。
+    // 解法：挂 .fp-no-lyric-fade 把 .fp-lyric-line 的 transition 全部禁用，瞬时测量 → scrollTo → 下一帧解锁，
+    //        让"切行"这种离散跳转瞬时到位，"字号渐变"留给用户拖动/网络抖动的被动重渲染。
+    const root = document.documentElement;
+    root.classList.add("fp-no-lyric-fade");
+
     centerActiveLine();
-    // 等 active 行字号/背景样式应用后再补一次（消除首帧高度未更新偏差）
-    lyricCenterRafRef.current = requestAnimationFrame(centerActiveLine);
-    return () => cancelAnimationFrame(lyricCenterRafRef.current);
+    // rAF 后两件事合一：1) 在过渡仍锁定的状态下再校准一次（消除亚像素偏差） 2) 解锁过渡
+    //        解锁后浏览器才会启动 0.4s 字号过渡，此时 scrollTop 已锁在最终位置，
+    //        即使行高变化也不会再触发 scrollTo，视觉中心保持稳定。
+    lyricCenterRafRef.current = requestAnimationFrame(() => {
+      centerActiveLine();
+      root.classList.remove("fp-no-lyric-fade");
+    });
+
+    return () => {
+      cancelAnimationFrame(lyricCenterRafRef.current);
+      root.classList.remove("fp-no-lyric-fade");
+    };
   }, [activeIndex, lines.length]);
 
   /** 当前行平滑扫光（CSS 变量 --lyric-p 驱动渐变边界，对标 MineRadio uProgress smoothstep）

@@ -105,10 +105,13 @@ export function useLyrics(rawLrc: string | null, translatedLrc: string | null | 
     return result;
   }, [rawLrc, translatedLrc]);
 
-  // 二分查找当前行
+  // 二分查找当前行（最后一行 time <= position 的行；position < lines[0].time 时返回 -1）
   const activeIndex = useMemo(() => {
     if (lines.length === 0) return -1;
-    let lo = 0, hi = lines.length - 1, ans = 0;
+    // ★ ans 初始值 -1:position < lines[0].time（如切歌瞬间 position 还没追上第一行）
+    //   时返回 -1 而不是 0，避免第一行被错误判定为 active 并被 scrollTo 顶到容器中部。
+    //   lyric-stream 容器小，这种"误判为第一行"会被立刻看到；triple/immersive 容器大时影响小。
+    let lo = 0, hi = lines.length - 1, ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       if (lines[mid].time <= position) { ans = mid; lo = mid + 1; }
