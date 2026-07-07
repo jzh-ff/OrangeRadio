@@ -101,9 +101,7 @@ impl KugouSource {
     /// 搜索歌曲
     ///
     /// 返回 (hash, songname, singername, album_name, album_id, duration)
-    async fn search_raw(&self,
-        query: &SearchQuery,
-    ) -> Result<Vec<KugouSearchItem>> {
+    async fn search_raw(&self, query: &SearchQuery) -> Result<Vec<KugouSearchItem>> {
         let time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -142,7 +140,9 @@ impl KugouSource {
                 .join("&")
         );
 
-        let mut req = self.client.get(&url)
+        let mut req = self
+            .client
+            .get(&url)
             .header("Referer", "https://www.kugou.com/")
             .header("Origin", "https://www.kugou.com");
         if let Some(c) = self.cookie_str().await {
@@ -159,8 +159,13 @@ impl KugouSource {
 
         // 接口可能返回 JSONP：jQueryxxx({...})
         let json_text = strip_jsonp_callback(&text);
-        let resp: KugouSearchResp = serde_json::from_str(json_text)
-            .map_err(|e| orange_core::CoreError::Network(format!("酷狗搜索解析失败: {} body={}", e, &text[..text.len().min(200)])))?;
+        let resp: KugouSearchResp = serde_json::from_str(json_text).map_err(|e| {
+            orange_core::CoreError::Network(format!(
+                "酷狗搜索解析失败: {} body={}",
+                e,
+                &text[..text.len().min(200)]
+            ))
+        })?;
 
         if resp.err_code != 0 {
             return Err(orange_core::CoreError::Network(format!(
@@ -170,14 +175,15 @@ impl KugouSource {
             )));
         }
 
-        Ok(resp.data.as_ref().and_then(|d| d.lists.clone()).unwrap_or_default())
+        Ok(resp
+            .data
+            .as_ref()
+            .and_then(|d| d.lists.clone())
+            .unwrap_or_default())
     }
 
     /// 通过 hash 获取播放 URL
-    async fn resolve_by_hash(&self,
-        hash: &str,
-        album_id: Option<&str>,
-    ) -> Result<String> {
+    async fn resolve_by_hash(&self, hash: &str, album_id: Option<&str>) -> Result<String> {
         let time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -203,7 +209,9 @@ impl KugouSource {
                 .join("&")
         );
 
-        let mut req = self.client.get(&url)
+        let mut req = self
+            .client
+            .get(&url)
             .header("Referer", "https://www.kugou.com/")
             .header("Origin", "https://www.kugou.com");
         if let Some(c) = self.cookie_str().await {
@@ -219,8 +227,13 @@ impl KugouSource {
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
 
         let json_text = strip_jsonp_callback(&text);
-        let resp: KugouPlayResp = serde_json::from_str(json_text)
-            .map_err(|e| orange_core::CoreError::Network(format!("酷狗播放解析失败: {} body={}", e, &text[..text.len().min(200)])))?;
+        let resp: KugouPlayResp = serde_json::from_str(json_text).map_err(|e| {
+            orange_core::CoreError::Network(format!(
+                "酷狗播放解析失败: {} body={}",
+                e,
+                &text[..text.len().min(200)]
+            ))
+        })?;
 
         if resp.err_code != 0 {
             return Err(orange_core::CoreError::Unsupported(format!(
@@ -253,9 +266,7 @@ impl AudioSource for KugouSource {
         "酷狗音乐"
     }
 
-    async fn search(&self,
-        query: &SearchQuery,
-    ) -> Result<SearchResult> {
+    async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
         let items = self.search_raw(query).await?;
         let tracks: Vec<Track> = items
             .iter()
@@ -269,30 +280,34 @@ impl AudioSource for KugouSource {
         })
     }
 
-    async fn resolve_stream(&self,
-        track: &Track,
-    ) -> Result<StreamLocation> {
+    async fn resolve_stream(&self, track: &Track) -> Result<StreamLocation> {
         // source_track_id 格式：hash|album_id（管道符分隔，album_id 可选）
         let parts: Vec<&str> = track.source_track_id.split('|').collect();
-        let hash = parts.first().copied().unwrap_or("")
-            .trim();
+        let hash = parts.first().copied().unwrap_or("").trim();
         if hash.is_empty() {
-            return Err(orange_core::CoreError::Unsupported("酷狗歌曲缺少 hash".into()));
+            return Err(orange_core::CoreError::Unsupported(
+                "酷狗歌曲缺少 hash".into(),
+            ));
         }
         let album_id = parts.get(1).copied();
         let url = self.resolve_by_hash(hash, album_id).await?;
-        Ok(StreamLocation::Url { url, headers: vec![] })
+        Ok(StreamLocation::Url {
+            url,
+            headers: vec![],
+        })
     }
 }
 
 #[async_trait]
 impl AuthSource for KugouSource {
-    async fn login_with_cookie(&self,
-        cookie: &str,
-    ) -> Result<()> {
+    async fn login_with_cookie(&self, cookie: &str) -> Result<()> {
         *self.cookie.write().await = Some(cookie.to_string());
         self.logged_in.store(true, Ordering::Relaxed);
-        if let Err(e) = self.auth_store.save(AUTH_SOURCE_KEY, cookie.to_string()).await {
+        if let Err(e) = self
+            .auth_store
+            .save(AUTH_SOURCE_KEY, cookie.to_string())
+            .await
+        {
             tracing::warn!("酷狗 cookie 持久化失败: {}", e);
         }
         Ok(())
@@ -419,11 +434,15 @@ fn item_to_track(item: &KugouSearchItem, source_id: SourceId) -> Track {
     let album = item.album_name.clone().filter(|s| !s.is_empty());
     let duration_secs = item.duration.map(|d| d as f64);
 
-    let artwork = item.img.clone().filter(|u| !u.is_empty()).map(|url| Artwork {
-        source: ArtworkSource::Url { url },
-        dominant_color: None,
-        palette: vec![],
-    });
+    let artwork = item
+        .img
+        .clone()
+        .filter(|u| !u.is_empty())
+        .map(|url| Artwork {
+            source: ArtworkSource::Url { url },
+            dominant_color: None,
+            palette: vec![],
+        });
 
     let mut t = Track::new(
         source_id,

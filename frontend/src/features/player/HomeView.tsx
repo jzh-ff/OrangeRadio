@@ -4,6 +4,7 @@ import { usePlayerStore } from "../../stores/playerStore";
 import { useLibraryStore, type Track } from "../../stores/libraryStore";
 import { getCoverUrl } from "./useCover";
 import { engineRef } from "../../App";
+import { getLlmConfig } from "../../lib/llmConfig";
 import { HeroSpectrum } from "./HeroSpectrum";
 import { RightWaveFlow } from "./RightWaveFlow";
 import "../../styles/home.css";
@@ -73,7 +74,7 @@ export function HomeView() {
 
   useEffect(() => {
     invoke<UserProfile>("get_user_profile").then(setProfile).catch(() => setProfile(null));
-    invoke<Track[]>("recommend_next").then(setRecommend).catch(() => setRecommend(null));
+    invoke<Track[]>("recommend_next", { llmConfig: getLlmConfig() }).then(setRecommend).catch(() => setRecommend(null));
   }, []);
 
   const likedCount = libraryTracks.filter((t) => t.liked).length;
