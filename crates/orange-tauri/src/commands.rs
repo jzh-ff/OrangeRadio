@@ -223,6 +223,67 @@ pub async fn gequbao_popular(
         .map_err(|e| e.to_string())
 }
 
+// ===== 酷我音乐命令（第三方公开接口，无需登录） =====
+
+/// 搜索酷我音乐（支持分页，page 默认 1）
+#[tauri::command]
+pub async fn kuwo_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+    page: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    let query = SearchQuery {
+        keyword,
+        page: page.unwrap_or(1),
+        page_size: 50,
+        ..Default::default()
+    };
+    let result = state
+        .kuwo
+        .search(&query)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+/// 获取酷我音乐真实播放 URL
+///
+/// `rid` 是 Track.source_track_id（酷我歌曲 ID）。
+#[tauri::command]
+pub async fn kuwo_stream(
+    state: tauri::State<'_, AppState>,
+    rid: String,
+) -> Result<String, String> {
+    use orange_core::source::AudioSource;
+    let track = Track::new(
+        state.kuwo.id(),
+        rid,
+        orange_core::track::TrackMeta::default(),
+    );
+    match state
+        .kuwo
+        .resolve_stream(&track)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        orange_core::source::StreamLocation::Url { url, .. } => Ok(url),
+        _ => Err("酷我返回了非 URL 流地址".into()),
+    }
+}
+
+/// 酷我音乐热门推荐
+#[tauri::command]
+pub async fn kuwo_popular(
+    state: tauri::State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    state
+        .kuwo
+        .recommendations(limit.unwrap_or(30))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ===== 网易云音乐命令 =====
 
 /// 网易云 Cookie 登录
@@ -896,151 +957,56 @@ pub async fn qishui_status(state: tauri::State<'_, AppState>) -> Result<bool, St
 
 // ===== 聚合搜索 =====
 
-/// 多源聚合搜索（并发查询所有已就绪音源，支持分页，page 默认 1）
+/// 多源聚合搜索（遍历源注册表，并发查询所有已就绪音源，支持分页，page 默认 1）
 #[tauri::command]
 pub async fn search_all(
     state: tauri::State<'_, AppState>,
     keyword: String,
     page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
-    use orange_core::{source::SearchQuery, AudioSource};
-    let query = SearchQuery {
+    use std::sync::Arc;
+    let query = Arc::new(SearchQuery {
         keyword: keyword.clone(),
         kind: None,
         page: page.unwrap_or(1),
         page_size: 30,
-    };
+    });
 
-    // 本地库（同步，放 spawn_blocking）
+    // 本地库（同步 DB 查询，放 spawn_blocking）
     let lib = state.library.clone();
-    let q2 = query.clone();
+    let q_local = (*query).clone();
     let local_task = tokio::task::spawn_blocking(move || {
-        lib.search(&q2).into_iter().take(50).collect::<Vec<_>>()
+        lib.search(&q_local).into_iter().take(50).collect::<Vec<_>>()
     });
 
-    // QQ音乐搜索（免登录）
-    let qq = state.qqmusic.clone();
-    let qq_query = query.clone();
-    let qq_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        qq.search(&qq_query).await
-    });
-
-    // 网易云（需登录）
-    let netease_ready = state.netease.is_ready();
-    let ne = state.netease.clone();
-    let ne_query = query.clone();
-    let ne_task = if netease_ready {
-        Some(tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            async move { ne.search(&ne_query).await },
-        ))
-    } else {
-        None
-    };
-
-    // Spotify（需配置）
-    let sp_ready = state.spotify.is_ready();
-    let sp = state.spotify.clone();
-    let sp_query = query.clone();
-    let sp_task = if sp_ready {
-        Some(tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            async move { sp.search(&sp_query).await },
-        ))
-    } else {
-        None
-    };
-
-    // 电台
-    let radio = state.web_radio.clone();
-    let radio_query = query.clone();
-    let radio_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        radio.search(&radio_query).await
-    });
-
-    // 歌曲宝（免登录聚合音源）
-    let gequbao = state.gequbao.clone();
-    let gequbao_query = query.clone();
-    let gequbao_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        gequbao.search(&gequbao_query).await
-    });
-
-    // 酷狗音乐（免登录）
-    let kugou = state.kugou.clone();
-    let kugou_query = query.clone();
-    let kugou_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        kugou.search(&kugou_query).await
-    });
-
-    // 汽水音乐（占位，当前返回空）
-    let qishui = state.qishui.clone();
-    let qishui_query = query.clone();
-    let qishui_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        qishui.search(&qishui_query).await
-    });
-
-    // 并发执行
-    let (local_res, qq_res, ne_res, sp_res, radio_res, gequbao_res, kugou_res, qishui_res) = tokio::join!(
-        async { local_task.await.unwrap_or_default() },
-        async {
-            match qq_task.await {
+    // 遍历源注册表，为每个就绪音源起一个并发搜索任务
+    let sources = state.sources.list();
+    let mut futures = Vec::with_capacity(sources.len());
+    for src in sources {
+        if !src.is_ready() {
+            continue;
+        }
+        let q = (*query).clone();
+        futures.push(async move {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), src.search(&q)).await {
                 Ok(Ok(r)) => r.tracks,
                 _ => vec![],
             }
-        },
-        async {
-            match ne_task {
-                Some(t) => match t.await {
-                    Ok(Ok(r)) => r.tracks,
-                    _ => vec![],
-                },
-                None => vec![],
-            }
-        },
-        async {
-            match sp_task {
-                Some(t) => match t.await {
-                    Ok(Ok(r)) => r.tracks,
-                    _ => vec![],
-                },
-                None => vec![],
-            }
-        },
-        async {
-            match radio_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-        async {
-            match gequbao_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-        async {
-            match kugou_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-        async {
-            match qishui_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-    );
+        });
+    }
 
-    let mut all = Vec::new();
-    all.extend(local_res);
-    all.extend(qq_res);
-    all.extend(ne_res);
-    all.extend(sp_res);
-    all.extend(radio_res);
-    all.extend(gequbao_res);
-    all.extend(kugou_res);
-    all.extend(qishui_res);
+    // 并发执行所有网络源 + 本地库
+    let mut all = local_task.await.unwrap_or_default();
+    // 用 tokio JoinSet 并发跑所有网络源搜索（避免引入 futures crate 依赖）
+    let mut set = tokio::task::JoinSet::new();
+    for f in futures {
+        set.spawn(f);
+    }
+    while let Some(res) = set.join_next().await {
+        if let Ok(tracks) = res {
+            all.extend(tracks);
+        }
+    }
     tracing::info!("聚合搜索 '{}' 共 {} 条结果", keyword, all.len());
     Ok(all)
 }
@@ -1935,6 +1901,9 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             gequbao_search,
             gequbao_stream,
             gequbao_popular,
+            kuwo_search,
+            kuwo_stream,
+            kuwo_popular,
             netease_login,
             netease_logout,
             netease_status,

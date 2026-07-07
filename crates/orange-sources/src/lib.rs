@@ -18,6 +18,7 @@
 pub mod auth_store;
 pub mod gequbao;
 pub mod kugou;
+pub mod kuwo;
 pub mod local;
 pub mod podcast;
 pub mod qishui;
@@ -31,45 +32,44 @@ pub mod spotify;
 pub use auth_store::{AuthStore, StoredAuth};
 pub use gequbao::GequbaoSource;
 pub use kugou::KugouSource;
+pub use kuwo::KuwoSource;
 pub use netease::NeteaseSource;
 pub use podcast::PodcastSource;
-pub use qqmusic::QqMusicSource;
 pub use qishui::QishuiSource;
+pub use qqmusic::QqMusicSource;
 pub use spotify::SpotifySource;
 pub use web_radio::WebRadioSource;
 
-/// 音源注册表：管理所有已注册的音源实例
+use std::sync::Arc;
+
+/// 音源注册表：管理所有已注册的音源实例（供 search_all 遍历）
 pub struct SourceRegistry {
-    sources: Vec<Box<dyn orange_core::source::AudioSource>>,
+    sources: Vec<Arc<dyn orange_core::source::AudioSource>>,
 }
 
 impl SourceRegistry {
     pub fn new() -> Self {
-        Self {
-            sources: Vec::new(),
-        }
+        Self { sources: Vec::new() }
     }
 
     /// 注册一个音源
-    pub fn register(&mut self, source: Box<dyn orange_core::source::AudioSource>) {
+    pub fn register(&mut self, source: Arc<dyn orange_core::source::AudioSource>) {
         tracing::info!("已注册音源: {} ({:?})", source.name(), source.kind());
         self.sources.push(source);
     }
 
-    /// 按 ID 查找音源
-    pub fn get(
-        &self,
-        id: orange_core::source::SourceId,
-    ) -> Option<&dyn orange_core::source::AudioSource> {
-        self.sources
-            .iter()
-            .map(|s| s.as_ref())
-            .find(|s| s.id() == id)
+    /// 列出所有已注册音源（返回 Arc 副本，可跨 await 持有）
+    pub fn list(&self) -> Vec<Arc<dyn orange_core::source::AudioSource>> {
+        self.sources.clone()
     }
 
-    /// 列出所有音源
-    pub fn list(&self) -> Vec<&dyn orange_core::source::AudioSource> {
-        self.sources.iter().map(|s| s.as_ref()).collect()
+    /// 已注册音源数量
+    pub fn len(&self) -> usize {
+        self.sources.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty()
     }
 }
 

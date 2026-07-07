@@ -9,7 +9,7 @@ use orange_ai::AiRecommendationEngine;
 use orange_core::{AuthEventSink, AuthExpiredPayload};
 use orange_library::LibraryDb;
 use orange_sources::{
-    AuthStore, GequbaoSource, KugouSource, NeteaseSource, PodcastSource, QishuiSource,
+    AuthStore, GequbaoSource, KugouSource, KuwoSource, NeteaseSource, PodcastSource, QishuiSource,
     QqMusicSource, SpotifySource, WebRadioSource,
 };
 use parking_lot::Mutex;
@@ -62,12 +62,15 @@ pub struct AppState {
     pub spotify: Arc<SpotifySource>,
     pub gequbao: Arc<GequbaoSource>,
     pub kugou: Arc<KugouSource>,
+    pub kuwo: Arc<KuwoSource>,
     pub qishui: Arc<QishuiSource>,
     pub auth_store: Arc<AuthStore>,
     /// 鉴权过期事件 sink —— 暴露给 orange-tauri::commands 注册 IPC 命令用
     pub auth_sink: Arc<TauriAuthSink>,
     /// 推荐引擎（懂你模式）：本地画像打分，不依赖 LLM
     pub recommender: Arc<dyn orange_core::recommendation::RecommendationEngine>,
+    /// 音源注册表：聚合所有网络音源，供 search_all 遍历（本地库走 library 字段单独处理）
+    pub sources: Arc<orange_sources::SourceRegistry>,
     /// Wallpaper Engine Workshop 根目录白名单（wefile 安全校验用）。
     /// 由 wallpaper_engine_scan 命令扫描完成后写入；Task 5 的 wefile handler 读这里。
     /// Arc 包裹以保留 `#[derive(Clone)]`（parking_lot::RwLock 本身不是 Clone）。
@@ -138,20 +141,42 @@ impl Default for AppState {
         let recommender: Arc<dyn orange_core::recommendation::RecommendationEngine> =
             Arc::new(AiRecommendationEngine::local());
 
+        let web_radio = Arc::new(WebRadioSource::new());
+        let podcast = Arc::new(PodcastSource::new());
+        let gequbao = Arc::new(GequbaoSource::new());
+        let kugou = Arc::new(KugouSource::new(auth_store.clone()));
+        let kuwo = Arc::new(KuwoSource::new());
+        let qishui = Arc::new(QishuiSource::new(auth_store.clone()));
+
+        // 音源注册表：聚合所有网络音源，search_all 遍历用
+        // （本地库走 library 字段单独处理，因为 LibraryDb 未实现 AudioSource trait）
+        let mut registry = orange_sources::SourceRegistry::new();
+        registry.register(web_radio.clone());
+        registry.register(netease.clone());
+        registry.register(podcast.clone());
+        registry.register(qqmusic.clone());
+        registry.register(spotify.clone());
+        registry.register(gequbao.clone());
+        registry.register(kugou.clone());
+        registry.register(kuwo.clone());
+        registry.register(qishui.clone());
+
         Self {
             event_bus: orange_core::EventBus::default(),
             library,
-            web_radio: Arc::new(WebRadioSource::new()),
+            web_radio,
             netease,
-            podcast: Arc::new(PodcastSource::new()),
+            podcast,
             qqmusic,
             spotify,
-            gequbao: Arc::new(GequbaoSource::new()),
-            kugou: Arc::new(KugouSource::new(auth_store.clone())),
-            qishui: Arc::new(QishuiSource::new(auth_store.clone())),
+            gequbao,
+            kugou,
+            kuwo,
+            qishui,
             auth_store,
             auth_sink,
             recommender,
+            sources: Arc::new(registry),
             we_roots: Arc::new(parking_lot::RwLock::new(Vec::new())),
         }
     }
