@@ -36,6 +36,8 @@ pub enum SourceKind {
     Gequbao,
     /// 酷狗音乐
     Kugou,
+    /// 酷我音乐（第三方公开接口聚合，免登录）
+    Kuwo,
     /// 汽水音乐
     Qishui,
     /// 自定义 / 插件音源

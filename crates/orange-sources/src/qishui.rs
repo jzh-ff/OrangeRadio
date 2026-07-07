@@ -38,9 +38,7 @@ impl AudioSource for QishuiSource {
         "汽水音乐"
     }
 
-    async fn search(&self,
-        _query: &SearchQuery,
-    ) -> Result<SearchResult> {
+    async fn search(&self, _query: &SearchQuery) -> Result<SearchResult> {
         Ok(SearchResult {
             tracks: vec![],
             total: 0,
@@ -48,10 +46,7 @@ impl AudioSource for QishuiSource {
         })
     }
 
-    async fn resolve_stream(
-        &self,
-        _track: &Track,
-    ) -> Result<StreamLocation> {
+    async fn resolve_stream(&self, _track: &Track) -> Result<StreamLocation> {
         Err(orange_core::CoreError::Unsupported(
             "汽水音乐接口尚未接入".into(),
         ))
