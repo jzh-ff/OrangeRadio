@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -72,7 +73,7 @@ export function SpotifyView() {
   if (!configured) {
     return (
       <div className="library__empty">
-        <div className="library__empty-icon">🎧</div>
+        <div className="library__empty-icon"><EmptyStateIcon kind="spotify" /></div>
         <div className="library__empty-title">Spotify 未配置</div>
         <div className="library__empty-desc" style={{ marginBottom: 20 }}>
           需要 Spotify Developer 的 Client ID 和 Secret<br/>
@@ -95,7 +96,7 @@ export function SpotifyView() {
             </div>
           </div>
         )}
-        {error && <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>⚠️ {error}</div>}
+        {error && <div style={{ marginTop: 16, padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, maxWidth: 500 }}>{error}</div>}
       </div>
     );
   }
@@ -112,9 +113,9 @@ export function SpotifyView() {
             onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} />
         </div>
       </div>
-      {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>⚠️ {error}</div>}
+      {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
       {tracks.length === 0 ? (
-        <div className="library__empty"><div className="library__empty-icon">🎧</div>
+        <div className="library__empty"><div className="library__empty-icon"><EmptyStateIcon kind="spotify" /></div>
           <div className="library__empty-title">搜索 Spotify</div>
           <div className="library__empty-desc">仅显示有试听片段的曲目（30秒）</div></div>
       ) : (

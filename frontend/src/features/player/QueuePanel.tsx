@@ -57,7 +57,13 @@ export function QueuePanel() {
           {cover ? (
             <img src={cover} alt="" loading="lazy" />
           ) : (
-            <span className="qp-item__placeholder">🎵</span>
+            <span className="qp-item__placeholder">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M9 18V5l12-2v13" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+              </svg>
+            </span>
           )}
         </div>
         <div className="qp-item__meta">
@@ -120,7 +126,11 @@ export function QueuePanel() {
           {tracks.length > 0 && (
             <button className="qp-clear" onClick={clearTracks} title="清空单曲队列">清空</button>
           )}
-          <button className="qp-close" onClick={setOpen}>✕</button>
+          <button className="qp-close" onClick={setOpen} title="关闭">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
         <div className="qp-list">
           {isEmpty && <div className="qp-empty">队列为空，去添加一些歌曲吧</div>}
@@ -138,7 +148,13 @@ export function QueuePanel() {
           {radioTracks.length > 0 && (
             <>
               <div className="qp-section">
-                📻 电台列表 <span className="qp-count">{radioTracks.length}</span>
+                <span className="qp-section-icon">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="2" />
+                    <path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14" strokeLinecap="round" />
+                  </svg>
+                </span>
+                电台列表 <span className="qp-count">{radioTracks.length}</span>
                 <button className="qp-clear qp-clear--section" onClick={clearRadio} title="清空电台列表">清空</button>
               </div>
               <List

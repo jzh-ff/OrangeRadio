@@ -338,5 +338,7 @@ export function useAudioEngine(autoNext?: () => void) {
     };
   }, [next]);
 
-  return { playPath, togglePlay, seek, setVolume, next, prev };
+  const hasSrc = useCallback(() => !!audioRef.current?.src, []);
+
+  return { playPath, togglePlay, hasSrc, seek, setVolume, next, prev };
 }

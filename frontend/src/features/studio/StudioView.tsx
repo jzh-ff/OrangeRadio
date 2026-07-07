@@ -85,7 +85,7 @@ export function StudioView({ pushToast }: StudioViewProps) {
     pushToast?.("开始生成音乐，约需 30-90 秒…", "info", 5000);
     await doGenerateMusic(false);
     if (useStudioStore.getState().audioPath) {
-      pushToast?.("音乐生成完成 🎵", "info", 4000);
+      pushToast?.("音乐生成完成", "info", 4000);
     }
   };
 
@@ -100,7 +100,7 @@ export function StudioView({ pushToast }: StudioViewProps) {
     pushToast?.("开始分轨生成，约需 1-3 分钟…", "info", 5000);
     await doSeparateVocal();
     if (useStudioStore.getState().stems) {
-      pushToast?.("分轨完成 🎤🎸", "info", 4000);
+      pushToast?.("分轨完成", "info", 4000);
     }
   };
 
@@ -152,7 +152,7 @@ export function StudioView({ pushToast }: StudioViewProps) {
         </div>
         {!hasKey && (
           <div className="studio-prompt__hint" style={{ color: "var(--amber)" }}>
-            ⚠ 未配置 MiniMax API Key，请先点击左下角齿轮设置
+            未配置 MiniMax API Key，请先点击左下角齿轮设置
           </div>
         )}
       </section>
@@ -209,7 +209,7 @@ export function StudioView({ pushToast }: StudioViewProps) {
                 className="studio-prompt__btn studio-prompt__btn--ghost"
                 onClick={onOpenFolder}
               >
-                📂 打开目录
+                打开目录
               </button>
               {lyricsText && (
                 <button
@@ -253,11 +253,11 @@ export function StudioView({ pushToast }: StudioViewProps) {
         {stems && (
           <div className="studio-stems">
             <div className="studio-stems__track">
-              <div className="studio-stems__label">🎤 人声版（带唱）</div>
+              <div className="studio-stems__label">人声版（带唱）</div>
               <audio src={convertFileSrc(stems.vocals)} controls />
             </div>
             <div className="studio-stems__track">
-              <div className="studio-stems__label">🎸 纯伴奏版（instrumental）</div>
+              <div className="studio-stems__label">纯伴奏版（instrumental）</div>
               <audio src={convertFileSrc(stems.instrumental)} controls />
             </div>
           </div>

@@ -129,7 +129,7 @@ export function HotkeysModal() {
                     </button>
                     <button className="hk-row__default" onClick={() => handleReset(h.action)}>默认</button>
                     <span className={`hk-row__status ${conflict ? "hk-row__status--conflict" : "hk-row__status--ok"}`}>
-                      {conflict ? "⚠ 冲突" : "可用"}
+                      {conflict ? "冲突" : "可用"}
                     </span>
                   </div>
                 );

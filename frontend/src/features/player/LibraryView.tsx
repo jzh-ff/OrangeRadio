@@ -130,7 +130,7 @@ export function LibraryView() {
             onChange={(e) => setSearchKeyword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
           />
-          <span className="library__tape-shortcut">⏎</span>
+          <span className="library__tape-shortcut">Enter</span>
         </div>
 
         <div className="library__switcher" role="tablist" aria-label="视图切换">

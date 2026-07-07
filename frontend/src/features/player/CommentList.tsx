@@ -57,7 +57,7 @@ export function CommentList({ songId, compact }: { songId: string; compact?: boo
   }
 
   if (error) {
-    return <div className="cl-empty">⚠️ {error}</div>;
+    return <div className="cl-empty">{error}</div>;
   }
 
   if (!data || data.hot_comments.length === 0) {
@@ -82,7 +82,7 @@ export function CommentList({ songId, compact }: { songId: string; compact?: boo
             <div className="cl-name">{c.nickname}</div>
             <div className="cl-content">{c.content}</div>
             <div className="cl-meta">
-              <span className="cl-like">❤ {fmtCount(c.liked_count)}</span>
+              <span className="cl-like">{fmtCount(c.liked_count)}</span>
             </div>
           </div>
         </div>
