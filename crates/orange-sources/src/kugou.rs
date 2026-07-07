@@ -378,7 +378,7 @@ fn strip_jsonp_callback(text: &str) -> &str {
 
 #[derive(Debug, Deserialize, Clone)]
 struct KugouSearchResp {
-    #[serde(rename = "errcode")]
+    #[serde(rename = "err_code", default)]
     err_code: i32,
     error: Option<String>,
     data: Option<KugouSearchData>,
@@ -409,7 +409,7 @@ struct KugouSearchItem {
 
 #[derive(Debug, Deserialize, Clone)]
 struct KugouPlayResp {
-    #[serde(rename = "errcode")]
+    #[serde(rename = "err_code", default)]
     err_code: i32,
     data: Option<KugouPlayData>,
 }

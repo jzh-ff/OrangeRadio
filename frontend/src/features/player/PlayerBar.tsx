@@ -183,7 +183,10 @@ export function PlayerBar() {
 
   const cycleMode = () => {
     const idx = MODE_ORDER.indexOf(mode);
-    usePlayerStore.getState().setMode(MODE_ORDER[(idx + 1) % MODE_ORDER.length]);
+    const next = MODE_ORDER[(idx + 1) % MODE_ORDER.length];
+    usePlayerStore.getState().setMode(next);
+    // 懂你模式是动作型模式，同步 smartAction 让 UI 状态一致
+    usePlayerStore.getState().setSmartAction(next === "understand_you" ? "understand_you" : next === "sequence" && usePlayerStore.getState().smartAction === "recommend" ? "recommend" : null);
   };
 
   const fmt = (s: number) => {
