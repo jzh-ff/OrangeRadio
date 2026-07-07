@@ -44,11 +44,23 @@ impl Default for ScanOptions {
 }
 
 /// 本地库扫描器
-pub struct LibraryScanner;
+pub struct LibraryScanner {
+    /// 封面提取磁盘缓存目录。为 None 时退回 `std::env::current_dir()/.orangeradio/covers`
+    /// （仅 dev 模式生效；release 模式由调用方注入 app_data_dir 路径）。
+    covers_dir: Option<std::path::PathBuf>,
+}
 
 impl LibraryScanner {
+    /// 默认构造：使用 CWD 兜底（dev 模式）。
     pub fn new() -> Self {
-        Self
+        Self { covers_dir: None }
+    }
+
+    /// 指定封面缓存目录（推荐，Tauri 命令层用 app.path().app_data_dir() 注入）。
+    pub fn with_covers_dir(covers_dir: std::path::PathBuf) -> Self {
+        Self {
+            covers_dir: Some(covers_dir),
+        }
     }
 
     /// 扫描本地目录，返回发现的所有曲目
@@ -58,6 +70,7 @@ impl LibraryScanner {
         let formats = options.formats.clone();
         let dirs: Vec<String> = options.root_dirs.clone();
         let recursive = options.recursive;
+        let covers_dir = self.covers_dir.clone();
 
         // 在阻塞线程池中执行文件 IO
         let tracks = tokio::task::spawn_blocking(move || -> Result<Vec<Track>> {
@@ -84,7 +97,7 @@ impl LibraryScanner {
                     if !formats.contains(&fmt) {
                         continue;
                     }
-                    match read_track(path, SOURCE_ID_LOCAL) {
+                    match read_track(path, SOURCE_ID_LOCAL, covers_dir.as_deref()) {
                         Ok(t) => out.push(t),
                         Err(e) => {
                             tracing::warn!("跳过 {:?}: {}", path, e);
