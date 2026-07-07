@@ -9,13 +9,13 @@ use orange_ai::AiRecommendationEngine;
 use orange_core::{AuthEventSink, AuthExpiredPayload};
 use orange_library::LibraryDb;
 use orange_sources::{
-    AuthStore, GequbaoSource, KugouSource, NeteaseSource, PodcastSource, QishuiSource, QqMusicSource,
-    SpotifySource, WebRadioSource,
+    AuthStore, GequbaoSource, KugouSource, NeteaseSource, PodcastSource, QishuiSource,
+    QqMusicSource, SpotifySource, WebRadioSource,
 };
 use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// 把 source 的"登录过期"事件 emit 到前端 WebView 的 sink
 ///
@@ -72,6 +72,29 @@ pub struct AppState {
     /// 由 wallpaper_engine_scan 命令扫描完成后写入；Task 5 的 wefile handler 读这里。
     /// Arc 包裹以保留 `#[derive(Clone)]`（parking_lot::RwLock 本身不是 Clone）。
     pub we_roots: Arc<parking_lot::RwLock<Vec<PathBuf>>>,
+}
+
+// ===== 跨平台数据目录工具 =====
+//
+// 之前所有数据目录都用 `std::env::current_dir().join(".orangeradio/...")`，在
+// macOS 上从 Finder 双击 .app 启动时 CWD 是 `/`，所有写操作会失败。
+// 统一改成走 `app.path().app_data_dir()`，各 OS 落到约定位置：
+//   - Windows: %APPDATA%\com.orangeradio.app\
+//   - macOS:   ~/Library/Application Support/com.orangeradio.app/
+//   - Linux:   ~/.local/share/com.orangeradio.app/
+
+/// 应用数据根目录。失败时回退到当前工作目录的 `.orangeradio/`（仅供开发期）。
+pub fn app_data_root(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+/// 应用数据子目录（自动 create_dir_all）。`name` 只能是单层目录名（不含 `/`）。
+pub fn app_data_subdir(app: &AppHandle, name: &str) -> std::result::Result<PathBuf, String> {
+    let dir = app_data_root(app).join(name);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建 {name} 目录失败: {e}"))?;
+    Ok(dir)
 }
 
 impl Default for AppState {

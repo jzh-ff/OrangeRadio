@@ -10,7 +10,10 @@ use orange_core::Result;
 use std::path::Path;
 
 /// 从音频文件读取元数据并构建 Track
-pub fn read_track(path: &Path, source_id: SourceId) -> Result<Track> {
+///
+/// `covers_dir`：封面提取磁盘缓存目录。`None` 时退回 `cwd/.orangeradio/covers`
+/// （仅 dev 模式生效；release 模式应传 `app.path().app_data_dir()/covers`）。
+pub fn read_track(path: &Path, source_id: SourceId, covers_dir: Option<&Path>) -> Result<Track> {
     let source_track_id = path.to_string_lossy().to_string();
     let format =
         AudioFormat::from_extension(path.extension().and_then(|e| e.to_str()).unwrap_or(""));
@@ -71,7 +74,9 @@ pub fn read_track(path: &Path, source_id: SourceId) -> Result<Track> {
                 if !tag.pictures().is_empty() {
                     // 提取第一张图片字节到磁盘，存为 Local path（前端用 convertFileSrc 访问）
                     if let Some(pic) = tag.pictures().first() {
-                        if let Some(path) = extract_cover_to_disk(pic.data(), pic.mime_type()) {
+                        if let Some(path) =
+                            extract_cover_to_disk(pic.data(), pic.mime_type(), covers_dir)
+                        {
                             meta.artwork = Some(Artwork {
                                 source: ArtworkSource::Local { path },
                                 dominant_color: None,
@@ -116,9 +121,14 @@ pub fn local_source_id() -> SourceId {
 /// 封面图提取到磁盘缓存目录
 ///
 /// 策略：用图片字节内容的 FNV-1a 哈希命名（避免重复提取同一张图）。
-/// 写到 `<cwd>/.orangeradio/covers/<hash>.<ext>`。返回磁盘绝对路径。
+/// 写到 `covers_dir/<hash>.<ext>`（`covers_dir` 为 None 时退回 cwd 兜底，
+/// 仅 dev 模式生效）。返回磁盘绝对路径。
 /// 若文件已存在则跳过写入（命中缓存）。
-fn extract_cover_to_disk(data: &[u8], mime: Option<&lofty::picture::MimeType>) -> Option<String> {
+fn extract_cover_to_disk(
+    data: &[u8],
+    mime: Option<&lofty::picture::MimeType>,
+    covers_dir: Option<&Path>,
+) -> Option<String> {
     use std::io::Write;
 
     // 简单哈希（FNV-1a 64bit）——不引入额外依赖
@@ -137,10 +147,13 @@ fn extract_cover_to_disk(data: &[u8], mime: Option<&lofty::picture::MimeType>) -
         _ => "jpg",
     };
 
-    let covers_dir = std::env::current_dir()
-        .ok()?
-        .join(".orangeradio")
-        .join("covers");
+    let covers_dir = match covers_dir {
+        Some(d) => d.to_path_buf(),
+        None => std::env::current_dir()
+            .ok()?
+            .join(".orangeradio")
+            .join("covers"),
+    };
     std::fs::create_dir_all(&covers_dir).ok()?;
     let file_path = covers_dir.join(format!("{:x}.{}", hash, ext));
 
