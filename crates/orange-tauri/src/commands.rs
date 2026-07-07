@@ -223,6 +223,67 @@ pub async fn gequbao_popular(
         .map_err(|e| e.to_string())
 }
 
+// ===== 酷我音乐命令（第三方公开接口，无需登录） =====
+
+/// 搜索酷我音乐（支持分页，page 默认 1）
+#[tauri::command]
+pub async fn kuwo_search(
+    state: tauri::State<'_, AppState>,
+    keyword: String,
+    page: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    let query = SearchQuery {
+        keyword,
+        page: page.unwrap_or(1),
+        page_size: 50,
+        ..Default::default()
+    };
+    let result = state
+        .kuwo
+        .search(&query)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(result.tracks)
+}
+
+/// 获取酷我音乐真实播放 URL
+///
+/// `rid` 是 Track.source_track_id（酷我歌曲 ID）。
+#[tauri::command]
+pub async fn kuwo_stream(
+    state: tauri::State<'_, AppState>,
+    rid: String,
+) -> Result<String, String> {
+    use orange_core::source::AudioSource;
+    let track = Track::new(
+        state.kuwo.id(),
+        rid,
+        orange_core::track::TrackMeta::default(),
+    );
+    match state
+        .kuwo
+        .resolve_stream(&track)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        orange_core::source::StreamLocation::Url { url, .. } => Ok(url),
+        _ => Err("酷我返回了非 URL 流地址".into()),
+    }
+}
+
+/// 酷我音乐热门推荐
+#[tauri::command]
+pub async fn kuwo_popular(
+    state: tauri::State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    state
+        .kuwo
+        .recommendations(limit.unwrap_or(30))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ===== 网易云音乐命令 =====
 
 /// 网易云 Cookie 登录
@@ -896,151 +957,56 @@ pub async fn qishui_status(state: tauri::State<'_, AppState>) -> Result<bool, St
 
 // ===== 聚合搜索 =====
 
-/// 多源聚合搜索（并发查询所有已就绪音源，支持分页，page 默认 1）
+/// 多源聚合搜索（遍历源注册表，并发查询所有已就绪音源，支持分页，page 默认 1）
 #[tauri::command]
 pub async fn search_all(
     state: tauri::State<'_, AppState>,
     keyword: String,
     page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
-    use orange_core::{source::SearchQuery, AudioSource};
-    let query = SearchQuery {
+    use std::sync::Arc;
+    let query = Arc::new(SearchQuery {
         keyword: keyword.clone(),
         kind: None,
         page: page.unwrap_or(1),
         page_size: 30,
-    };
+    });
 
-    // 本地库（同步，放 spawn_blocking）
+    // 本地库（同步 DB 查询，放 spawn_blocking）
     let lib = state.library.clone();
-    let q2 = query.clone();
+    let q_local = (*query).clone();
     let local_task = tokio::task::spawn_blocking(move || {
-        lib.search(&q2).into_iter().take(50).collect::<Vec<_>>()
+        lib.search(&q_local).into_iter().take(50).collect::<Vec<_>>()
     });
 
-    // QQ音乐搜索（免登录）
-    let qq = state.qqmusic.clone();
-    let qq_query = query.clone();
-    let qq_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        qq.search(&qq_query).await
-    });
-
-    // 网易云（需登录）
-    let netease_ready = state.netease.is_ready();
-    let ne = state.netease.clone();
-    let ne_query = query.clone();
-    let ne_task = if netease_ready {
-        Some(tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            async move { ne.search(&ne_query).await },
-        ))
-    } else {
-        None
-    };
-
-    // Spotify（需配置）
-    let sp_ready = state.spotify.is_ready();
-    let sp = state.spotify.clone();
-    let sp_query = query.clone();
-    let sp_task = if sp_ready {
-        Some(tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            async move { sp.search(&sp_query).await },
-        ))
-    } else {
-        None
-    };
-
-    // 电台
-    let radio = state.web_radio.clone();
-    let radio_query = query.clone();
-    let radio_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        radio.search(&radio_query).await
-    });
-
-    // 歌曲宝（免登录聚合音源）
-    let gequbao = state.gequbao.clone();
-    let gequbao_query = query.clone();
-    let gequbao_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        gequbao.search(&gequbao_query).await
-    });
-
-    // 酷狗音乐（免登录）
-    let kugou = state.kugou.clone();
-    let kugou_query = query.clone();
-    let kugou_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        kugou.search(&kugou_query).await
-    });
-
-    // 汽水音乐（占位，当前返回空）
-    let qishui = state.qishui.clone();
-    let qishui_query = query.clone();
-    let qishui_task = tokio::time::timeout(std::time::Duration::from_secs(5), async move {
-        qishui.search(&qishui_query).await
-    });
-
-    // 并发执行
-    let (local_res, qq_res, ne_res, sp_res, radio_res, gequbao_res, kugou_res, qishui_res) = tokio::join!(
-        async { local_task.await.unwrap_or_default() },
-        async {
-            match qq_task.await {
+    // 遍历源注册表，为每个就绪音源起一个并发搜索任务
+    let sources = state.sources.list();
+    let mut futures = Vec::with_capacity(sources.len());
+    for src in sources {
+        if !src.is_ready() {
+            continue;
+        }
+        let q = (*query).clone();
+        futures.push(async move {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), src.search(&q)).await {
                 Ok(Ok(r)) => r.tracks,
                 _ => vec![],
             }
-        },
-        async {
-            match ne_task {
-                Some(t) => match t.await {
-                    Ok(Ok(r)) => r.tracks,
-                    _ => vec![],
-                },
-                None => vec![],
-            }
-        },
-        async {
-            match sp_task {
-                Some(t) => match t.await {
-                    Ok(Ok(r)) => r.tracks,
-                    _ => vec![],
-                },
-                None => vec![],
-            }
-        },
-        async {
-            match radio_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-        async {
-            match gequbao_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-        async {
-            match kugou_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-        async {
-            match qishui_task.await {
-                Ok(Ok(r)) => r.tracks,
-                _ => vec![],
-            }
-        },
-    );
+        });
+    }
 
-    let mut all = Vec::new();
-    all.extend(local_res);
-    all.extend(qq_res);
-    all.extend(ne_res);
-    all.extend(sp_res);
-    all.extend(radio_res);
-    all.extend(gequbao_res);
-    all.extend(kugou_res);
-    all.extend(qishui_res);
+    // 并发执行所有网络源 + 本地库
+    let mut all = local_task.await.unwrap_or_default();
+    // 用 tokio JoinSet 并发跑所有网络源搜索（避免引入 futures crate 依赖）
+    let mut set = tokio::task::JoinSet::new();
+    for f in futures {
+        set.spawn(f);
+    }
+    while let Some(res) = set.join_next().await {
+        if let Ok(tracks) = res {
+            all.extend(tracks);
+        }
+    }
     tracing::info!("聚合搜索 '{}' 共 {} 条结果", keyword, all.len());
     Ok(all)
 }
@@ -1230,11 +1196,11 @@ pub async fn recommend_next(
     state: tauri::State<'_, AppState>,
     limit: Option<u32>,
     current_track_id: Option<String>,
+    mood: Option<String>,
+    llm_config: Option<LlmConfig>,
 ) -> Result<Vec<Track>, String> {
-    use orange_core::recommendation::RecommendContext;
-    // 把所有同步 SQLite + 内存聚合（aggregate_user_profile / recent_track_ids /
-    // recent_feedback / all）打包进一次 spawn_blocking，避免多次阻塞 worker。
-    // recommender 的推荐算法是 async 的，在 spawn_blocking 之外 await。
+    use orange_core::recommendation::{Mood, RecommendContext, Scene};
+    // 把所有同步 SQLite + 内存聚合打包进一次 spawn_blocking
     let library = state.library.clone();
     let prep = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let profile = library
@@ -1252,29 +1218,77 @@ pub async fn recommend_next(
         .as_ref()
         .and_then(|id| all.iter().find(|t| t.id.0.to_string() == *id).cloned());
     let n = limit.unwrap_or(1).max(1);
+
+    // 时段推导场景（0-6/22+ = Sleep，7-9 = Commute，9-18 = Work，18-22 = Relax）
+    let now = chrono::Utc::now();
+    let hour = now.format("%H").to_string().parse::<u32>().unwrap_or(12);
+    let scene = match hour {
+        0..=6 | 22..=23 => Some(Scene::Sleep),
+        7..=9 => Some(Scene::Commute),
+        10..=18 => Some(Scene::Work),
+        _ => Some(Scene::Relax),
+    };
+    // 情绪字符串 → Mood enum（前端传 "energetic" 等 snake_case）
+    let mood = mood.as_deref().and_then(|s| match s.to_lowercase().as_str() {
+        "happy" => Some(Mood::Happy),
+        "sad" => Some(Mood::Sad),
+        "calm" => Some(Mood::Calm),
+        "energetic" => Some(Mood::Energetic),
+        "focused" => Some(Mood::Focused),
+        "romantic" => Some(Mood::Romantic),
+        "nostalgic" => Some(Mood::Nostalgic),
+        "melancholy" | "melancholic" => Some(Mood::Melancholy),
+        _ => None,
+    });
+
     let ctx = RecommendContext {
-        now: chrono::Utc::now(),
+        now,
         weather: None,
-        mood: None,
-        scene: None,
+        mood,
+        scene,
         recent_track_ids: recent,
         limit: n,
         candidates: all,
     };
+
+    // 若前端传了 llm_config，临时构造带 LLM 的 recommender（覆盖默认 local 引擎）
+    let recommender: std::sync::Arc<dyn orange_core::recommendation::RecommendationEngine> =
+        if let Some(cfg) = llm_config {
+            if !cfg.api_key.is_empty() {
+                let provider: std::sync::Arc<dyn orange_ai::LlmProvider> =
+                    std::sync::Arc::new(orange_ai::CloudLlmProvider::new(
+                        cfg.api_base,
+                        cfg.api_key,
+                        cfg.model,
+                    ));
+                std::sync::Arc::new(orange_ai::AiRecommendationEngine::with_llm(provider))
+            } else {
+                state.recommender.clone()
+            }
+        } else {
+            state.recommender.clone()
+        };
+
     if n == 1 {
-        let t = state
-            .recommender
+        let t = recommender
             .next_understand_you(&profile, &ctx, current.as_ref(), &feedback)
             .await
             .map_err(|e| e.to_string())?;
         Ok(vec![t])
     } else {
-        state
-            .recommender
+        recommender
             .recommend(&profile, &ctx)
             .await
             .map_err(|e| e.to_string())
     }
+}
+
+/// LLM 配置（前端从 localStorage 读取后传入 recommend_next）
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct LlmConfig {
+    pub api_base: String,
+    pub api_key: String,
+    pub model: String,
 }
 
 /// 分析本地音频文件的节拍图谱（驱动电影运镜预计算）。
@@ -1332,6 +1346,47 @@ pub async fn analyze_beatmap(
         beatmap.bpm
     );
     Ok(json)
+}
+
+/// 分析单首曲目的 BPM 并写回库（标签缺失时音频分析兜底，延迟填充用）
+///
+/// 流程：取 track → 已有 bpm 则秒返 → 否则 spawn_blocking 解码 + 节拍分析 → update_track_bpm
+#[tauri::command]
+pub async fn analyze_track_bpm(
+    state: tauri::State<'_, AppState>,
+    track_id: String,
+) -> Result<f32, String> {
+    // 查曲目
+    let track = state
+        .library
+        .all()
+        .into_iter()
+        .find(|t| t.id.0.to_string() == track_id)
+        .ok_or_else(|| format!("曲目不存在: {track_id}"))?;
+    // 标签已有 bpm → 秒返
+    if let Some(bpm) = track.meta.bpm {
+        return Ok(bpm);
+    }
+    // 本地文件路径
+    let path = std::path::PathBuf::from(&track.source_track_id);
+    if !path.is_file() {
+        return Err("非本地文件，无法分析 BPM".into());
+    }
+    // spawn_blocking 跑解码 + 节拍分析（CPU 密集）
+    let bpm = tokio::task::spawn_blocking(move || -> Result<f32, String> {
+        let audio = orange_audio::decode_file(&path).map_err(|e| e.to_string())?;
+        let beatmap = orange_audio::analyze_beatmap(&audio);
+        Ok(beatmap.bpm)
+    })
+    .await
+    .map_err(|e| format!("BPM 分析线程失败: {e}"))??;
+    // 写回库（DB + 内存）
+    state
+        .library
+        .update_track_bpm(&track_id, bpm)
+        .map_err(|e| e.to_string())?;
+    tracing::info!("BPM 分析完成: {} → {:.1}", track.meta.title, bpm);
+    Ok(bpm)
 }
 
 /// FNV-1a 64bit（缓存键用，刻意不引新依赖）
@@ -1935,6 +1990,9 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             gequbao_search,
             gequbao_stream,
             gequbao_popular,
+            kuwo_search,
+            kuwo_stream,
+            kuwo_popular,
             netease_login,
             netease_logout,
             netease_status,
@@ -1990,6 +2048,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             get_user_profile,
             recommend_next,
             analyze_beatmap,
+            analyze_track_bpm,
             cover_proxy,
             hue_discover,
             hue_pair,
