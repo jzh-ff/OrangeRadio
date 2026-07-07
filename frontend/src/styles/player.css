@@ -1,5 +1,5 @@
 .player-view {
-  max-width: 1180px;
+  max-width: 1600px;
   margin: 0 auto;
   /* flex chain：让 .library(歌单视图)能占满 player-view 剩余高度 */
   display: flex;
