@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -61,13 +62,13 @@ export function QishuiView() {
 
       {error && (
         <div style={{ padding: 16, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 10, marginBottom: 16 }}>
-          ⚠️ {error}
+          {error}
         </div>
       )}
 
       {songs.length === 0 ? (
         <div className="library__empty">
-          <div className="library__empty-icon">🎧</div>
+          <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
           <div className="library__empty-title">汽水音乐</div>
           <div className="library__empty-desc">接口接入中，敬请期待</div>
         </div>

@@ -37,7 +37,7 @@ const THEMES: { id: ColorTheme; name: string; colors: string[] }[] = [
 const PRESETS: { id: number; name: string; desc: string; icon: string }[] = [
   { id: 0, name: "默认封面", desc: "封面粒子 · 快速入场", icon: "◉" },
   { id: 1, name: "滚筒隧道", desc: "隧道 · 沉浸感", icon: "◎" },
-  { id: 2, name: "星河", desc: "壁纸粒子 · 音乐律动", icon: "✦" },
+  { id: 2, name: "星河", desc: "壁纸粒子 · 音乐律动", icon: "·" },
   { id: 3, name: "唱片", desc: "唱片 · 圆形封面", icon: "◐" },
 ];
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -96,20 +97,19 @@ export function GequbaoView() {
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
           />
         </div>
-        <button className="btn-scan" onClick={loadPopular} disabled={loading}>
-          🎵 {loading ? "加载中…" : "热门推荐"}
+        <button className="btn-scan" onClick={loadPopular} disabled={loading}> {loading ? "加载中…" : "热门推荐"}
         </button>
       </div>
 
       {error && (
         <div style={{ padding: 16, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 10, marginBottom: 16 }}>
-          ⚠️ {error}
+          {error}
         </div>
       )}
 
       {songs.length === 0 && !loading ? (
         <div className="library__empty">
-          <div className="library__empty-icon">🎵</div>
+          <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
           <div className="library__empty-title">{error ? "加载失败" : "正在加载…"}</div>
           <div className="library__empty-desc">歌曲宝 · 第三方聚合音源</div>
         </div>

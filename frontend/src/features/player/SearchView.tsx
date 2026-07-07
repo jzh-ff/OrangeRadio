@@ -14,6 +14,7 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   netease_cloud_music: { label: "NE", cls: "q-lossless" },
   qq_music: { label: "QQ", cls: "q-high" },
   kugou: { label: "KG", cls: "q-high" },
+  kuwo: { label: "KW", cls: "q-high" },
   qishui: { label: "QS", cls: "q-hires" },
   spotify: { label: "SP", cls: "q-master" },
   web_radio: { label: "LIVE", cls: "q-hires" },
@@ -48,7 +49,7 @@ export function SearchView() {
   return (
     <div className="library">
       <div className="section-title">
-        <h3>🔍 全网搜索</h3>
+        <h3>全网搜索</h3>
         <span className="section-title__sub">
           {results.length > 0 ? `${results.length} 条结果` : ""}
         </span>
@@ -133,12 +134,22 @@ export function SearchView() {
         </div>
       ) : keyword ? (
         <div className="library__empty">
-          <div className="library__empty-icon">🔍</div>
+          <div className="library__empty-icon">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5" />
+              <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </div>
           <div className="library__empty-title">无搜索结果</div>
         </div>
       ) : (
         <div className="library__empty">
-          <div className="library__empty-icon">🔍</div>
+          <div className="library__empty-icon">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5" />
+              <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </div>
           <div className="library__empty-title">输入关键词搜索</div>
           <div className="library__empty-desc">同时搜索本地库、网易云、QQ音乐、Spotify、电台</div>
         </div>

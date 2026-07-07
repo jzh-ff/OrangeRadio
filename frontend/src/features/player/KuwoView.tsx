@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { EmptyStateIcon } from "../../components/EmptyState";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -12,8 +11,8 @@ import "../../styles/library.css";
 
 function coverOf(t: Track): string | null { return getCoverUrl(t); }
 
-/** 酷狗音乐视图（免登录搜索 + 播放） */
-export function KugouView() {
+/** 酷我音乐视图（免登录搜索 + 播放） */
+export function KuwoView() {
   const [songs, setSongs] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
@@ -31,7 +30,7 @@ export function KugouView() {
     setPage(1);
     setHasMore(true);
     try {
-      const list = await invoke<Track[]>("kugou_search", { keyword, page: 1 });
+      const list = await invoke<Track[]>("kuwo_search", { keyword, page: 1 });
       if (list.length === 0) {
         setError("搜索无结果");
         setHasMore(false);
@@ -51,7 +50,7 @@ export function KugouView() {
     const next = page + 1;
     setLoading(true);
     try {
-      const list = await invoke<Track[]>("kugou_search", { keyword, page: next });
+      const list = await invoke<Track[]>("kuwo_search", { keyword, page: next });
       if (list.length === 0) setHasMore(false);
       else {
         setSongs((prev) => [...prev, ...list]);
@@ -78,7 +77,7 @@ export function KugouView() {
           </svg>
           <input
             className="library__search-input"
-            placeholder="搜索酷狗音乐…"
+            placeholder="搜索酷我音乐…"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
@@ -90,16 +89,21 @@ export function KugouView() {
       </div>
 
       {error && (
-        <div style={{ padding: 16, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 10, marginBottom: 16 }}>
+        <div className="library__error">
           {error}
         </div>
       )}
 
       {songs.length === 0 && !loading ? (
         <div className="library__empty">
-          <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
-          <div className="library__empty-title">{error ? "加载失败" : "酷狗音乐"}</div>
-          <div className="library__empty-desc">输入关键词搜索歌曲</div>
+          <div className="library__empty-icon">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5" />
+              <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </div>
+          <div className="library__empty-title">{error ? "加载失败" : "酷我音乐"}</div>
+          <div className="library__empty-desc">输入关键词搜索，曲库千万级</div>
         </div>
       ) : (
         <div className="library__list">
@@ -122,7 +126,7 @@ export function KugouView() {
                   <span className="col-title" onClick={() => handlePlay(t, i)}>
                     {coverOf(t) && <img src={coverOf(t)!} alt="" className="col-title__cover" loading="lazy" />}
                     <span className="col-title__txt">{t.meta.title}</span>
-                    <span className="q-badge q-high">KG</span>
+                    <span className="q-badge q-high">KW</span>
                   </span>
                   <span className="col-artist">{t.meta.artist}</span>
                   <span className="col-album">{t.meta.album || "—"}</span>

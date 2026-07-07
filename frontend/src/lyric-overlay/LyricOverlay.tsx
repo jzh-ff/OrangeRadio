@@ -304,7 +304,7 @@ export function LyricOverlay() {
         {/* 歌词 5 行 */}
         <div className="lyric-overlay__lines" key={lineKey}>
           {empty ? (
-            <div className="lyric-line lyric-line--empty">♪  暂无歌词</div>
+            <div className="lyric-line lyric-line--empty">暂无歌词</div>
           ) : (
             visibleLines.map(({ line, index }) => {
               const isCur = index === activeIndex;
