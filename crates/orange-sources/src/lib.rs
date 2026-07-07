@@ -17,8 +17,10 @@
 
 pub mod auth_store;
 pub mod gequbao;
+pub mod kugou;
 pub mod local;
 pub mod podcast;
+pub mod qishui;
 pub mod weapi;
 pub mod web_radio;
 // 第三方平台 v0.3 实现
@@ -28,9 +30,11 @@ pub mod spotify;
 
 pub use auth_store::{AuthStore, StoredAuth};
 pub use gequbao::GequbaoSource;
+pub use kugou::KugouSource;
 pub use netease::NeteaseSource;
 pub use podcast::PodcastSource;
 pub use qqmusic::QqMusicSource;
+pub use qishui::QishuiSource;
 pub use spotify::SpotifySource;
 pub use web_radio::WebRadioSource;
 

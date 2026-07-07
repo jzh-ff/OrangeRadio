@@ -35,6 +35,8 @@ const SOURCE_LABEL: Record<string, string> = {
   local: "LOC",
   netease_cloud_music: "WY",
   qq_music: "QQ",
+  kugou: "KG",
+  qishui: "QS",
   spotify: "SP",
   apple_music: "AM",
   web_radio: "FM",
