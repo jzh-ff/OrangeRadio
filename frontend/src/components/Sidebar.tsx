@@ -4,6 +4,7 @@ import { usePlayerStore } from "../stores/playerStore";
 import { useSearchStore } from "../stores/searchStore";
 import { getCoverUrl, DEFAULT_COVER } from "../features/player/useCover";
 import { engineRef } from "../App";
+import { getLlmConfig } from "../lib/llmConfig";
 import { SpectrumPulse } from "./SpectrumPulse";
 import "../styles/sidebar.css";
 
@@ -118,7 +119,7 @@ export function Sidebar() {
       usePlayerStore.getState().setSmartAction("recommend");
       setView("player");
       setSubView("home");
-      invoke<unknown[]>("recommend_next", { limit: 10 })
+      invoke<unknown[]>("recommend_next", { limit: 10, llmConfig: getLlmConfig() })
         .then((list) => {
           const tracks = list as import("../stores/libraryStore").Track[];
           if (tracks.length) {

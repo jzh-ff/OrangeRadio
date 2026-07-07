@@ -75,11 +75,68 @@ impl CloudLlmProvider {
 
 #[async_trait]
 impl LlmProvider for CloudLlmProvider {
-    async fn chat(&self, _request: &LlmRequest) -> orange_core::Result<LlmResponse> {
-        // v0.5 实现完整 OpenAI 兼容请求
-        Err(orange_core::CoreError::AiService(
-            "云端 LLM 尚未实现 (v0.5)".into(),
-        ))
+    async fn chat(&self, request: &LlmRequest) -> orange_core::Result<LlmResponse> {
+        // OpenAI 兼容协议 POST {base}/chat/completions
+        // 覆盖 GLM / OpenAI / DeepSeek / 通义千问 等所有兼容端点
+        let url = format!(
+            "{}/chat/completions",
+            self.api_base.trim_end_matches('/')
+        );
+        // 组装 messages（system 可选 + user 必须）
+        let mut messages = Vec::new();
+        if let Some(sys) = &request.system {
+            messages.push(serde_json::json!({"role": "system", "content": sys}));
+        }
+        messages.push(serde_json::json!({"role": "user", "content": &request.user}));
+        let body = serde_json::json!({
+            "model": &self.model,
+            "messages": messages,
+            "temperature": request.temperature.unwrap_or(0.7),
+            "max_tokens": request.max_tokens.unwrap_or(2048),
+        });
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| orange_core::CoreError::AiService(format!("LLM 请求失败: {e}")))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| orange_core::CoreError::AiService(format!("LLM 响应读取失败: {e}")))?;
+        if !status.is_success() {
+            return Err(orange_core::CoreError::AiService(format!(
+                "LLM HTTP {status}: {}",
+                &text[..text.len().min(300)]
+            )));
+        }
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            orange_core::CoreError::AiService(format!("LLM 响应非 JSON: {e}"))
+        })?;
+        // OpenAI 响应：choices[0].message.content
+        let content = v
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string();
+        if content.is_empty() {
+            return Err(orange_core::CoreError::AiService(
+                "LLM 返回空内容".into(),
+            ));
+        }
+        // 解析 usage（可选）
+        let usage = v.get("usage").and_then(|u| {
+            let prompt = u.get("prompt_tokens").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+            let completion = u.get("completion_tokens").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+            Some(TokenUsage { prompt, completion })
+        });
+        Ok(LlmResponse { text: content, usage })
     }
 }
 

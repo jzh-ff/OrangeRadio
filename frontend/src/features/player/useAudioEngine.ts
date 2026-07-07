@@ -4,6 +4,7 @@ import { usePlayerStore } from "../../stores/playerStore";
 import { writeSpectrum, writeBeat, readBeat, resetSpectrumBus } from "../../stores/spectrumBus";
 import type { Track } from "../../stores/libraryStore";
 import { recordPlayback } from "../../lib/playback";
+import { getLlmConfig } from "../../lib/llmConfig";
 import { toWebviewUrl } from "../../lib/webviewUrl";
 import { scheduleBeatCameraFromHit, updateBeatCam, smoothBeatCam } from "../../lib/beatCam";
 
@@ -240,6 +241,7 @@ export function useAudioEngine(autoNext?: () => void) {
       void invoke<Track[]>("recommend_next", {
         limit: 1,
         currentTrackId: (currentTrack as { id?: string } | null)?.id,
+        llmConfig: getLlmConfig(),
       })
         .then((list) => {
           if (list[0]) {

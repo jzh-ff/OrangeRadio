@@ -1196,11 +1196,11 @@ pub async fn recommend_next(
     state: tauri::State<'_, AppState>,
     limit: Option<u32>,
     current_track_id: Option<String>,
+    mood: Option<String>,
+    llm_config: Option<LlmConfig>,
 ) -> Result<Vec<Track>, String> {
-    use orange_core::recommendation::RecommendContext;
-    // 把所有同步 SQLite + 内存聚合（aggregate_user_profile / recent_track_ids /
-    // recent_feedback / all）打包进一次 spawn_blocking，避免多次阻塞 worker。
-    // recommender 的推荐算法是 async 的，在 spawn_blocking 之外 await。
+    use orange_core::recommendation::{Mood, RecommendContext, Scene};
+    // 把所有同步 SQLite + 内存聚合打包进一次 spawn_blocking
     let library = state.library.clone();
     let prep = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let profile = library
@@ -1218,29 +1218,77 @@ pub async fn recommend_next(
         .as_ref()
         .and_then(|id| all.iter().find(|t| t.id.0.to_string() == *id).cloned());
     let n = limit.unwrap_or(1).max(1);
+
+    // 时段推导场景（0-6/22+ = Sleep，7-9 = Commute，9-18 = Work，18-22 = Relax）
+    let now = chrono::Utc::now();
+    let hour = now.format("%H").to_string().parse::<u32>().unwrap_or(12);
+    let scene = match hour {
+        0..=6 | 22..=23 => Some(Scene::Sleep),
+        7..=9 => Some(Scene::Commute),
+        10..=18 => Some(Scene::Work),
+        _ => Some(Scene::Relax),
+    };
+    // 情绪字符串 → Mood enum（前端传 "energetic" 等 snake_case）
+    let mood = mood.as_deref().and_then(|s| match s.to_lowercase().as_str() {
+        "happy" => Some(Mood::Happy),
+        "sad" => Some(Mood::Sad),
+        "calm" => Some(Mood::Calm),
+        "energetic" => Some(Mood::Energetic),
+        "focused" => Some(Mood::Focused),
+        "romantic" => Some(Mood::Romantic),
+        "nostalgic" => Some(Mood::Nostalgic),
+        "melancholy" | "melancholic" => Some(Mood::Melancholy),
+        _ => None,
+    });
+
     let ctx = RecommendContext {
-        now: chrono::Utc::now(),
+        now,
         weather: None,
-        mood: None,
-        scene: None,
+        mood,
+        scene,
         recent_track_ids: recent,
         limit: n,
         candidates: all,
     };
+
+    // 若前端传了 llm_config，临时构造带 LLM 的 recommender（覆盖默认 local 引擎）
+    let recommender: std::sync::Arc<dyn orange_core::recommendation::RecommendationEngine> =
+        if let Some(cfg) = llm_config {
+            if !cfg.api_key.is_empty() {
+                let provider: std::sync::Arc<dyn orange_ai::LlmProvider> =
+                    std::sync::Arc::new(orange_ai::CloudLlmProvider::new(
+                        cfg.api_base,
+                        cfg.api_key,
+                        cfg.model,
+                    ));
+                std::sync::Arc::new(orange_ai::AiRecommendationEngine::with_llm(provider))
+            } else {
+                state.recommender.clone()
+            }
+        } else {
+            state.recommender.clone()
+        };
+
     if n == 1 {
-        let t = state
-            .recommender
+        let t = recommender
             .next_understand_you(&profile, &ctx, current.as_ref(), &feedback)
             .await
             .map_err(|e| e.to_string())?;
         Ok(vec![t])
     } else {
-        state
-            .recommender
+        recommender
             .recommend(&profile, &ctx)
             .await
             .map_err(|e| e.to_string())
     }
+}
+
+/// LLM 配置（前端从 localStorage 读取后传入 recommend_next）
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct LlmConfig {
+    pub api_base: String,
+    pub api_key: String,
+    pub model: String,
 }
 
 /// 分析本地音频文件的节拍图谱（驱动电影运镜预计算）。
@@ -1298,6 +1346,47 @@ pub async fn analyze_beatmap(
         beatmap.bpm
     );
     Ok(json)
+}
+
+/// 分析单首曲目的 BPM 并写回库（标签缺失时音频分析兜底，延迟填充用）
+///
+/// 流程：取 track → 已有 bpm 则秒返 → 否则 spawn_blocking 解码 + 节拍分析 → update_track_bpm
+#[tauri::command]
+pub async fn analyze_track_bpm(
+    state: tauri::State<'_, AppState>,
+    track_id: String,
+) -> Result<f32, String> {
+    // 查曲目
+    let track = state
+        .library
+        .all()
+        .into_iter()
+        .find(|t| t.id.0.to_string() == track_id)
+        .ok_or_else(|| format!("曲目不存在: {track_id}"))?;
+    // 标签已有 bpm → 秒返
+    if let Some(bpm) = track.meta.bpm {
+        return Ok(bpm);
+    }
+    // 本地文件路径
+    let path = std::path::PathBuf::from(&track.source_track_id);
+    if !path.is_file() {
+        return Err("非本地文件，无法分析 BPM".into());
+    }
+    // spawn_blocking 跑解码 + 节拍分析（CPU 密集）
+    let bpm = tokio::task::spawn_blocking(move || -> Result<f32, String> {
+        let audio = orange_audio::decode_file(&path).map_err(|e| e.to_string())?;
+        let beatmap = orange_audio::analyze_beatmap(&audio);
+        Ok(beatmap.bpm)
+    })
+    .await
+    .map_err(|e| format!("BPM 分析线程失败: {e}"))??;
+    // 写回库（DB + 内存）
+    state
+        .library
+        .update_track_bpm(&track_id, bpm)
+        .map_err(|e| e.to_string())?;
+    tracing::info!("BPM 分析完成: {} → {:.1}", track.meta.title, bpm);
+    Ok(bpm)
 }
 
 /// FNV-1a 64bit（缓存键用，刻意不引新依赖）
@@ -1959,6 +2048,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             get_user_profile,
             recommend_next,
             analyze_beatmap,
+            analyze_track_bpm,
             cover_proxy,
             hue_discover,
             hue_pair,
