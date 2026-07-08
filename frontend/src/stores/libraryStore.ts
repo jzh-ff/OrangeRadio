@@ -25,7 +25,9 @@ export type SourceKind =
   | "kuwo"
   | "qishui"
   | "gequbao"
-  | "plugin";
+  | "plugin"
+  /** 内置 demo 曲（应用打包自带，首启自动播放用） */
+  | "builtin";
 
 /** 曲目（与 Rust Track 对应的精简结构） */
 export interface Track {

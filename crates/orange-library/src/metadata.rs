@@ -124,6 +124,100 @@ pub fn local_source_id() -> SourceId {
     SOURCE_ID_LOCAL
 }
 
+/// 仅读取音频文件的元数据 (TrackMeta)，不构造完整 Track。
+///
+/// 用于内置 demo 曲等场景：不需要 source_id / format / quality 字段，
+/// 只关心 title / artist / album / duration_secs / lyrics / artwork。
+/// 复用 [`read_track`] 的 ID3 读取 + 封面提取逻辑，但绕开 Track 构造。
+pub fn read_track_meta(path: &Path, covers_dir: Option<&Path>) -> TrackMeta {
+    match lofty::read_from_path(path) {
+        Ok(tagged_file) => {
+            let mut meta = TrackMeta::default();
+            if let Some(tag) = tagged_file.primary_tag() {
+                meta.title = tag
+                    .get(&ItemKey::TrackTitle)
+                    .and_then(|v| v.value().text().map(str::to_string))
+                    .unwrap_or_else(|| {
+                        path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("未知曲目")
+                            .to_string()
+                    });
+
+                meta.artist = tag
+                    .get(&ItemKey::TrackArtist)
+                    .or_else(|| tag.get(&ItemKey::AlbumArtist))
+                    .and_then(|v| v.value().text().map(str::to_string))
+                    .unwrap_or_else(|| "未知艺术家".into());
+
+                meta.album = tag
+                    .get(&ItemKey::AlbumTitle)
+                    .and_then(|v| v.value().text().map(str::to_string));
+
+                meta.album_artist = tag
+                    .get(&ItemKey::AlbumArtist)
+                    .and_then(|v| v.value().text().map(str::to_string));
+
+                meta.year = tag
+                    .get(&ItemKey::Year)
+                    .and_then(|v| v.value().text())
+                    .and_then(|s| s.parse().ok());
+
+                meta.track_number = tag
+                    .get(&ItemKey::TrackNumber)
+                    .and_then(|v| v.value().text())
+                    .and_then(|s| s.parse().ok());
+
+                meta.genre = tag
+                    .get(&ItemKey::Genre)
+                    .and_then(|v| v.value().text().map(|s| vec![s.to_string()]))
+                    .unwrap_or_default();
+
+                meta.bpm = tag
+                    .get(&ItemKey::Bpm)
+                    .and_then(|v| v.value().text())
+                    .and_then(|s| s.parse::<f32>().ok());
+
+                meta.composer = tag
+                    .get(&ItemKey::Composer)
+                    .and_then(|v| v.value().text().map(str::to_string));
+
+                if !tag.pictures().is_empty() {
+                    if let Some(pic) = tag.pictures().first() {
+                        if let Some(cover_path) =
+                            extract_cover_to_disk(pic.data(), pic.mime_type(), covers_dir)
+                        {
+                            meta.artwork = Some(Artwork {
+                                source: ArtworkSource::Local { path: cover_path },
+                                dominant_color: None,
+                                palette: vec![],
+                            });
+                        }
+                    }
+                }
+            }
+            // 时长（AudioFile trait）
+            let d = tagged_file.properties().duration().as_secs_f64();
+            if d > 0.0 {
+                meta.duration_secs = Some(d);
+            }
+            meta
+        }
+        Err(e) => {
+            tracing::warn!("read_track_meta 失败 {:?}: {}", path, e);
+            TrackMeta {
+                title: path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("未知曲目")
+                    .to_string(),
+                artist: "未知艺术家".into(),
+                ..Default::default()
+            }
+        }
+    }
+}
+
 /// 封面图提取到磁盘缓存目录
 ///
 /// 策略：用图片字节内容的 FNV-1a 哈希命名（避免重复提取同一张图）。
