@@ -207,7 +207,8 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
         ? "kuwo_lyric"
         : null;
     if (!cmd) {
-      // 本地曲目：用扫描时提取的内嵌歌词（USLT/LRC）
+      // 本地曲目 / 内置 demo 曲：用元数据里塞进来的 LRC 歌词
+      // （本地 = lofty 读 USLT；builtin = Rust 端读 resources/demo/track.lrc）
       const lrc = (currentTrack as { meta?: { lyrics?: string | null } }).meta?.lyrics;
       if (lrc) setLyricData({ raw_lrc: lrc, translated_lrc: null });
       return;
