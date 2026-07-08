@@ -43,6 +43,8 @@ pub enum SourceKind {
     Qishui,
     /// 自定义 / 插件音源
     Plugin,
+    /// 内置演示曲目（应用打包的 demo 曲，首启自动播放用）
+    Builtin,
 }
 
 /// 搜索查询
