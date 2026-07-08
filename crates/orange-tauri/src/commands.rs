@@ -2,10 +2,11 @@
 
 use crate::AppState;
 use orange_core::source::{AudioSource, SearchQuery};
-use orange_core::track::Track;
+use orange_core::track::{Track, TrackMeta};
 use orange_library::{LibraryScanner, ScanOptions};
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
+use tauri::path::BaseDirectory;
 
 /// 健康检查
 #[tauri::command]
@@ -2203,6 +2204,63 @@ pub fn studio_project_load(path: String) -> Result<serde_json::Value, String> {
     serde_json::to_value(&project).map_err(|e| e.to_string())
 }
 
+/// 内置 demo 曲元信息（首启自动播放用）
+///
+/// 从打包到安装包中的 `resources/demo/` 目录读取元数据。
+/// - `track.lrc`：UTF-8 编码的 LRC 歌词（无 BOM）
+/// - `cover.jpg`：封面图
+///
+/// 返回的 `cover_path` 是绝对路径，前端用 `convertFileSrc()` 转 `asset://` 后
+/// 才能喂给 `<img>` / Web Audio。
+#[tauri::command]
+pub async fn builtin_track_meta(app: AppHandle) -> Result<TrackMeta, String> {
+    let dir = app
+        .path()
+        .resolve("resources/demo", BaseDirectory::Resource)
+        .map_err(|e| format!("resolve demo resource dir failed: {e}"))?;
+    let lrc_path = dir.join("track.lrc");
+    let cover_path = dir.join("cover.jpg");
+
+    let lyrics = match std::fs::read_to_string(&lrc_path) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            tracing::warn!("builtin demo 歌词读取失败 {}: {}", lrc_path.display(), e);
+            None
+        }
+    };
+
+    let mut meta = TrackMeta {
+        title: "OrangeRadio Demo".into(),
+        artist: "OrangeStudio".into(),
+        album: Some("Built-in".into()),
+        duration_secs: Some(30.0),
+        lyrics,
+        ..Default::default()
+    };
+    // 把封面绝对路径塞到 meta.artwork 让前端能拿到
+    if cover_path.exists() {
+        meta.artwork = Some(orange_core::track::Artwork {
+            source: orange_core::track::ArtworkSource::Local {
+                path: cover_path.to_string_lossy().into_owned(),
+            },
+            dominant_color: None,
+            palette: vec![],
+        });
+    }
+
+    Ok(meta)
+}
+
+/// 内置 demo 曲音频文件绝对路径（前端 convertFileSrc 用）
+#[tauri::command]
+pub async fn builtin_stream(app: AppHandle) -> Result<String, String> {
+    let p = app
+        .path()
+        .resolve("resources/demo/track.mp3", BaseDirectory::Resource)
+        .map_err(|e| format!("resolve demo track failed: {e}"))?;
+    Ok(p.to_string_lossy().into_owned())
+}
+
 /// 注册所有命令到 Tauri Builder
 pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     let state = AppState::default();
@@ -2310,6 +2368,8 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             studio_separate_vocal,
             studio_project_save,
             studio_project_load,
+            builtin_track_meta,
+            builtin_stream,
         ])
         .setup(move |app| {
             // ⚠️ Tauri 2 的 setup 闭包本身是**同步上下文**——`tokio::spawn` 会 panic。
