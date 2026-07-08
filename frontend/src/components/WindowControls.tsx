@@ -8,9 +8,14 @@ import "./window-controls.css";
  * 替代旧 TitleBar 的窗口操作功能。固定在右上角，只占 ~96×32px，
  * 跟 Sidebar 顶部留 8px 间距，跟全局暗色玻璃语言统一。
  *
- * 关闭按钮：在 Rust 侧被拦截 → 隐藏到托盘（不退出进程）。
+ * 关闭按钮：交给外部 onRequestClose 回调（App 端弹 CloseConfirmDialog
+ * 让用户选"最小化到托盘 / 退出 / 取消"），不再直接 win.close()。
  */
-export function WindowControls() {
+export function WindowControls({
+  onRequestClose,
+}: {
+  onRequestClose: () => void;
+}) {
   const [isMaximized, setIsMaximized] = useState(false);
   const win = getCurrentWindow();
 
@@ -28,7 +33,7 @@ export function WindowControls() {
 
   const onMinimize = () => win.hide(); // 隐藏到托盘（不是任务栏）
   const onToggleMax = () => win.toggleMaximize();
-  const onClose = () => win.close(); // Rust 侧拦截：hide() 代替 exit
+  const onClose = () => onRequestClose(); // 交给上层弹 CloseConfirmDialog
 
   return (
     <div className="window-controls" data-tauri-drag-region={false}>
@@ -65,7 +70,7 @@ export function WindowControls() {
         type="button"
         className="window-controls__btn window-controls__btn--close"
         onClick={onClose}
-        title="关闭（最小化到托盘）"
+        title="关闭（选择最小化到托盘或退出）"
         aria-label="关闭窗口"
       >
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
