@@ -44,6 +44,13 @@ try {
   windowLabel = "main";
 }
 
+// lyric-overlay 窗口：去掉 #root 的"卡片化"背景/圆角/阴影,
+// 否则 global.css 给主窗口加的 #root { background: var(--bg-0); border-radius: 34px; clip-path; box-shadow }
+// 会被这个窗口继承,导致悬浮窗背景是深色实心,无法透出桌面。
+if (windowLabel === "lyric-overlay") {
+  document.body.classList.add("window-lyric-overlay");
+}
+
 // 主窗口入口：App 始终挂载，Splash 叠在上层淡出（淡出过程露出 App，视觉连续）
 function AppEntry() {
   const [entered, setEntered] = useState(false);

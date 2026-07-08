@@ -101,10 +101,13 @@ export async function closeLyricOverlay(): Promise<void> {
   if (win) await win.close().catch(() => {});
 }
 
-/** 设置鼠标穿透：locked=true 整窗忽略鼠标事件（穿透到下层应用），false 恢复。 */
-export async function setLyricLock(locked: boolean): Promise<void> {
-  const win = await getLyricOverlay();
-  if (win) await win.setIgnoreCursorEvents(locked).catch(() => {});
+/**
+ * 锁定/解锁入口已改为悬浮窗中键单击,不再通过"鼠标穿透"实现。
+ * 保留 setLyricLock 仅为兼容旧调用,实际不操作窗口。
+ */
+export async function setLyricLock(_locked: boolean): Promise<void> {
+  // no-op：锁定不再依赖 setIgnoreCursorEvents（那样会拦截中键,导致无法解锁）。
+  // 歌词文字通过 CSS pointer-events: none 让鼠标穿透到下层应用,控件条仍可交互。
 }
 
 /** 当前是否锁定（穿透）——读 localStorage 记忆（与 setLyricLock 配合由调用方维护） */

@@ -57,8 +57,6 @@ async function fetchLyric(
 interface LyricSettings {
   /** 字号系数（0.7 ~ 1.5） */
   scale: number;
-  /** 不透明度（0.4 ~ 1.0） */
-  opacity: number;
   /** 是否显示翻译（双语） */
   showTranslation: boolean;
   /** 主题预设：default / warm / cool / mono */
@@ -68,7 +66,6 @@ interface LyricSettings {
 const SETTINGS_KEY = "orangeradio_lyric_settings_v1";
 const DEFAULT_SETTINGS: LyricSettings = {
   scale: 1,
-  opacity: 0.95,
   showTranslation: true,
   theme: "default",
 };
@@ -114,18 +111,6 @@ const Icons = {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <rect x="6" y="5" width="4" height="14" rx="1" />
       <rect x="14" y="5" width="4" height="14" rx="1" />
-    </svg>
-  ),
-  Lock: (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="11" width="16" height="10" rx="2" />
-      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-    </svg>
-  ),
-  Unlock: (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="11" width="16" height="10" rx="2" />
-      <path d="M8 11V7a4 4 0 0 1 7.5-2" />
     </svg>
   ),
   Settings: (
@@ -242,17 +227,42 @@ export function LyricOverlay() {
     }
   };
 
+  // 切换锁定/解锁(中键点击触发)。不再依赖鼠标穿透——歌词文字通过 CSS pointer-events:none
+  // 透出到下层应用,中键始终能在 webview 内触发。
   const toggleLock = async () => {
     const next = !locked;
     setLocked(next);
     persistLyricLock(next);
-    await setLyricLock(next);
+    await setLyricLock(next); // no-op,仅更新视觉状态
     void emit("lyric:lock-change", { locked: next });
+  };
+
+  // 中键点击 → 切换锁定/解锁。e.button === 1 是中键
+  const onAuxClick = (e: React.MouseEvent) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      void toggleLock();
+    }
   };
 
   const sendCmd = (cmd: "toggle" | "close" | "prev" | "next") => {
     void emit("lyric:cmd", { cmd });
   };
+
+  // 监听来自主窗口的控件命令（不再处理 unlock；解锁入口改为悬浮窗中键单击）
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      unlisten = await listen<{ cmd: string }>("lyric:cmd", (e) => {
+        // 所有命令（toggle/close/prev/next）由主窗口侧 useLyricBridge 统一处理，
+        // 悬浮窗不再重复监听，避免逻辑双跑
+        void e;
+      });
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // 上下文：当前行 + 上下各 2 行（5 行总览）
   const CONTEXT_RANGE = 2;
@@ -280,26 +290,24 @@ export function LyricOverlay() {
         "--lyric-progress": `${progressPct}%`,
         "--lyric-beat-scale": beatScale,
         "--lyric-scale": settings.scale,
-        "--lyric-opacity": settings.opacity,
         "--lyric-primary": theme.primary,
         "--lyric-secondary": theme.secondary,
         "--lyric-highlight": theme.highlight,
         "--lyric-glow": theme.glow,
       } as React.CSSProperties}
+      onAuxClick={onAuxClick}
     >
+      {/* 锁定/解锁入口改为悬浮窗中键单击,不再渲染解锁按钮 */}
+
       {/* 主体：5 行上下文（透明背景） */}
       <div
         className="lyric-overlay__stage"
         data-tauri-drag-region
         onPointerUp={onDragEnd}
       >
-        {/* 顶部装饰：拖拽手柄 + 锁定状态指示（hover 才显） */}
-        <div className="lyric-overlay__drag-handle" data-tauri-drag-region>
-          <span className="lyric-overlay__drag-dots">{Icons.Drag}</span>
-          <span className="lyric-overlay__lock-state">
-            {locked ? "LOCKED · 鼠标穿透" : "UNLOCKED · 可交互"}
-          </span>
-        </div>
+        {/* 顶部不再放 "LOCKED/UNLOCKED · 鼠标穿透" 玻璃卡片——
+            锁定时鼠标穿透、卡片也点不到，纯装饰却占视觉中心。
+            锁定态提示完全交给主窗口 PlayerBar 的"词"按钮（标题"桌面歌词已锁定·点此解锁"）。 */}
 
         {/* 歌词 5 行 */}
         <div className="lyric-overlay__lines" key={lineKey}>
@@ -329,7 +337,10 @@ export function LyricOverlay() {
                     </span>
                   )}
                   {showTrans && (
-                    <div className={`lyric-line__trans ${isCur ? "lyric-line__trans--cur" : ""}`}>
+                    <div
+                      className={`lyric-line__trans ${isCur ? "lyric-line__trans--cur" : ""}`}
+                      data-text={line.translation}
+                    >
                       {line.translation}
                     </div>
                   )}
@@ -377,14 +388,6 @@ export function LyricOverlay() {
             </button>
             <button
               className="lyric-btn"
-              onClick={toggleLock}
-              title="锁定（鼠标穿透）"
-              aria-label="锁定"
-            >
-              {locked ? Icons.Lock : Icons.Unlock}
-            </button>
-            <button
-              className="lyric-btn"
               onClick={() => sendCmd("close")}
               title="关闭桌面歌词"
               aria-label="关闭"
@@ -410,19 +413,6 @@ export function LyricOverlay() {
               className="lyric-setting__range"
             />
             <span className="lyric-setting__value">{settings.scale.toFixed(2)}×</span>
-          </div>
-          <div className="lyric-setting">
-            <label className="lyric-setting__label">不透明度</label>
-            <input
-              type="range"
-              min="0.4"
-              max="1"
-              step="0.05"
-              value={settings.opacity}
-              onChange={(e) => setSettings((s) => ({ ...s, opacity: parseFloat(e.target.value) }))}
-              className="lyric-setting__range"
-            />
-            <span className="lyric-setting__value">{Math.round(settings.opacity * 100)}%</span>
           </div>
           <div className="lyric-setting">
             <label className="lyric-setting__label">翻译</label>
