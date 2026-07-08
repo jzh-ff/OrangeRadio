@@ -110,6 +110,19 @@ impl NeteaseSource {
         self.quality_level.read().await.clone()
     }
 
+    /// 当前播放音质映射为统一的 Quality 枚举
+    async fn track_quality(&self) -> orange_core::audio_format::Quality {
+        use orange_core::audio_format::Quality;
+        match self.quality().await.as_str() {
+            "standard" => Quality::Standard,
+            "higher" | "exhigh" => Quality::High,
+            "lossless" => Quality::Lossless,
+            "hires" => Quality::HiRes,
+            "jyeffect" | "jymaster" | "sky" | "dolby" => Quality::Master,
+            _ => Quality::High,
+        }
+    }
+
     /// 后台健康检查循环：每 6 小时调一次 `/weapi/w/nuser/account/get` 验证 cookie
     /// 失败 → 清 cookie + 标记未登录 + emit AuthExpired
     ///
@@ -275,10 +288,11 @@ impl NeteaseSource {
 
         let mut tracks = Vec::new();
         if let Some(list) = resp["data"]["dailySongs"].as_array() {
+            let q = self.track_quality().await;
             for s in list {
                 let mut t = parse_netease_song(s, self.id);
                 t.format = orange_core::audio_format::AudioFormat::Mp3;
-                t.quality = orange_core::audio_format::Quality::High;
+                t.quality = q;
                 tracks.push(t);
             }
         }
@@ -328,10 +342,11 @@ impl NeteaseSource {
 
         let mut tracks = Vec::new();
         if let Some(list) = resp["playlist"]["tracks"].as_array() {
+            let q = self.track_quality().await;
             for s in list {
                 let mut t = parse_netease_song(s, self.id);
                 t.format = orange_core::audio_format::AudioFormat::Mp3;
-                t.quality = orange_core::audio_format::Quality::High;
+                t.quality = q;
                 tracks.push(t);
             }
         }
@@ -347,10 +362,11 @@ impl NeteaseSource {
 
         let mut tracks = Vec::new();
         if let Some(list) = resp["playlist"]["tracks"].as_array() {
+            let q = self.track_quality().await;
             for s in list {
                 let mut t = parse_netease_song(s, self.id);
                 t.format = orange_core::audio_format::AudioFormat::Mp3;
-                t.quality = orange_core::audio_format::Quality::High;
+                t.quality = q;
                 tracks.push(t);
             }
         }
@@ -731,7 +747,15 @@ impl AudioSource for NeteaseSource {
         let result = resp.result.unwrap_or_default();
         let songs = result.songs.unwrap_or_default();
         let total = result.songCount.unwrap_or(0);
-        let tracks = songs.iter().map(|s| song_to_track(s, self.id)).collect();
+        let q = self.track_quality().await;
+        let tracks = songs
+            .iter()
+            .map(|s| {
+                let mut t = song_to_track(s, self.id);
+                t.quality = q;
+                t
+            })
+            .collect();
         Ok(SearchResult {
             tracks,
             total,
