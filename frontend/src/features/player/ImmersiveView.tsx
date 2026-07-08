@@ -1,22 +1,21 @@
 /**
- * 主页沉浸模式（Immersive View）
+ * 主页沉浸模式（Immersive View）v2
  *
  * 进入后：
  *   - 隐藏侧栏 / 顶栏 / 底栏 / 导航 / 壁纸侧栏工具
- *   - 全屏展示：封面作为模糊壁纸背景 + 中央巨字歌词舞台
- *   - 歌词随播放进度自动滚动、当前行高亮
- *   - Esc / 右上角 × 退出
- *
- * 跟 FullPlayer cinema 模式的核心差异：
- *   - cinema 模式在 FullPlayer overlay 内部，是"全屏播放详情页"的一个布局
- *   - 沉浸模式是**整个 app** 切换到只展示壁纸+歌词，隐藏所有 chrome
+ *   - 全屏展示：可选背景源（专辑封面 / 我的壁纸 / 动态粒子 / 纯色）
+ *   - 中央巨字歌词舞台，支持字号/对齐/翻译切换
+ *   - 悬浮控制面板：背景源 + 歌词样式
+ *   - Esc 退出 / Space 播放暂停 / ←→ 快进快退
  */
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore } from "../../stores/playerStore";
 import { useLyrics } from "./useLyrics";
 import { getCoverUrl } from "./useCover";
 import { engineRef } from "../../App";
+import { ImmersiveBackground } from "./immersive/ImmersiveBackground";
+import { ImmersiveControls } from "./immersive/ImmersiveControls";
 import "../../styles/immersive.css";
 
 interface LyricData { raw_lrc: string; translated_lrc: string | null }
@@ -33,17 +32,31 @@ export function ImmersiveView() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const position = usePlayerStore((s) => s.position);
+  const duration = usePlayerStore((s) => s.duration);
+  const vp = usePlayerStore((s) => s.visualParams);
+  const dominantColor = usePlayerStore((s) => s.dominantColor);
+  // AUTO 模式：主色 + 暖白 60:40 混合（深色主色下仍可读），同时给一个保底亮度
+  const effectiveLyricColor = vp.lyricColorAuto
+    ? (dominantColor
+        ? `color-mix(in oklch, rgb(${dominantColor.join(",")}) 60%, #fff7e0 40%)`
+        : "#fff7e0")
+    : vp.lyricColor;
 
   const [lyricData, setLyricData] = useState<LyricData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showControls, setShowControls] = useState(false);
+  const [showHeader, setShowHeader] = useState(true);
+  const headerTimer = useRef<number>(0);
 
-  // 拉歌词（与 FullPlayer cinema 模式同源：netease / qqmusic / 本地内嵌）
+  // 拉歌词（网易云 / QQ / 本地内嵌）
   useEffect(() => {
     if (!immersiveMode || !currentTrack) { setLyricData(null); return; }
     const tid = (currentTrack as { source_track_id?: string }).source_track_id || currentTrack.id;
     const kind = (currentTrack as { source_kind?: string }).source_kind;
     const cmd = kind === "netease_cloud_music" ? "netease_lyric"
       : kind === "qq_music" ? "qqmusic_lyric"
+      : kind === "kugou" ? "kugou_lyric"
+      : kind === "kuwo" ? "kuwo_lyric"
       : null;
     if (!cmd) {
       const lrc = (currentTrack as { meta?: { lyrics?: string | null } }).meta?.lyrics;
@@ -60,7 +73,7 @@ export function ImmersiveView() {
   // 切歌时清空旧歌词
   useEffect(() => { setLyricData(null); }, [currentTrack?.id]);
 
-  const { lines, activeIndex } = useLyrics(lyricData?.raw_lrc ?? null, lyricData?.translated_lrc ?? null);
+  const { lines, activeIndex, activeProgress } = useLyrics(lyricData?.raw_lrc ?? null, lyricData?.translated_lrc ?? null);
 
   // 滚动容器 + 当前行 ref（自动滚动到当前行居中）
   const listRef = useRef<HTMLDivElement>(null);
@@ -71,12 +84,11 @@ export function ImmersiveView() {
     const container = listRef.current;
     const activeLine = activeLineRef.current;
     if (!container || !activeLine) return;
-    // 计算目标 scrollTop：让当前行垂直居中
     const target = activeLine.offsetTop - container.clientHeight / 2 + activeLine.clientHeight / 2;
     container.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   }, [activeIndex, immersiveMode]);
 
-  // Esc 退出 / Space 播放暂停
+  // 键盘：Esc 退出 / Space 播放暂停 / ←→ 快进快退
   useEffect(() => {
     if (!immersiveMode) return;
     const onKey = (e: KeyboardEvent) => {
@@ -86,23 +98,32 @@ export function ImmersiveView() {
       } else if (e.code === "Space") {
         e.preventDefault();
         engineRef.toggle();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        engineRef.seek(position + 5);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        engineRef.seek(Math.max(0, position - 5));
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [immersiveMode, setImmersiveMode]);
+  }, [immersiveMode, setImmersiveMode, position]);
 
-  // 飘浮粒子：30 个 ♪♫♬♩ 散布整屏，3 种速度组错开（12s/18s/9s 循环）
-  const particles = useMemo(() => {
-    const NOTES = ["♪", "♫", "♬", "♩"];
-    return Array.from({ length: 30 }, (_, i) => ({
-      x: Math.random() * 100,                    // 横向位置 0-100%
-      y: Math.random() * 100,                    // 纵向位置 0-100%
-      char: NOTES[i % NOTES.length],             // 循环分配字符
-      variant: (i % 3) + 1,                      // 1/2/3 三种速度组
-      delay: -Math.random() * 18,                // 负 delay 让动画已经"播到中间"，避免入场时的集体淡入
-    }));
-  }, []);
+  // 鼠标移动时显示 header，静止 3 秒后隐藏
+  const onActivity = () => {
+    setShowHeader(true);
+    if (headerTimer.current) window.clearTimeout(headerTimer.current);
+    headerTimer.current = window.setTimeout(() => setShowHeader(false), 3000);
+  };
+
+  useEffect(() => {
+    if (!immersiveMode) return;
+    onActivity();
+    return () => {
+      if (headerTimer.current) window.clearTimeout(headerTimer.current);
+    };
+  }, [immersiveMode]);
 
   if (!immersiveMode) return null;
 
@@ -110,39 +131,26 @@ export function ImmersiveView() {
   const title = (currentTrack as { meta?: { title?: string } })?.meta?.title || "沉浸模式";
   const artist = (currentTrack as { meta?: { artist?: string } })?.meta?.artist || "";
 
+  const alignClass = vp.immersiveLyricAlign === "left" ? "immersive__lyrics--left" : "";
+  const sizeClass = `immersive__lyrics--${vp.immersiveLyricSize}`;
+
   return (
     <div
       className={`immersive ${isPlaying ? "is-playing" : "is-paused"}`}
       role="dialog"
       aria-label="沉浸播放模式"
+      style={{ "--immersive-lyric-color": effectiveLyricColor } as React.CSSProperties}
+      onMouseMove={onActivity}
+      onClick={() => setShowControls(false)}
     >
-      {/* 背景：封面 blur 30px + opacity 65% + 弱化遮罩 */}
-      <div className="immersive__bg">
-        {cover && <img src={cover} alt="" className="immersive__bg-img" />}
-        <div className="immersive__bg-mask" />
-      </div>
+      {/* 背景层 */}
+      <ImmersiveBackground />
 
-      {/* 节拍呼吸：isPlaying 时整屏暖橙光缓慢呼吸 2.4s 循环 */}
-      <div className="immersive__breath" aria-hidden />
-
-      {/* 飘浮粒子：30 个 ♪♫♬♩ 散布整屏，3 种速度组错开（12s/18s/9s） */}
-      <div className="immersive__particles" aria-hidden>
-        {particles.map((p, i) => (
-          <span
-            key={i}
-            className={`immersive__particle immersive__particle--${p.variant}`}
-            style={{ left: `${p.x}%`, top: `${p.y}%`, animationDelay: `${p.delay}s` }}
-          >
-            {p.char}
-          </span>
-        ))}
-      </div>
-
-      {/* 顶部标题区（cover + title + artist） */}
-      <header className="immersive__head">
+      {/* 顶部信息条 */}
+      <header className={`immersive__head ${showHeader ? "immersive__head--visible" : ""}`}>
         <div className="immersive__cover">
           {cover ? (
-            <img src={cover} alt={title} className={`immersive__cover-img ${isPlaying ? "is-spin" : ""}`} key={currentTrack?.id ?? "empty"} />
+            <img src={cover} alt={title} className={`immersive__cover-img ${isPlaying ? "is-spin" : ""}`} />
           ) : (
             <div className="immersive__cover-fallback">♪</div>
           )}
@@ -152,7 +160,6 @@ export function ImmersiveView() {
           <div className="immersive__title">{title}</div>
           <div className="immersive__artist">{artist}</div>
         </div>
-        {/* 退出按钮（右上角） */}
         <button
           type="button"
           className="immersive__exit"
@@ -166,46 +173,86 @@ export function ImmersiveView() {
         </button>
       </header>
 
-      {/* 歌词舞台：居中、当前行大字高亮、四周渐变淡出 */}
-      <main className="immersive__stage" ref={listRef}>
-        <div className="immersive__lyrics">
-          {loading ? (
-            <div className="immersive__hint">载入歌词中…</div>
-          ) : lines.length === 0 ? (
-            <div className="immersive__hint">{lyricData ? "纯音乐，请欣赏" : "暂无歌词"}</div>
-          ) : (
-            lines.map((line, i) => {
-              const isActive = i === activeIndex;
-              const dist = Math.abs(i - activeIndex);
-              return (
-                <div
-                  key={`${currentTrack?.id ?? "x"}-${i}`}
-                  ref={isActive ? activeLineRef : undefined}
-                  className={`immersive__line ${isActive ? "is-active" : ""} ${
-                    !isActive && dist === 1 ? "is-near" : ""
-                  } ${!isActive && dist === 2 ? "is-far" : ""} ${
-                    !isActive && dist > 2 ? "is-farther" : ""
-                  }`}
-                >
-                  {isActive && <span className="immersive__line-time">{fmt(line.time)}</span>}
-                  <span className="immersive__line-text">{line.text}</span>
-                  {isActive && (
-                    <>
-                      <span className="immersive__note immersive__note--1" aria-hidden>♪</span>
-                      <span className="immersive__note immersive__note--2" aria-hidden>♫</span>
-                      <span className="immersive__note immersive__note--3" aria-hidden>♪</span>
-                      <span className="immersive__note immersive__note--4" aria-hidden>♫</span>
-                    </>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-        {/* 上下淡出蒙层（让歌词边缘自然淡出） */}
+      {/* 中央歌词舞台：MineRadio 风格——当前行居中超大 + 扫描光 + 暖光晕；上 1 / 下 1 弱预览 */}
+      <main className="immersive__stage" onClick={(e) => e.stopPropagation()}>
+        {loading ? (
+          <div className="immersive__hint">载入歌词中…</div>
+        ) : lines.length === 0 ? (
+          <div className="immersive__hint">{lyricData ? "纯音乐，请欣赏" : "暂无歌词"}</div>
+        ) : (
+          <div className={`immersive__stack ${alignClass} ${sizeClass}`}>
+            {/* 上一行预览 */}
+            {activeIndex > 0 && (
+              <div className="immersive__prev">
+                <span className="immersive__prev-time">{fmt(lines[activeIndex - 1].time)}</span>
+                <span className="immersive__prev-text">{lines[activeIndex - 1].text}</span>
+              </div>
+            )}
+            {/* 当前行：OrangeRadio 入场 + 扫描光 + 薄荷冷调光晕（与 FullPlayer stage 同源） */}
+            <div
+              ref={activeLineRef}
+              className="immersive__current"
+              style={activeProgress > 0 ? ({
+                "--lyric-p": `${Math.round(activeProgress * 1000) / 10}%`,
+                "--i": activeIndex,
+                "--ry": `${(activeIndex % 2 === 0 ? 1 : -1) * 8}deg`,
+              } as React.CSSProperties) : ({
+                "--i": activeIndex,
+                "--ry": `${(activeIndex % 2 === 0 ? 1 : -1) * 8}deg`,
+              } as React.CSSProperties)}
+            >
+              <div className="immersive__current-time">{fmt(lines[activeIndex].time)}</div>
+              <div className="immersive__current-text-wrap">
+                <div className="immersive__current-text">{lines[activeIndex].text}</div>
+              </div>
+              {vp.immersiveShowTranslation && lines[activeIndex].translation && (
+                <div className="immersive__current-trans">{lines[activeIndex].translation}</div>
+              )}
+            </div>
+            {/* 下一行预览 */}
+            {activeIndex < lines.length - 1 && (
+              <div className="immersive__next">
+                <span className="immersive__next-time">{fmt(lines[activeIndex + 1].time)}</span>
+                <span className="immersive__next-text">{lines[activeIndex + 1].text}</span>
+              </div>
+            )}
+          </div>
+        )}
         <div className="immersive__fade immersive__fade--top" aria-hidden />
         <div className="immersive__fade immersive__fade--bottom" aria-hidden />
       </main>
+
+      {/* 底部进度条（hover / 活动时显示） */}
+      <footer className={`immersive__footer ${showHeader ? "immersive__footer--visible" : ""}`}>
+        <div className="immersive__progress">
+          <div className="immersive__progress-bar" style={{ width: `${duration > 0 ? (position / duration) * 100 : 0}%` }} />
+        </div>
+        <div className="immersive__time">
+          <span>{fmt(position)}</span>
+          <span>{fmt(duration)}</span>
+        </div>
+      </footer>
+
+      {/* 控制面板触发按钮 */}
+      <button
+        type="button"
+        className={`immersive__controls-trigger ${showControls ? "immersive__controls-trigger--active" : ""}`}
+        onClick={(e) => { e.stopPropagation(); setShowControls((v) => !v); }}
+        title="沉浸设置"
+        aria-label="沉浸设置"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+
+      {/* 控制面板 */}
+      {showControls && (
+        <div className="immersive__controls-overlay" onClick={(e) => e.stopPropagation()}>
+          <ImmersiveControls />
+        </div>
+      )}
     </div>
   );
 }
