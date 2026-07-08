@@ -52,3 +52,11 @@ webview*.log
 
 # ===== 测试音频（不入库）=====
 test-music/
+
+# ===== Claude Code 本地配置（不入库）=====
+.claude/
+
+# ===== TypeScript 增量编译缓存（不入库）=====
+frontend/tsconfig.tsbuildinfo
+frontend/*.tsbuildinfo
+**/tsconfig.tsbuildinfo

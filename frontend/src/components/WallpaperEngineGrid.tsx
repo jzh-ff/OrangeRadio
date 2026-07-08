@@ -64,7 +64,11 @@ export function WallpaperEngineGrid() {
   return (
     <div className="we-grid">
       <div className="we-grid__bar">
-        <select value={filter} onChange={(ev) => setFilter(ev.target.value as "all" | WeKind)}>
+        <select
+          className="we-grid__select"
+          value={filter}
+          onChange={(ev) => setFilter(ev.target.value as "all" | WeKind)}
+        >
           {KIND_FILTERS.map((k) => (
             <option key={k} value={k}>{k === "all" ? "全部" : weKindLabel(k)}</option>
           ))}
@@ -75,10 +79,21 @@ export function WallpaperEngineGrid() {
           value={query}
           onChange={(ev) => setQuery(ev.target.value)}
         />
-        <button type="button" onClick={() => void scan()} disabled={scanning}>
+        <button
+          type="button"
+          className="we-grid__btn we-grid__btn--primary"
+          onClick={() => void scan()}
+          disabled={scanning}
+        >
           {scanning ? "扫描中..." : "重新检测"}
         </button>
-        <button type="button" onClick={() => void onAddDir()}>添加目录</button>
+        <button
+          type="button"
+          className="we-grid__btn"
+          onClick={() => void onAddDir()}
+        >
+          添加目录
+        </button>
       </div>
       <div className="we-grid__dirs">
         扫描目录:{engineDirs.length > 0 ? engineDirs.join(" | ") : "未配置(将自动发现)"}

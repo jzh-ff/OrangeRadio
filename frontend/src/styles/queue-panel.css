@@ -1,8 +1,9 @@
-/* ===== 播放队列面板（右侧滑出） ===== */
+/* ===== 播放队列面板（右侧滑出） =====
+   z-index 拉到 60+，盖过 FullPlayer (z-50)，所以 FullPlayer 详情页点队列会浮在详情页上。 */
 .qp-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 60;
   background: rgba(0, 0, 0, 0.4);
 }
 
@@ -11,7 +12,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 45;
+  z-index: 65;
   width: 340px;
   background: rgba(10, 12, 22, 0.96);
   backdrop-filter: blur(20px);

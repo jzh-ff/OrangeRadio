@@ -53,22 +53,15 @@ export function PodcastView() {
 
   return (
     <div className="library">
-      <div className="library__toolbar">
-        <div className="library__search">
-          <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            <circle cx="5" cy="19" r="2" stroke="currentColor" strokeWidth="2"/>
-          </svg>
-          <input
-            className="library__search-input"
-            placeholder="粘贴播客 RSS 订阅地址（https://...）"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && fetchFeed()}
-          />
-        </div>
-        <button className="btn-scan" onClick={() => fetchFeed()} disabled={loading}> {loading ? "加载中…" : "订阅"}
-        </button>
+      <div style={{ marginBottom: 16 }}>
+        <ConsoleSearch
+          value={url}
+          onChange={setUrl}
+          onSubmit={() => fetchFeed()}
+          submitLabel="订阅"
+          loading={loading}
+          placeholder="粘贴播客 RSS 订阅地址（https://...）"
+        />
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>

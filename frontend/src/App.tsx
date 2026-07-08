@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WallpaperBackground } from "./visual/WallpaperBackground";
 import { WallpaperLayer } from "./visual/WallpaperLayer";
-import { TitleBar } from "./components/TitleBar";
 import { HotkeysModal } from "./components/HotkeysModal";
+import { WindowControls } from "./components/WindowControls";
+import { ProfilePanel } from "./components/ProfilePanel";
 import { PlaylistShelf } from "./visual/PlaylistShelf";
 import { startHotkeyListener, registerGlobalHotkeys, unregisterAllGlobalHotkeys } from "./lib/hotkeys";
 import { useWallpaperStore } from "./stores/wallpaperStore";
@@ -14,6 +15,7 @@ import { StudioView } from "./features/studio/StudioView";
 import { PlayerBar } from "./features/player/PlayerBar";
 import { FullPlayer } from "./features/player/FullPlayer";
 import { QueuePanel } from "./features/player/QueuePanel";
+import { ImmersiveView } from "./features/player/ImmersiveView";
 import { ToastStack, useToasts } from "./components/Toast";
 import { SettingsModal } from "./components/SettingsModal";
 import { usePlayerStore, type BeatHit } from "./stores/playerStore";
@@ -91,6 +93,39 @@ export default function App() {
     };
     window.addEventListener("contextmenu", onCtx);
     return () => window.removeEventListener("contextmenu", onCtx);
+  }, []);
+
+  // 同步窗口最大化/全屏状态到 body.class（驱动 global.css 的圆角去除规则）
+  // —— 之前由 TitleBar.tsx 维护；TitleBar 移除后这里补上，否则全屏时四角还是圆角
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let rafId = 0;
+    const applyMaximizedClass = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        const max = await win.isMaximized();
+        document.body.classList.toggle("window-maximized", max);
+        // 监听 resize（最大化/还原都会触发）
+        unlisten = await win.onResized(async () => {
+          // 用 rAF 合并频繁的 resize 事件
+          if (rafId) cancelAnimationFrame(rafId);
+          rafId = requestAnimationFrame(async () => {
+            rafId = 0;
+            const m = await win.isMaximized();
+            document.body.classList.toggle("window-maximized", m);
+          });
+        });
+      } catch {
+        // 非 Tauri 环境（开发期浏览器预览）忽略
+      }
+    };
+    void applyMaximizedClass();
+    return () => {
+      unlisten?.();
+      if (rafId) cancelAnimationFrame(rafId);
+      document.body.classList.remove("window-maximized");
+    };
   }, []);
   // 局内热键监听 + 全局热键注册（应用启动时启动，卸载时清理）
   useEffect(() => {
@@ -269,7 +304,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <TitleBar />
+      <WindowControls />
       {wallpaperActive ? <WallpaperLayer /> : <WallpaperBackground />}
       <div className="app__layout">
         <Sidebar />
@@ -283,10 +318,14 @@ export default function App() {
       <PlayerBar />
       {fullPlayerOpen && <FullPlayer pushToast={pushToast} />}
       <QueuePanel />
+      {/* 主页沉浸模式：进入后隐藏所有 chrome（侧栏/顶栏/底栏/导航），只展示壁纸 + 歌词 */}
+      <ImmersiveView />
       {/* 设置弹窗（齿轮按钮触发） */}
       <SettingsModal />
       {/* 热键设置弹窗（VisualConsole 热键按钮触发） */}
       <HotkeysModal />
+      {/* 听歌画像面板（首页 profile 卡点击触发） */}
+      <ProfilePanel />
       {/* 3D 歌单架（右键唤起） */}
       {shelfOpen && <PlaylistShelf onClose={() => setShelfOpen(false)} />}
       {/* 全局 toast 栈（监听 auth-expired 等事件） */}

@@ -1,0 +1,291 @@
+/* ===== ProfilePanel · 听歌画像面板 ===== */
+
+.profile-panel__mask {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 4, 9, 0.55);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  animation: panel-fade-in 0.2s var(--ease);
+}
+
+.profile-panel {
+  position: relative;
+  width: min(560px, calc(100vw - 64px));
+  max-height: min(680px, calc(100vh - 96px));
+  overflow: auto;
+  background:
+    linear-gradient(180deg, rgba(244, 210, 138, 0.04), transparent 24%),
+    linear-gradient(180deg, rgba(11, 13, 20, 0.96), rgba(15, 17, 26, 0.92));
+  border: 1px solid var(--champagne-soft);
+  border-radius: 20px;
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 1px 0 rgba(244, 210, 138, 0.12);
+  padding: 24px 28px 28px;
+  animation: panel-rise 0.32s var(--ease);
+}
+
+@keyframes panel-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes panel-rise {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.profile-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(244, 210, 138, 0.12);
+}
+.profile-panel__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  color: var(--orange-2);
+  margin-bottom: 4px;
+}
+.profile-panel__title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 760;
+  color: var(--text);
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+.profile-panel__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background: rgba(8, 10, 16, 0.5);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all 0.16s var(--ease);
+  flex-shrink: 0;
+}
+.profile-panel__close:hover {
+  color: var(--ember);
+  border-color: rgba(255, 90, 31, 0.5);
+  background: rgba(255, 90, 31, 0.08);
+  transform: rotate(90deg);
+}
+
+.profile-panel__loading,
+.profile-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-3);
+}
+.profile-panel__loading {
+  font-size: 13px;
+  letter-spacing: 0.4px;
+}
+.profile-panel__empty-icon {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(255, 107, 26, 0.12), transparent 70%);
+  border: 1px solid rgba(255, 157, 69, 0.28);
+  color: var(--orange-2);
+  margin-bottom: 18px;
+  opacity: 0.8;
+}
+.profile-panel__empty-title {
+  font-family: var(--font-editorial);
+  font-size: 20px;
+  color: var(--paper);
+  margin-bottom: 8px;
+  letter-spacing: -0.2px;
+}
+.profile-panel__empty-desc {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.65;
+  max-width: 36ch;
+  margin: 0;
+}
+
+/* ===== 数据区 ===== */
+.profile-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.profile-panel__row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 14px;
+}
+.profile-stat {
+  position: relative;
+  padding: 16px 18px;
+  border: 1px solid var(--champagne-soft);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 157, 69, 0.04), transparent 60%),
+    rgba(8, 10, 16, 0.5);
+}
+.profile-stat__label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.profile-stat__value {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 720;
+  color: var(--text);
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+.profile-stat__value--xl {
+  font-size: 26px;
+  font-weight: 760;
+  color: var(--amber);
+  text-shadow: 0 0 16px rgba(255, 196, 107, 0.25);
+}
+.profile-stat__hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-4);
+  font-family: var(--font-mono);
+  letter-spacing: 0.2px;
+}
+
+/* BPM 分布：细柱状 */
+.profile-bpm {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 28px;
+  margin-top: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.profile-bpm__bar {
+  flex: 1;
+  background: linear-gradient(180deg, var(--orange-2), var(--orange-hot));
+  border-radius: 1px;
+  min-height: 2px;
+  opacity: 0.7;
+  transition: opacity 0.2s var(--ease);
+}
+.profile-bpm__bar:hover { opacity: 1; }
+
+/* ===== Top 歌手列表 ===== */
+.profile-section__title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.profile-section__title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--champagne-soft), transparent);
+}
+.profile-top {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.profile-top__item {
+  display: grid;
+  grid-template-columns: 26px 110px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.15s var(--ease);
+}
+.profile-top__item:hover {
+  background: rgba(255, 157, 69, 0.06);
+  border-color: rgba(244, 210, 138, 0.18);
+}
+.profile-top__rank {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--orange-2);
+  letter-spacing: 0.5px;
+}
+.profile-top__name {
+  font-size: 13px;
+  font-weight: 640;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-top__bar {
+  position: relative;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.profile-top__bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--orange-hot), var(--amber));
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(255, 107, 26, 0.4);
+}
+
+/* ===== 曲风标签云 ===== */
+.profile-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.profile-genre {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 640;
+  letter-spacing: 0.2px;
+  color: var(--text);
+  background: rgba(244, 210, 138, 0.06);
+  border: 1px solid rgba(244, 210, 138, 0.18);
+  font-family: var(--font-editorial);
+  font-style: italic;
+}

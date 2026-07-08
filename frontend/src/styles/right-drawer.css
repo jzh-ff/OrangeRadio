@@ -1,0 +1,423 @@
+/* ===== FullPlayer 右侧 hover 抽屉 =====
+   收纳四件套：布局切换 / 播放模式 / AI 译注 / 视觉控制台。
+   平时隐藏（只露竖向 grip 把手），鼠标进入右缘 30px 触发区 → 抽屉滑入。
+   触发区刻意做窄（30px），避免挡住 FullPlayer 右下角的评论区按钮。
+   高度用 bottom: var(--fp-footer-h) 让出 FullPlayer 底部 transport footer（播放/暂停/进度/音量），
+   否则抽屉会把 footer 整个盖住，footer 里的按钮和进度条都点不到。 */
+.fp-rd {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: var(--fp-footer-h, 110px);
+  /* 容器宽度 = 触发区(30) + 抽屉(360)，抽屉默认 translateX(100%) 隐藏 */
+  width: 390px;
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  font-family: var(--font-body, system-ui);
+}
+
+/* 触发区：右缘 30px，全高，透明；只负责探测 hover */
+.fp-rd__trigger {
+  position: relative;
+  width: 30px;
+  flex-shrink: 0;
+  pointer-events: auto;
+  /* 占位但不可见 —— 鼠标进这里就开抽屉 */
+}
+.fp-rd__grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(20, 22, 32, 0.55), rgba(10, 12, 20, 0.55));
+  border: 1px solid rgba(244, 210, 138, 0.12);
+  opacity: 0.32;
+  transition: opacity 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+              background 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+              border-color 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+}
+.fp-rd:hover .fp-rd__grip,
+.fp-rd--open .fp-rd__grip {
+  opacity: 0.85;
+  background: linear-gradient(180deg, rgba(255, 107, 26, 0.18), rgba(255, 107, 26, 0.05));
+  border-color: rgba(255, 157, 69, 0.4);
+}
+.fp-rd__grip-dot {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--orange-2, #ff9d45);
+  box-shadow: 0 0 4px rgba(255, 157, 69, 0.6);
+}
+
+/* 抽屉本体 */
+.fp-rd__panel {
+  width: 360px;
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  pointer-events: auto;
+  background: linear-gradient(180deg, rgba(14, 16, 24, 0.96), rgba(8, 10, 16, 0.96));
+  border-left: 1px solid var(--champagne-soft, rgba(244, 210, 138, 0.18));
+  box-shadow:
+    -24px 0 60px rgba(0, 0, 0, 0.45),
+    inset 1px 0 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transform: translateX(100%);
+  transition: transform 0.34s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(244, 210, 138, 0.18) transparent;
+}
+.fp-rd__panel::-webkit-scrollbar { width: 3px; }
+.fp-rd__panel::-webkit-scrollbar-track { background: transparent; }
+.fp-rd__panel::-webkit-scrollbar-thumb { background: rgba(244, 210, 138, 0.18); border-radius: 3px; }
+.fp-rd--open .fp-rd__panel { transform: translateX(0); }
+
+/* 抽屉头部 */
+.fp-rd__head {
+  padding: 20px 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.fp-rd__eyebrow {
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  letter-spacing: 0.32em;
+  color: var(--text-4, rgba(255, 255, 255, 0.32));
+  text-transform: uppercase;
+}
+.fp-rd__title {
+  font-family: var(--font-editorial, "Cormorant Garamond", serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text, #fff);
+}
+
+/* 段：section 容器 */
+.fp-rd__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.fp-rd__section--vc {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 14px 18px;
+}
+.fp-rd__sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fp-rd__sec-title {
+  font-family: var(--font-zh-serif, serif);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #fff);
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fp-rd__sec-title::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 10px;
+  background: linear-gradient(180deg, var(--orange-2, #ff9d45), var(--mint, #7fe9c8));
+  border-radius: 2px;
+  box-shadow: 0 0 6px rgba(255, 157, 69, 0.45);
+}
+.fp-rd__sec-hint {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  color: var(--text-4, rgba(255, 255, 255, 0.32));
+  letter-spacing: 0.02em;
+  text-align: right;
+}
+
+/* ===== 模式按钮 ===== */
+.fp-rd__mode-btn {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(244, 210, 138, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text, #fff);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.fp-rd__mode-btn:hover {
+  border-color: rgba(255, 157, 69, 0.45);
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.1), rgba(255, 107, 26, 0.02));
+  transform: translateY(-1px);
+}
+.fp-rd__mode-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.15), rgba(255, 107, 26, 0.04));
+  color: var(--orange-2, #ff9d45);
+  box-shadow: inset 0 0 0 1px rgba(255, 157, 69, 0.2);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+.fp-rd__mode-icon.is-active {
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.32), rgba(255, 107, 26, 0.08));
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 157, 69, 0.55),
+    0 0 18px rgba(255, 107, 26, 0.35);
+}
+.fp-rd__mode-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fp-rd__mode-name {
+  font-family: var(--font-zh-serif, serif);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #fff);
+  letter-spacing: 0.02em;
+}
+.fp-rd__mode-sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  color: var(--text-3, rgba(255, 255, 255, 0.5));
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fp-rd__mode-cycle {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-3, rgba(255, 255, 255, 0.5));
+  transition: color 0.2s var(--ease), transform 0.4s var(--ease);
+}
+.fp-rd__mode-btn:hover .fp-rd__mode-cycle {
+  color: var(--orange-2, #ff9d45);
+  transform: rotate(90deg);
+}
+
+/* ===== 译注按钮 ===== */
+.fp-rd__annotate-btn {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(244, 210, 138, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text, #fff);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.fp-rd__annotate-btn:hover:not(:disabled) {
+  border-color: rgba(255, 157, 69, 0.45);
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.1), rgba(255, 107, 26, 0.02));
+  transform: translateY(-1px);
+}
+.fp-rd__annotate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.fp-rd__annotate-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, rgba(71, 217, 255, 0.14), rgba(71, 217, 255, 0.04));
+  color: var(--cyan, #47d9ff);
+  box-shadow: inset 0 0 0 1px rgba(71, 217, 255, 0.18);
+}
+.fp-rd__annotate-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fp-rd__annotate-name {
+  font-family: var(--font-zh-serif, serif);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.fp-rd__annotate-sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  color: var(--text-4, rgba(255, 255, 255, 0.32));
+  letter-spacing: 0.02em;
+}
+.fp-rd__spin { animation: fp-rd-spin 0.9s linear infinite; }
+@keyframes fp-rd-spin { to { transform: rotate(360deg); } }
+
+/* ===== 视觉控制台嵌入容器 ===== */
+.fp-rd__vc-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 把 VisualConsole 的面板改成抽屉内嵌形态：
+   - 去除外层 absolute 定位 + 顶部 hairline
+   - 改成正常文档流 */
+.fp-rd__vc-host .vc-panel {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  width: 100% !important;
+  max-height: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  transition: none !important;
+}
+.fp-rd__vc-host .vc-panel__head { padding: 0 4px 10px; }
+.fp-rd__vc-host .vc-panel--visible { opacity: 1 !important; transform: none !important; }
+.fp-rd__vc-host .vc-tab-content { flex: 1; min-height: 0; overflow-y: auto; }
+.fp-rd__vc-host .vc-tabs { margin-bottom: 10px; }
+
+/* 抽屉在 980px 以下也保留（FullPlayer 在小屏下也用） */
+@media (max-width: 980px) {
+  .fp-rd { width: 330px; }
+  .fp-rd__panel { width: 300px; }
+}
+
+/* ===== 布局选择 grid（3 列自适应）=====
+   5 个 layout option 平铺在抽屉顶部：律动专辑 / 粒子律动 / 沉浸 / 歌词流 / 三栏。
+   3 列：首行 3 个 + 次行 2 个，剩 1 格留空（不补虚位，保持节奏感）。 */
+.fp-rd__layout-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.fp-rd__layout-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 8px;
+  border-radius: 11px;
+  border: 1px solid rgba(244, 210, 138, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-2, rgba(255, 255, 255, 0.65));
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), transform 0.2s var(--ease), color 0.2s var(--ease);
+}
+.fp-rd__layout-item:hover {
+  border-color: rgba(255, 157, 69, 0.4);
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.08), rgba(255, 107, 26, 0.02));
+  color: var(--text, #fff);
+  transform: translateY(-1px);
+}
+.fp-rd__layout-item.is-active {
+  border-color: rgba(255, 157, 69, 0.55);
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.18), rgba(255, 107, 26, 0.04));
+  color: var(--paper, #fff7e0);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 157, 69, 0.25),
+    0 6px 18px rgba(255, 107, 26, 0.18);
+}
+.fp-rd__layout-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2, rgba(255, 255, 255, 0.6));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+.fp-rd__layout-item:hover .fp-rd__layout-icon {
+  background: rgba(255, 107, 26, 0.16);
+  color: var(--orange-2, #ff9d45);
+}
+.fp-rd__layout-item.is-active .fp-rd__layout-icon {
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.32), rgba(255, 107, 26, 0.1));
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 157, 69, 0.55),
+    0 0 10px rgba(255, 107, 26, 0.32);
+}
+.fp-rd__layout-name {
+  font-family: var(--font-zh-serif, serif);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: inherit;
+  margin-top: 4px;
+}
+.fp-rd__layout-hint {
+  font-family: var(--font-mono, monospace);
+  font-size: 8.5px;
+  color: var(--text-4, rgba(255, 255, 255, 0.32));
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fp-rd__layout-item.is-active .fp-rd__layout-hint {
+  color: var(--champagne, rgba(255, 196, 107, 0.7));
+}
+.fp-rd__layout-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--orange-hot, #ff3d00);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(255, 107, 26, 0.55);
+}

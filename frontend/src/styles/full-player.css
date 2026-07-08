@@ -1,5 +1,8 @@
 /* ===== FullPlayer · 深夜电台播放详情 ===== */
 .fp-overlay {
+  /* 底部 transport footer 高度（右侧工具抽屉靠这个变量让出 footer，
+     避免抽屉把 footer 整个盖住）—— 与 .fp-controls 的 padding + 内容高度对应 */
+  --fp-footer-h: 110px;
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -24,22 +27,25 @@
   to { opacity: 1; transform: scale(1); }
 }
 
-/* cinema 模式：粒子全屏背景 */
+/* 律动专辑 / 粒子律动 模式：粒子全屏背景（不透明叠加避免看穿到 sidebar/main） */
 .fp-particles-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
 }
 .fp-particles-bg canvas { display: block; width: 100% !important; height: 100% !important; }
-.fp-starriver-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.6;
-  mix-blend-mode: screen;
+
+/* 律动专辑 / 粒子律动 模式：背景不透明、关掉 backdrop-blur，让粒子视觉成为唯一焦点 */
+.fp-overlay--solid {
+  --ui-opacity: 1;
+  background: #050308;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
-.fp-starriver-bg canvas { display: block; width: 100% !important; height: 100% !important; }
+.fp-overlay--solid::before {
+  /* 顶部暖色光晕保留（粒子模式也喜欢这抹暖意） */
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255, 107, 26, 0.1), transparent 60%);
+}
 
 /* 其他模式：模糊封面占位背景（颜色跟随封面主色 --fp-accent，未设时回退橙色） */
 .fp-blur-bg {
@@ -54,16 +60,16 @@
   transition: background 0.6s ease;
 }
 
-/* ===== 顶栏：模式导航 ===== */
+/* ===== 顶栏（去黑线 + 不再承载布局 tab —— 移到 popover） ===== */
 .fp-header {
   position: relative;
   z-index: 10;
-  display: grid;
-  grid-template-columns: 1fr auto auto;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 20px;
-  padding: 16px 28px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 18px 32px 14px;
+  /* 删除原 border-bottom —— "两条黑线" 的上半段 */
 }
 .fp-header__brand {
   display: flex;
@@ -398,20 +404,22 @@
   overflow: hidden;
   position: relative;
 }
-.fp-cover-big--live .fp-cover-img {
-  animation: fp-vinyl-spin 24s linear infinite;
-}
-@keyframes fp-vinyl-spin {
-  to { transform: rotate(360deg); }
-}
 .fp-cover-big .fp-cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   border-radius: 18px;
   transform-origin: center center;
+  /* 动画常驻 .fp-cover-img：换歌时 React key 变化触发 remount 重置到 0deg；
+     暂停/恢复只切 animation-play-state，不卸载动画（保持当前角度） */
+  animation: fp-vinyl-spin 24s linear infinite;
+  will-change: transform;
 }
-.fp-cover-section.is-paused .fp-cover-big--live .fp-cover-img {
+@keyframes fp-vinyl-spin {
+  to { transform: rotate(360deg); }
+}
+.fp-cover-section.is-paused .fp-cover-img {
+  /* 暂停时停在当前角度，不回到 0deg */
   animation-play-state: paused;
 }
 
@@ -506,15 +514,15 @@
   position: relative;
   transition: opacity 0.4s ease, color 0.35s ease, background 0.2s ease, font-size 0.4s cubic-bezier(0.16, 0.84, 0.32, 1.02);
 }
-.fp-lyric-line:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
 /* ★ 切行/切歌瞬间锁定歌词行过渡（JS 在 useLayoutEffect 里挂/摘 .fp-no-lyric-fade）
    避免"先 scrollTo 到位 → 行高过渡中 → 视觉偏位"的串扰；
    切行是离散跳转本来就该瞬时，过渡留给用户拖动/网络抖动的被动重渲染 */
 .fp-no-lyric-fade .fp-lyric-line,
 .fp-no-lyric-fade .fp-lyric-line * {
   transition: none !important;
+}
+.fp-lyric-line:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 /* 上下文行：基于 data-offset 递变（对标 MineRadio 3D 舞台的 depth 衰减） */
@@ -805,102 +813,725 @@
   margin: 0 0 16px;
 }
 
-/* ===== 底部播控 · 载波进度 ===== */
+/* ===== 底部播控：2 行结构 =====
+   Row 1 · 雾化进度条（独占一行，左右时间码）
+   Row 2 · 3 列：左 模式/收藏/歌单 ｜ 中 上一首/播放/下一首 ｜ 右 队列/一起听/音量
+   设计语言：
+   - 玻璃深色面板 + 顶部 1px 内边光（玻璃折射感）
+   - 弹簧 cubic-bezier(0.34, 1.56, 0.64, 1) 过渡（带轻微回弹）
+   - 多层投影：tinted shadow（非白色霓虹）
+   - 持续微动：播放键双层脉冲光环 / 时间码脉动圆点 / active 态呼吸点 */
 .fp-controls {
   position: relative;
   z-index: 10;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 32px 22px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55));
-}
-.fp-controls__times {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 44px;
+  gap: 14px;
+  padding: 20px 40px 24px;
+  background:
+    radial-gradient(ellipse 60% 100% at 50% -10%, rgba(255, 107, 26, 0.06), transparent 60%),
+    linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.45) 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ===== Row 1 · 进度区（v2：加厚 + 多层光晕 + 大 thumb + 占满宽度）===== */
+.fp-progress-row {
+  display: grid;
+  /* auto-min-content 让时间码保持紧凑，1fr 让进度条吃满剩余宽度 */
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 16px;
+  padding: 0;
+  width: 100%;
 }
 .fp-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 700;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.fp-time--dur { color: var(--text-4); font-size: 10px; }
+.fp-time--cur { color: var(--champagne); justify-content: flex-end; }
+.fp-time--rem { color: var(--text-3); }
+.fp-time__pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--orange-hot);
+  box-shadow: 0 0 8px var(--orange-glow), 0 0 2px var(--orange-hot);
+  animation: fp-time-pulse 1.4s ease-in-out infinite;
+}
+@keyframes fp-time-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.2); }
+}
+.fp-time__minus { color: var(--text-4); margin-right: 2px; font-weight: 500; }
 
+/* === 雾化进度条 v2：12px 厚轨道 + 4 层 thumb + 液态边缘 + scrub 预览 === */
 .fp-progress {
   position: relative;
-  flex: 1;
-  height: 6px;
-  max-width: none;
+  height: 32px;             /* 抬高容器高度，让 thumb（18px）有上下空间 */
+  min-width: 0;
+  width: 100%;
   cursor: pointer;
+  display: flex;
+  align-items: center;
 }
+.fp-progress__mist {
+  position: absolute;
+  inset: -16px -12px;
+  background:
+    radial-gradient(ellipse 60% 100% at 50% 50%, rgba(255, 157, 69, 0.08), transparent 70%),
+    radial-gradient(ellipse 100% 60% at 50% 50%, rgba(255, 107, 26, 0.03), transparent 80%);
+  pointer-events: none;
+  z-index: 0;
+}
+/* 刻度尺（每 10% 一根细线）—— hover 时显现 */
+.fp-progress__ticks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 14px;
+  margin-top: -7px;
+  pointer-events: none;
+  z-index: 1;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(10% - 1px),
+    rgba(255, 255, 255, 0.08) calc(10% - 1px),
+    rgba(255, 255, 255, 0.08) 10%
+  );
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
+}
+.fp-progress:hover .fp-progress__ticks { opacity: 0.8; }
+
+/* 轨道：12px 厚 + 内陷阴影 + 顶部高光（macOS 风格） */
 .fp-progress-track {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4), rgba(255, 255, 255, 0.04) 50%, rgba(0, 0, 0, 0.3));
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  z-index: 1;
+  transition: height 0.2s var(--ease), margin-top 0.2s var(--ease);
+}
+.fp-progress:hover .fp-progress-track {
+  height: 14px;
+  margin-top: -7px;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(255, 157, 69, 0.18);
+}
+
+/* 填充：12px 厚 + 4 层光晕 + 液态边缘 */
+.fp-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffd28a 0%, var(--orange) 35%, var(--orange-hot) 100%);
+  box-shadow:
+    0 0 14px rgba(255, 107, 26, 0.55),
+    0 0 32px rgba(255, 107, 26, 0.32),
+    0 0 60px rgba(255, 107, 26, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 0 rgba(180, 60, 0, 0.25);
+  z-index: 2;
+  overflow: hidden;
+  transition: height 0.2s var(--ease), margin-top 0.2s var(--ease);
+}
+.fp-progress:hover .fp-progress-fill { height: 14px; margin-top: -7px; }
+
+/* 移动的闪光带（液体流动） */
+.fp-progress-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: fp-shimmer 2.4s linear infinite;
+  filter: blur(1.5px);
+  pointer-events: none;
+}
+@keyframes fp-shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(240%); }
+}
+
+/* 液态金属边缘（fill 右侧 20px 亮线） */
+.fp-progress-edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7));
+  filter: blur(1.5px);
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+/* 拖尾彗星光（thumb 后方） */
+.fp-progress-glow {
+  position: absolute;
+  top: 50%;
+  width: 56px;
+  height: 28px;
+  margin-top: -14px;
+  margin-left: -28px;
+  border-radius: 999px;
+  background: radial-gradient(ellipse 100% 50% at 100% 50%, rgba(255, 220, 140, 0.85), rgba(255, 107, 26, 0.4) 35%, transparent 70%);
+  filter: blur(4px);
+  pointer-events: none;
+  z-index: 3;
+  transition: left 0.1s linear;
+}
+
+/* Thumb：18px 4 层光球 */
+.fp-progress::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: var(--fp-thumb-x, 0%);
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 32%, #fff 0%, var(--champagne) 25%, var(--orange-hot) 65%, var(--orange) 100%);
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    0 0 12px var(--orange-glow),
+    0 0 24px rgba(255, 196, 107, 0.7),
+    0 0 40px rgba(255, 107, 26, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+  z-index: 4;
+  transition: left 0.1s linear, transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.24s var(--ease);
+}
+.fp-progress:hover::after {
+  transform: scale(1.25);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.95),
+    0 0 16px var(--orange-glow),
+    0 0 32px rgba(255, 196, 107, 0.8),
+    0 0 56px rgba(255, 107, 26, 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.6);
+}
+.fp-progress-input {
+  position: absolute;
+  inset: -12px 0;
+  width: 100%;
+  height: calc(100% + 24px);
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+  z-index: 5;
+}
+
+/* Scrub 预览：hover 时显示的时间码浮窗 */
+.fp-progress-tooltip {
+  position: absolute;
+  top: -34px;
+  left: var(--fp-thumb-x, 0%);
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(20, 22, 32, 0.96), rgba(10, 12, 20, 0.96));
+  border: 1px solid rgba(244, 210, 138, 0.2);
+  color: var(--champagne);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.fp-progress-tooltip::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 6px;
+  height: 6px;
+  background: rgba(10, 12, 20, 0.96);
+  border-right: 1px solid rgba(244, 210, 138, 0.2);
+  border-bottom: 1px solid rgba(244, 210, 138, 0.2);
+}
+.fp-progress:hover .fp-progress-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== Row 2 · 3 列控制台（可折叠：max-height 动画） ===== */
+.fp-buttons-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 36px;
+  padding: 6px 0 2px;
+  max-height: 120px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.4s var(--ease), opacity 0.3s var(--ease), margin 0.3s var(--ease), padding 0.3s var(--ease);
+}
+.fp-controls {
+  transition: gap 0.36s var(--ease);
+}
+.fp-controls--collapsed {
+  gap: 0;
+}
+.fp-controls--collapsed .fp-buttons-row {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* ===== Footer 折叠按钮（顶缘中央贴出）=====
+   默认 ▼ 向下（展开态），点击后折叠按钮行，再点 ▲ 向上（折叠态） */
+.fp-controls__toggle {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, rgba(20, 22, 32, 0.95), rgba(10, 12, 20, 0.95));
+  border: 1px solid rgba(244, 210, 138, 0.18);
+  border-bottom: none;
+  color: var(--text-2);
+  cursor: pointer;
+  z-index: 2;
+  transition: all 0.3s var(--ease);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+}
+.fp-controls__toggle:hover {
+  color: var(--orange-2);
+  background: linear-gradient(180deg, rgba(255, 107, 26, 0.18), rgba(255, 107, 26, 0.05));
+  border-color: rgba(255, 157, 69, 0.4);
+}
+.fp-controls__toggle:active { transform: translateX(-50%) scale(0.94); }
+.fp-controls__toggle svg {
+  transition: transform 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fp-controls--collapsed .fp-controls__toggle svg { transform: rotate(180deg); }
+.fp-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.fp-group--left  { justify-content: flex-start; }
+.fp-group--right { justify-content: flex-end; }
+
+/* ===== 通用圆形控制按钮：玻璃质感 + 弹簧过渡 + 错列入场 ===== */
+.fp-ctrl-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.05), transparent 65%),
+    rgba(255, 255, 255, 0.025);
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+  transition:
+    background 0.36s cubic-bezier(0.34, 1.56, 0.64, 1),
+    color 0.36s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.36s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* 错列入场（--i 来自 TSX，1~9） */
+  animation: fp-btn-rise 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+@keyframes fp-btn-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.85); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.fp-ctrl-btn:hover {
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 157, 69, 0.18), transparent 65%),
+    rgba(255, 107, 26, 0.1);
+  color: var(--orange-2);
+  transform: scale(1.08) translateY(-1px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 157, 69, 0.35),
+    0 8px 22px rgba(255, 107, 26, 0.3),
+    0 2px 6px rgba(255, 107, 26, 0.22);
+}
+.fp-ctrl-btn:active { transform: scale(0.94) translateY(0); }
+
+/* 上一首/下一首：hover 朝中间方向微倾（"邀请按"） */
+.fp-ctrl-btn--side { width: 44px; height: 44px; }
+.fp-ctrl-btn--side:hover { transform: scale(1.08) translateY(-1px); }
+.fp-group--right .fp-ctrl-btn--side:hover { transform: scale(1.08) translateX(2px) translateY(-1px); }
+
+/* Active 态：橙色填充 + 右上角呼吸小点 */
+.fp-ctrl-btn--active {
+  color: var(--orange-hot);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 107, 26, 0.22), transparent 65%),
+    rgba(255, 107, 26, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 157, 69, 0.4),
+    0 0 18px rgba(255, 107, 26, 0.28);
+}
+.fp-ctrl-btn--active:hover {
+  color: var(--orange-hot);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 107, 26, 0.32), transparent 65%),
+    rgba(255, 107, 26, 0.18);
+}
+.fp-ctrl-btn--active::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--orange-hot);
+  box-shadow: 0 0 8px var(--orange-glow);
+  animation: fp-active-dot 1.6s ease-in-out infinite;
+}
+@keyframes fp-active-dot {
+  0%, 100% { opacity: 0.6; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1.25); }
+}
+
+/* ===== 中间 transport ===== */
+.fp-transport {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  justify-content: center;
+}
+
+/* ===== 播放键：64px 多层球 + 播放时双层脉冲光环 ===== */
+.fp-ctrl-btn--play {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  background:
+    radial-gradient(circle at 32% 28%, #fff7e0 0%, var(--orange) 32%, var(--orange-hot) 100%);
+  color: #fff;
+  box-shadow:
+    0 0 0 1px rgba(255, 157, 69, 0.45),
+    0 12px 32px rgba(255, 107, 26, 0.42),
+    0 4px 12px rgba(255, 107, 26, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -2px 6px rgba(180, 60, 0, 0.32);
+}
+/* 播放时：双层脉冲光环错峰外扩 */
+.fp-ctrl-btn--play::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 107, 26, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  animation: fp-play-halo 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite paused;
+}
+.fp-ctrl-btn--play.is-playing::before { animation-play-state: running; }
+@keyframes fp-play-halo {
+  0%   { opacity: 0.65; transform: scale(0.95); }
+  100% { opacity: 0;    transform: scale(1.5); }
+}
+.fp-ctrl-btn--play .fp-play__shape {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+  transition: transform 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fp-ctrl-btn--play:hover {
+  transform: scale(1.06) translateY(-1px);
+  box-shadow:
+    0 0 0 1px rgba(255, 157, 69, 0.55),
+    0 16px 40px rgba(255, 107, 26, 0.55),
+    0 6px 16px rgba(255, 107, 26, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 6px rgba(180, 60, 0, 0.32);
+}
+.fp-ctrl-btn--play:hover .fp-play__shape { transform: scale(1.08); }
+.fp-ctrl-btn--play:active { transform: scale(0.96); }
+
+/* ===== 音量控制（紧凑胶囊：图标 + 滑块 + 数字） ===== */
+.fp-vol {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 4px;
+  padding: 4px 12px 4px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  animation: fp-btn-rise 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+  transition: background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.fp-vol:hover {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 157, 69, 0.2);
+}
+.fp-vol__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.fp-vol__btn:hover {
+  color: var(--orange-2);
+  background: rgba(255, 107, 26, 0.1);
+}
+.fp-vol__slider {
+  position: relative;
+  width: 88px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+}
+.fp-vol__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  margin-top: -1.5px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
 }
-.fp-progress-fill {
-  position: relative;
+.fp-vol__fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--orange-hot), var(--orange-2), var(--mint));
-  box-shadow: 0 0 16px rgba(255, 107, 26, 0.45);
-  z-index: 1;
+  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  box-shadow: 0 0 8px rgba(71, 217, 255, 0.4);
+  transition: width 0.12s linear;
 }
-.fp-progress-glow {
+.fp-vol__thumb {
   position: absolute;
   top: 50%;
   width: 10px;
   height: 10px;
-  margin-left: -5px;
   margin-top: -5px;
+  margin-left: -5px;
   border-radius: 50%;
-  background: var(--champagne);
-  box-shadow: 0 0 12px var(--orange-glow), 0 0 24px var(--mint-glow);
+  background: var(--paper, #fff7e0);
+  box-shadow:
+    0 0 0 1px var(--cyan),
+    0 0 8px rgba(71, 217, 255, 0.6);
   pointer-events: none;
-  z-index: 2;
-  transition: left 0.1s linear;
+  transition: left 0.12s linear, transform 0.2s var(--ease);
 }
-.fp-progress-input {
+.fp-vol__slider:hover .fp-vol__thumb { transform: scale(1.2); }
+.fp-vol__input {
   position: absolute;
-  inset: -8px 0;
+  inset: 0;
   width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+  z-index: 1;
+}
+.fp-vol__pct {
+  min-width: 22px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* === 音量条（与外部 PlayerBar .pb-vol 同结构） === */
+.fp-vol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  margin-left: 4px;
+}
+.fp-vol__pct {
+  min-width: 24px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fp-vol__slider {
+  position: relative;
+  width: 84px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+}
+.fp-vol__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.fp-vol__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  box-shadow: 0 0 8px rgba(71, 217, 255, 0.35);
+  transition: width 0.1s linear;
+}
+.fp-vol__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
   cursor: pointer;
   margin: 0;
 }
 
-.fp-ctrl-btns {
+/* === 布局选择 popover（顶栏工具区下拉） === */
+.fp-layout-popover {
+  position: relative;
+}
+.fp-layout-popover__menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  min-width: 280px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: linear-gradient(180deg, rgba(15, 17, 26, 0.96), rgba(8, 10, 16, 0.96));
+  border: 1px solid var(--champagne-soft);
+  border-radius: 14px;
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: fp-popover-in 0.18s var(--ease);
+}
+@keyframes fp-popover-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.fp-layout-popover__item {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.fp-ctrl-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
+  padding: 9px 10px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 18px;
+  border-radius: 10px;
+  color: var(--text-2);
   cursor: pointer;
-  transition: all 0.2s ease;
+  text-align: left;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
-.fp-ctrl-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; transform: scale(1.1); }
-.fp-ctrl-btn--play {
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(135deg, var(--orange-hot, #ff3d00), var(--orange, #ff6b1a));
-  color: #fff;
-  box-shadow: 0 4px 18px rgba(255, 107, 26, 0.5);
+.fp-layout-popover__item:hover {
+  background: rgba(255, 157, 69, 0.08);
+  color: var(--text);
+}
+.fp-layout-popover__item.is-active {
+  background: linear-gradient(135deg, rgba(255, 107, 26, 0.18), rgba(255, 107, 26, 0.06));
+  color: var(--paper);
+  box-shadow: inset 0 0 0 1px rgba(255, 157, 69, 0.32);
+}
+.fp-layout-popover__item > svg {
+  flex-shrink: 0;
+  color: var(--orange-2);
+  opacity: 0.7;
+}
+.fp-layout-popover__item.is-active > svg { opacity: 1; }
+.fp-layout-popover__copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fp-layout-popover__name {
+  font-size: 12.5px;
+  font-weight: 640;
+  letter-spacing: 0.1px;
+  font-family: var(--font-zh-serif);
+}
+.fp-layout-popover__hint {
+  font-size: 10.5px;
+  color: var(--text-4);
+  font-family: var(--font-mono);
+  letter-spacing: 0.2px;
+}
+.fp-layout-popover__check {
+  color: var(--orange-2);
+  flex-shrink: 0;
+}
+
+/* 工具按钮 active 态（用于 popover 触发按钮打开时） */
+.fp-tool-btn--active {
+  border-color: rgba(255, 157, 69, 0.45);
+  background: rgba(255, 107, 26, 0.1);
+  color: var(--champagne);
 }
 
 /* ===== 视觉控制台（VisualConsole） ===== */
@@ -1347,13 +1978,14 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 8px rgba(0, 0, 0, 0.3);
   animation: fp-spin 12s linear infinite;
 }
-.fp-cover-section.paused .fp-cover-img { animation-play-state: paused; }
+.fp-cover-section.paused .fp-cover-img { animation-play-state: paused; } /* legacy：保留兼容 */
 
-/* cinema 模式评论抽屉 */
+/* cinema 模式评论抽屉
+   right: 56px —— 故意推出 30px 抽屉触发区，避免鼠标接近时抽屉先抢焦点。 */
 .fp-comment-toggle {
   position: absolute;
   bottom: 130px;
-  right: 40px;
+  right: 56px;
   z-index: 15;
   width: 42px;
   height: 42px;
@@ -1803,15 +2435,10 @@
 .fp-overlay--editorial .fp-controls {
   position: relative;
 }
+/* 顶栏底栏分隔线：彻底移除（用户反馈"两条黑线"压不住视觉） */
 .fp-overlay--editorial .fp-header::before,
 .fp-overlay--editorial .fp-controls::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 4%, rgba(244, 210, 138, 0.28) 24%, rgba(0, 245, 212, 0.18) 76%, transparent 96%);
+  display: none;
 }
 
 /* ===== 顶栏 · 杂志刊头 ===== */
@@ -2014,15 +2641,13 @@
   box-shadow: none;
   position: relative;
 }
-/* 黑胶外圈装饰：金边 + 旋转唱片中心环 */
+/* 封面容器：去掉可见的方形边框/阴影 —— 专辑自己旋转，frame 只是透明容器，
+   避免旋转时方框露馅（用户反馈"专辑旋转时方形边框还在"） */
 .fp-overlay--editorial .fp-cover-big {
   border-radius: 22px;
   overflow: visible;
   position: relative;
-  box-shadow:
-    0 0 0 1px rgba(244, 210, 138, 0.16),
-    0 30px 80px rgba(0, 0, 0, 0.55),
-    0 0 60px rgba(255, 107, 26, 0.15);
+  box-shadow: none;
 }
 .fp-overlay--editorial .fp-cover-big--live {
   animation: fp-cover-pulse 4s ease-in-out infinite;
@@ -2181,14 +2806,14 @@
 }
 
 /* ===== cinema 模式：字号 / 字体升级（保留粒子背景） ===== */
-.fp-overlay--editorial.fp-overlay--cinema .fp-cinema-title {
+.fp-overlay--editorial:is(.fp-overlay--rhythmic-album, .fp-overlay--rhythmic-particles) .fp-cinema-title {
   font-family: "Noto Serif SC", "Fraunces", serif;
   font-size: clamp(40px, 6vw, 64px);
   font-weight: 600;
   letter-spacing: -0.025em;
   -webkit-font-smoothing: antialiased;
 }
-.fp-overlay--editorial.fp-overlay--cinema .fp-cinema-lyric-line {
+.fp-overlay--editorial:is(.fp-overlay--rhythmic-album, .fp-overlay--rhythmic-particles) .fp-cinema-lyric-line {
   font-family: "Noto Serif SC", serif;
   font-size: 32px;
   font-weight: 600;
@@ -2304,7 +2929,7 @@
 }
 
 /* ===== cinema 模式评论按钮 / 抽屉微调（保留原逻辑） ===== */
-.fp-overlay--editorial.fp-overlay--cinema .fp-comment-toggle {
+.fp-overlay--editorial:is(.fp-overlay--rhythmic-album, .fp-overlay--rhythmic-particles) .fp-comment-toggle {
   border: 1px solid rgba(244, 210, 138, 0.18);
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(10px);

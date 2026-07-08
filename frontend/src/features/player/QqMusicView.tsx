@@ -14,6 +14,12 @@ import "../../styles/library.css";
 type View = "search" | "playlists" | "playlist";
 type LoginMode = "cookie" | "qrcode" | null;
 
+/** 各 tab 的根 view（点击 tab 即跳到此 view，栈被重置为单元素） */
+const TAB_ROOTS = {
+  search: "search" as View,
+  myPlaylists: "playlists" as View,
+};
+
 interface PlaylistInfo {
   id: string;
   name: string;
@@ -26,7 +32,21 @@ export function QqMusicView() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [cookieInput, setCookieInput] = useState("");
   const [loginMode, setLoginMode] = useState<LoginMode>(null);
-  const [view, setView] = useState<View>("search");
+  // 导航：栈式历史，tab 切换 = 重置栈为根，点详情 = 压栈，返回 = 弹栈
+  const [viewStack, setViewStack] = useState<View[]>(["search"]);
+  const view = viewStack[viewStack.length - 1];
+  const canGoBack = viewStack.length > 1;
+  const goToTab = useCallback((root: View) => {
+    setViewStack((prev) => (prev.length === 1 && prev[0] === root ? prev : [root]));
+  }, []);
+  const goToDetail = useCallback((detail: View) => {
+    setViewStack((prev) => [...prev, detail]);
+  }, []);
+  const goBack = useCallback(() => {
+    setViewStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }, []);
+  // 刷新用 —— 不动栈
+  const [refreshKey, setRefreshKey] = useState(0);
   // 扫码登录状态
   const [qrKey, setQrKey] = useState("");
   const [qrUrl, setQrUrl] = useState("");
@@ -108,9 +128,9 @@ export function QqMusicView() {
     finally { setLoading(false); }
   };
 
-  const doSearch = async () => {
+  const doSearch = useCallback(async () => {
     if (!keyword.trim()) return;
-    setLoading(true); setError(""); setView("search");
+    setLoading(true); setError("");
     setPage(1); setHasMore(true);
     try {
       const list = await invoke<Track[]>("qqmusic_search", { keyword, page: 1 });
@@ -118,7 +138,15 @@ export function QqMusicView() {
       setTracks(list); setQueue(list);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
-  };
+  }, [keyword, setQueue]);
+
+  // 刷新（不动栈）：search 视图走 doSearch，其他走 refreshKey 让 useEffect 重跑
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const triggerRefresh = useCallback(() => {
+    if (viewRef.current === "search") doSearch();
+    else setRefreshKey((k) => k + 1);
+  }, [doSearch]);
 
   /** 加载下一页搜索结果 */
   const loadMore = useCallback(async () => {
@@ -139,24 +167,34 @@ export function QqMusicView() {
 
   const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
 
-  /** 打开歌单详情（修复：原卡片无 onClick） */
-  const openPlaylist = async (id: string, name: string) => {
-    setLoading(true); setError(""); setView("playlist"); setCurrentPlaylist(name);
-    try {
-      const list = await invoke<Track[]>("qqmusic_playlist_detail", { playlistId: id });
-      setTracks(list); setQueue(list);
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
-  };
+  /** 打开歌单详情（不改 view，只设置 ID/名称 + 压栈 —— useEffect 负责拉数据） */
+  const [currentPlaylistId, setCurrentPlaylistId] = useState("");
+  const openPlaylist = useCallback((id: string, name: string) => {
+    setCurrentPlaylist(name);
+    setCurrentPlaylistId(id);
+    goToDetail("playlist");
+  }, [goToDetail]);
 
-  const loadPlaylists = async () => {
-    setLoading(true); setError(""); setView("playlists");
-    try {
-      const list = await invoke<PlaylistInfo[]>("qqmusic_playlists");
-      setPlaylists(list);
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
-  };
+  // 数据加载 effect：栈顶视图变化时拉数据
+  // search 视图不自动加载（等待用户输入）
+  useEffect(() => {
+    if (view === "search") return;
+    setLoading(true); setError("");
+    const load = async () => {
+      try {
+        if (view === "playlists") {
+          const list = await invoke<PlaylistInfo[]>("qqmusic_playlists");
+          setPlaylists(list);
+        } else if (view === "playlist" && currentPlaylistId) {
+          const list = await invoke<Track[]>("qqmusic_playlist_detail", { playlistId: currentPlaylistId });
+          setTracks(list); setQueue(list);
+        }
+      } catch (e: any) { setError(e?.message || String(e)); }
+      finally { setLoading(false); }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, currentPlaylistId, refreshKey]);
 
   const handlePlay = (track: Track, index: number) => {
     engineRef.playTrack(track, index);
@@ -196,7 +234,7 @@ export function QqMusicView() {
               2. F12 → Application → Cookies → 复制含 <code style={{ color: "#ff9248" }}>uin</code> 和 <code style={{ color: "#ff9248" }}>qqmusic_key</code> 的 Cookie<br />
               3. 粘贴到下方
             </p>
-            <textarea className="library__search-input" style={{ height: 70, paddingTop: 10, resize: "none", fontFamily: "monospace" }}
+            <textarea className="or-input or-input--area" style={{ width: "100%", resize: "none", fontFamily: "var(--font-mono)" }}
               placeholder="uin=xxx; qqmusic_key=xxx" value={cookieInput} onChange={(e) => setCookieInput(e.target.value)} />
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn-scan" onClick={doLogin} disabled={loading}>{loading ? "登录中…" : "确认登录"}</button>
@@ -214,14 +252,35 @@ export function QqMusicView() {
     <div className="library">
       {/* 导航栏（零 emoji，全部 SVG icon） */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <button className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`} onClick={() => setView("search")}>
+        {/* 栈式「返回上一级」：栈深 > 1 时显示，弹栈（useEffect 重新加载数据） */}
+        {canGoBack && (
+          <button
+            className="nav-pill nav-pill--ghost"
+            onClick={goBack}
+            title="返回上一级"
+            aria-label="返回上一级"
+          >
+            <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+            返回
+          </button>
+        )}
+        <button
+          className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`}
+          onClick={() => goToTab(TAB_ROOTS.search)}
+        >
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
             <path d="m21 21-4.3-4.3" />
           </svg>
           搜索
         </button>
-        <button className={`nav-pill ${view === "playlists" ? "nav-pill--active" : ""}`} onClick={loadPlaylists}>
+        <button
+          className={`nav-pill ${view === "playlists" || view === "playlist" ? "nav-pill--active" : ""}`}
+          onClick={() => goToTab(TAB_ROOTS.myPlaylists)}
+        >
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 6h13" />
             <path d="M3 12h13" />
@@ -232,20 +291,31 @@ export function QqMusicView() {
           我的歌单
         </button>
         <div style={{ flex: 1 }} />
+        {/* 刷新：search 视图重搜，其他视图重拉（不动栈） */}
+        {view !== "search" || keyword.trim() ? (
+          <button className="nav-pill nav-pill--ghost" onClick={triggerRefresh} title="刷新">
+            <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 2v6h-6" />
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+              <path d="M3 22v-6h6" />
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+            </svg>
+            刷新
+          </button>
+        ) : null}
         <button className="nav-pill nav-pill--ghost" onClick={async () => { await invoke("qqmusic_logout" as any).catch(() => {}); setLoggedIn(false); }}>退出</button>
       </div>
 
       {/* 搜索框 */}
       {view === "search" && (
-        <div className="library__toolbar" style={{ marginBottom: 16 }}>
-          <div className="library__search">
-            <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-              <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <input className="library__search-input" placeholder="搜索QQ音乐…" value={keyword}
-              onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} />
-          </div>
+        <div style={{ marginBottom: 16 }}>
+          <ConsoleSearch
+            value={keyword}
+            onChange={setKeyword}
+            onSubmit={doSearch}
+            loading={loading}
+            placeholder="搜索 QQ 音乐…"
+          />
         </div>
       )}
 
@@ -304,10 +374,21 @@ export function QqMusicView() {
         </div>
       )}
 
-      {/* 歌单详情列表（修复：原 view 缺 playlist） */}
+      {/* 歌单详情列表 */}
       {view === "playlist" && tracks.length > 0 && (
         <>
           <div className="section-title">
+            <button
+              className="section-title__back"
+              onClick={goBack}
+              title="返回上一级"
+              aria-label="返回上一级"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M19 12H5" />
+                <path d="M12 19l-7-7 7-7" />
+              </svg>
+            </button>
             <h3>{currentPlaylist}</h3>
             <span className="section-title__sub">{tracks.length} 首</span>
             <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}

@@ -788,39 +788,104 @@
 /* 9. 导航徽章 / 段落标题                                                  */
 /* ------------------------------------------------------------------------ */
 
+/* ===== nav-pill · 导航药丸（tab/操作）=====
+   关键修复：之前 `.nav-pill:hover` 的白色背景会覆盖 --active/--green 的渐变
+   （同样的 0.06→0.1 background 优先级问题）—— 这里给每个变体单独写自己的 :hover
+   保证颜色不会丢。 */
 .nav-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 16px; border: none; border-radius: 999px;
-  font-size: 13px; font-weight: 680; color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;            /* 固定高度 → 4 个按钮永远等高，垂直居中一致 */
+  padding: 0 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  cursor: pointer; transition: all 0.2s var(--ease);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1;           /* 锁住行高 → 文字在 34px 容器里精确居中 */
+  letter-spacing: 0.1px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;          /* 防止被父容器 flex 压缩宽度 */
+  transition:
+    color 0.18s var(--ease),
+    background 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease),
+    transform 0.18s var(--ease);
 }
 .nav-pill__icon {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-3);
-  transition: color 0.18s var(--ease), transform 0.18s var(--ease);
   flex-shrink: 0;
+  transition: color 0.18s var(--ease);
 }
-.nav-pill:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-1px); }
+/* 默认态：hover 时背景 + 边框 + 图标同步变亮（不破坏 active/green 渐变） */
+.nav-pill:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  transform: translateY(-1px);
+}
 .nav-pill:hover .nav-pill__icon { color: var(--text); }
+
+/* Active 变体（橙色渐变）—— hover 保持渐变，只换深浅 + 加强投影 */
 .nav-pill--active {
   background: linear-gradient(135deg, var(--orange-hot), var(--orange));
-  color: #fff; border-color: transparent;
-  box-shadow: 0 4px 14px var(--orange-glow);
+  color: #fff;
+  border-color: rgba(255, 107, 26, 0.5);
+  box-shadow:
+    0 4px 14px var(--orange-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.nav-pill--active:hover {
+  background: linear-gradient(135deg, var(--orange-hot), var(--orange-2));
+  border-color: rgba(255, 157, 69, 0.7);
+  color: #fff;
+  box-shadow:
+    0 6px 20px rgba(255, 107, 26, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
 }
 .nav-pill--active .nav-pill__icon { color: rgba(255, 255, 255, 0.96); }
+
+/* Green 变体（每日推荐）—— hover 同样保持渐变 */
 .nav-pill--green {
   background: linear-gradient(135deg, #1db954, #1ed760);
-  color: #fff; border-color: transparent;
-  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.28);
+  color: #fff;
+  border-color: transparent;
+  box-shadow:
+    0 4px 12px rgba(29, 185, 84, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-.nav-pill--green .nav-pill__icon { color: rgba(255, 255, 255, 0.94); }
+.nav-pill--green:hover {
+  background: linear-gradient(135deg, #1ed760, #1db954);
+  color: #fff;
+  border-color: transparent;
+  box-shadow:
+    0 6px 18px rgba(29, 185, 84, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+.nav-pill--green .nav-pill__icon { color: rgba(255, 255, 255, 0.96); }
+
+/* Ghost 变体（返回/刷新/退出）—— 透明底，hover 轻轻亮起 */
 .nav-pill--ghost {
-  background: transparent; color: var(--text-3); border-color: rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: var(--text-3);
+  border-color: rgba(255, 255, 255, 0.12);
 }
-.nav-pill--ghost:hover { color: var(--text); }
+.nav-pill--ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text);
+}
 
 .section-title {
   display: flex; align-items: baseline; gap: 10px;
@@ -833,6 +898,31 @@
 .section-title .section-title__sub {
   font-size: 12px; color: var(--text-3);
   font-family: var(--font-mono); letter-spacing: 0.5px;
+}
+/* 标题左侧的「返回上一级」小按钮 —— 圆形玻璃按钮，与 .nav-pill--ghost 区分 */
+.section-title__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--champagne-soft);
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.6), rgba(14, 16, 24, 0.4));
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.18s var(--ease);
+  flex-shrink: 0;
+  align-self: center;
+}
+.section-title__back:hover {
+  color: var(--amber);
+  border-color: rgba(255, 157, 69, 0.45);
+  background: linear-gradient(180deg, rgba(255, 107, 26, 0.1), rgba(255, 107, 26, 0.03));
+  transform: translateX(-2px);
+}
+.section-title__back:active {
+  transform: translateX(-2px) scale(0.92);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1048,7 +1138,80 @@
 }
 
 /* ------------------------------------------------------------------------ */
-/* 11. 响应式                                                                */
+/* 11. 搜索结果 tab 切换器（对标 .library__switcher，但更窄更轻）           */
+/* ------------------------------------------------------------------------ */
+
+.search-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: rgba(8, 10, 16, 0.7);
+  border: 1px solid rgba(244, 210, 138, 0.12);
+  border-radius: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.search-tabs::-webkit-scrollbar { display: none; }
+
+.search-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 680;
+  font-family: var(--font-body);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color 0.18s var(--ease), background 0.18s var(--ease);
+  flex-shrink: 0;
+}
+.search-tabs__tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+.search-tabs__tab--active {
+  color: var(--orange-hot);
+  background: linear-gradient(180deg, rgba(255, 157, 69, 0.18), rgba(255, 107, 26, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 196, 107, 0.22), 0 0 0 1px rgba(255, 157, 69, 0.32);
+}
+
+.search-tabs__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: var(--text-3);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.search-tabs__tab--active .search-tabs__count {
+  color: var(--orange-hot);
+  background: rgba(255, 107, 26, 0.12);
+  border-color: rgba(255, 157, 69, 0.4);
+}
+/* 计数小徽章继承音源色码（q-lossless / q-high / q-master / q-hires / q-std） */
+.search-tabs__count--lossless { color: var(--orange-2); border-color: rgba(255, 157, 69, 0.4); }
+.search-tabs__count--high     { color: var(--chill-cyan); border-color: rgba(143, 233, 255, 0.35); }
+.search-tabs__count--hires    { color: var(--paper); border-color: rgba(255, 196, 107, 0.5); }
+.search-tabs__count--master   { color: var(--gold); border-color: var(--gold); }
+.search-tabs__count--std      { color: var(--text-3); }
+
+/* ------------------------------------------------------------------------ */
+/* 12. 响应式                                                                */
 /* ------------------------------------------------------------------------ */
 
 @media (max-width: 820px) {

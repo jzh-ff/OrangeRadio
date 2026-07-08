@@ -810,6 +810,41 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.home-queue__sep { color: var(--text-4); opacity: 0.6; }
+
+/* 来源标签（真实数据驱动：最近 / 推荐 / 本地） */
+.home-queue__src {
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.02);
+  flex-shrink: 0;
+}
+.home-queue__src--最近 {
+  color: var(--chill-cyan);
+  background: rgba(143, 233, 255, 0.08);
+  border-color: rgba(143, 233, 255, 0.35);
+}
+.home-queue__src--推荐 {
+  color: var(--amber);
+  background: rgba(255, 196, 107, 0.08);
+  border-color: rgba(255, 196, 107, 0.4);
+}
+.home-queue__src--本地 {
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 .home-queue__spectrum {

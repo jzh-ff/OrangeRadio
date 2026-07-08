@@ -4,7 +4,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::http::{Request, Response};
-use tauri::Manager;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
@@ -88,8 +90,96 @@ pub fn run() {
     let builder = orange_tauri::commands::register_all(builder);
 
     builder
+        .setup(setup_tray_and_close_to_tray)
         .run(tauri::generate_context!())
         .expect("OrangeRadio 启动失败");
+}
+
+/// 系统托盘 + 关闭按钮拦截到托盘
+///
+/// 行为：
+/// - 启动时创建系统托盘图标（应用默认图标）+ 右键菜单（显示 / 退出）
+/// - 左键单击托盘：显示主窗口并聚焦
+/// - 菜单「显示」：同左键
+/// - 菜单「退出」：真正退出进程（绕过 hide 拦截）
+/// - 窗口 CloseRequested 事件被拦截：prevent_close + 隐藏窗口
+///   → 用户点关闭按钮时应用继续在后台运行（保持播放）
+fn setup_tray_and_close_to_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // ---- 托盘菜单 ----
+    let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出 OrangeRadio", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
+
+    // ---- 创建托盘 ----
+    let _tray = TrayIconBuilder::with_id("main-tray")
+        .icon(
+            app.default_window_icon()
+                .cloned()
+                .ok_or_else(|| tauri::Error::AssetNotFound("default_window_icon".into()))?,
+        )
+        .tooltip("OrangeRadio · 沉浸式智能音乐播放器")
+        .menu(&menu)
+        .show_menu_on_left_click(false) // 左键单击走 on_tray_icon_event（toggle 显示），不走菜单
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => show_main_window(app),
+            "quit" => {
+                tracing::info!("用户从托盘菜单选择退出");
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    tracing::info!("系统托盘已创建");
+
+    // ---- 主窗口关闭按钮拦截：隐藏到托盘 ----
+    if let Some(win) = app.get_webview_window("main") {
+        let win_clone = win.clone();
+        win.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                // 阻止默认关闭 → 隐藏窗口（应用继续在后台运行）
+                api.prevent_close();
+                if let Err(e) = win_clone.hide() {
+                    tracing::warn!("隐藏主窗口到托盘失败: {}", e);
+                }
+                tracing::info!("窗口已隐藏到托盘（用户可从托盘恢复）");
+            }
+        });
+    } else {
+        tracing::warn!("未找到 main 窗口，跳过关闭拦截");
+    }
+
+    Ok(())
+}
+
+/// 切换主窗口：隐藏就显示并聚焦；显示就聚焦
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if win.is_visible().unwrap_or(false) {
+            // 已经显示 → 聚焦
+            let _ = win.set_focus();
+            let _ = win.unminimize();
+        } else {
+            // 隐藏 → 显示 + 聚焦 + 取消最小化
+            let _ = win.show();
+            let _ = win.unminimize();
+            let _ = win.set_focus();
+        }
+        // 给前端发个事件，让 UI 可以做点额外反应（比如刷新视觉）
+        let _ = app.emit("tray:show-window", ());
+    } else {
+        tracing::warn!("show_main_window 找不到 main 窗口");
+    }
 }
 
 /// 自定义 `orangeradio://` 协议的请求处理

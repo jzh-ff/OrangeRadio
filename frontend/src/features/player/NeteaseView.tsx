@@ -16,6 +16,14 @@ import "../../styles/library.css";
 type View = "search" | "playlists" | "playlist" | "daily" | "toplists" | "toplist";
 type LoginMode = "cookie" | "qrcode" | null;
 
+/** 各 tab 的根 view（点击 tab 即跳到此 view，栈被重置为单元素） */
+const TAB_ROOTS = {
+  myPlaylists: "playlists" as View,
+  daily: "daily" as View,
+  toplists: "toplists" as View,
+  search: "search" as View,
+};
+
 /** 提取歌曲封面 URL */
 function coverOf(t: Track): string | null { return getCoverUrl(t); }
 
@@ -48,8 +56,24 @@ export function NeteaseView() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [qrStatus, setQrStatus] = useState("");
   const pollRef = useRef<number>(0);
-  // 导航
-  const [view, setView] = useState<View>("playlists");
+  // 导航：栈式历史，tab 切换 = 重置栈为根，点详情 = 压栈，返回 = 弹栈
+  const [viewStack, setViewStack] = useState<View[]>(["playlists"]);
+  const view = viewStack[viewStack.length - 1];
+  const canGoBack = viewStack.length > 1;
+  /** 切到某 tab 的根：清栈，单元素 */
+  const goToTab = useCallback((root: View) => {
+    setViewStack((prev) => (prev.length === 1 && prev[0] === root ? prev : [root]));
+  }, []);
+  /** 压栈进入详情 */
+  const goToDetail = useCallback((detail: View) => {
+    setViewStack((prev) => [...prev, detail]);
+  }, []);
+  /** 弹栈返回（仅多于一帧时才生效） */
+  const goBack = useCallback(() => {
+    setViewStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }, []);
+  // 数据刷新用 —— 不动栈，只 bump 计数让 useEffect 重新执行
+  const [refreshKey, setRefreshKey] = useState(0);
   // 数据
   const [tracks, setTracks] = useState<Track[]>([]);
   const [playlists, setPlaylists] = useState<PlaylistInfo[]>([]);
@@ -72,14 +96,14 @@ export function NeteaseView() {
     invoke<boolean>("netease_status").then((ok) => {
       setLoggedIn(ok);
       // 登录成功后自动加载歌单（持久化恢复也算登录）
-      if (ok) loadPlaylists();
+      if (ok) goToTab(TAB_ROOTS.myPlaylists);
     }).catch(() => {});
     // 设置网易云解析器：歌曲ID → 播放URL
     engineRef.resolver = async (trackId: string) => {
       return invoke<string>("netease_stream", { trackId });
     };
     return () => { engineRef.resolver = null; };
-  }, []);
+  }, [goToTab]);
 
   // 监听全局 "重新登录" 请求（来自 toast / settings）
   const pendingLogin = usePlayerStore((s) => s.pendingLoginSource);
@@ -125,7 +149,7 @@ export function NeteaseView() {
           window.clearInterval(pollRef.current);
           setLoggedIn(true);
           setLoginMode(null);
-          loadPlaylists();
+          goToTab(TAB_ROOTS.myPlaylists);
         } else if (status.code === 800) {
           window.clearInterval(pollRef.current);
           setQrStatus("二维码已过期，请重新生成");
@@ -147,14 +171,14 @@ export function NeteaseView() {
     try {
       await invoke("netease_login", { cookie: cookieInput });
       setLoggedIn(true); setCookieInput(""); setLoginMode(null);
-      loadPlaylists();
+      goToTab(TAB_ROOTS.myPlaylists);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
   };
 
-  const doSearch = async () => {
+  const doSearch = useCallback(async () => {
     if (!keyword.trim()) return;
-    setLoading(true); setError(""); setView("search");
+    setLoading(true); setError("");
     setPage(1); setHasMore(true);
     try {
       const list = await invoke<Track[]>("netease_search", { keyword, page: 1 });
@@ -162,7 +186,16 @@ export function NeteaseView() {
       setTracks(list); setQueue(list);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
-  };
+  }, [keyword, setQueue]);
+
+  // 触发刷新（不动栈）：search 视图走 doSearch，其他走 refreshKey 让 useEffect 重跑
+  // viewRef 读最新 view 避免和"view 改变 → useEffect 重跑 → triggerRefresh 调用"形成循环
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const triggerRefresh = useCallback(() => {
+    if (viewRef.current === "search") doSearch();
+    else setRefreshKey((k) => k + 1);
+  }, [doSearch]);
 
   /** 加载下一页搜索结果（追加，不覆盖队列原内容） */
   const loadMore = useCallback(async () => {
@@ -183,60 +216,51 @@ export function NeteaseView() {
 
   const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
 
-  const loadPlaylists = async () => {
-    setLoading(true); setError(""); setView("playlists"); setCoverErrors({});
-    try {
-      const list = await invoke<PlaylistInfo[]>("netease_playlists");
-      setPlaylists(list);
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
-  };
+  // 进入歌单详情（不改 view，只设置 ID/名称 + 压栈 —— useEffect 负责拉数据）
+  const openPlaylist = useCallback((id: string, name: string) => {
+    setCurrentPlaylist(name);
+    setCurrentPlaylistId(id);
+    goToDetail("playlist");
+  }, [goToDetail]);
 
-  const loadDaily = async () => {
-    setLoading(true); setError(""); setView("daily");
-    try {
-      const list = await invoke<Track[]>("netease_daily");
-      setTracks(list); setQueue(list);
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
-  };
+  // 进入榜单详情
+  const openToplist = useCallback((id: string, name: string) => {
+    setCurrentToplist(name);
+    setCurrentToplistId(id);
+    goToDetail("toplist");
+  }, [goToDetail]);
 
-  const loadToplists = async () => {
-    setLoading(true); setError(""); setView("toplists"); setCoverErrors({});
-    try {
-      const list = await invoke<[string, string, string, number][]>("netease_toplists");
-      setToplists(list.map(([id, name, cover, playCount]) => ({ id, name, count: 0, cover, playCount })));
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
-  };
-
-  const openPlaylist = async (id: string, name: string) => {
-    setLoading(true); setError(""); setView("playlist"); setCurrentPlaylist(name); setCurrentPlaylistId(id);
-    try {
-      const list = await invoke<Track[]>("netease_playlist_detail", { playlistId: id });
-      setTracks(list); setQueue(list);
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
-  };
-
-  const openToplist = async (id: string, name: string) => {
-    setLoading(true); setError(""); setView("toplist"); setCurrentToplist(name); setCurrentToplistId(id);
-    try {
-      const list = await invoke<Track[]>("netease_toplist_detail", { toplistId: id });
-      setTracks(list); setQueue(list);
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
-  };
-
-  /** 刷新当前歌单/榜单/每日推荐 */
-  const refreshCurrent = () => {
-    if (view === "playlist" && currentPlaylistId) openPlaylist(currentPlaylistId, currentPlaylist);
-    else if (view === "toplist" && currentToplistId) openToplist(currentToplistId, currentToplist);
-    else if (view === "search" && keyword.trim()) doSearch();
-    else if (view === "daily") loadDaily();
-    else if (view === "playlists") loadPlaylists();
-    else if (view === "toplists") loadToplists();
-  };
+  // 数据加载 effect：栈顶视图或详情 ID 变化时重新拉数据
+  // search 视图不自动加载（等待用户输入）
+  useEffect(() => {
+    if (view === "search") return;
+    setLoading(true); setError("");
+    const load = async () => {
+      try {
+        if (view === "playlists") {
+          setCoverErrors({});
+          const list = await invoke<PlaylistInfo[]>("netease_playlists");
+          setPlaylists(list);
+        } else if (view === "toplists") {
+          setCoverErrors({});
+          const list = await invoke<[string, string, string, number][]>("netease_toplists");
+          setToplists(list.map(([id, name, cover, playCount]) => ({ id, name, count: 0, cover, playCount })));
+        } else if (view === "daily") {
+          const list = await invoke<Track[]>("netease_daily");
+          setTracks(list); setQueue(list);
+        } else if (view === "playlist" && currentPlaylistId) {
+          const list = await invoke<Track[]>("netease_playlist_detail", { playlistId: currentPlaylistId });
+          setTracks(list); setQueue(list);
+        } else if (view === "toplist" && currentToplistId) {
+          const list = await invoke<Track[]>("netease_toplist_detail", { toplistId: currentToplistId });
+          setTracks(list); setQueue(list);
+        }
+      } catch (e: any) { setError(e?.message || String(e)); }
+      finally { setLoading(false); }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, currentPlaylistId, currentToplistId, refreshKey]);
 
   const handlePlay = async (track: Track, index: number) => {
     try {
@@ -282,7 +306,7 @@ export function NeteaseView() {
               2. F12 → Application → Cookies → 复制含 <code style={{ color: "#ff9248" }}>MUSIC_U</code> 的 Cookie<br />
               3. 粘贴到下方
             </p>
-            <textarea className="library__search-input" style={{ height: 70, paddingTop: 10, resize: "none", fontFamily: "monospace" }}
+            <textarea className="or-input or-input--area" style={{ width: "100%", resize: "none", fontFamily: "var(--font-mono)" }}
               placeholder="MUSIC_U=xxx" value={cookieInput} onChange={(e) => setCookieInput(e.target.value)} />
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn-scan" onClick={doLogin} disabled={loading}>{loading ? "登录中…" : "确认登录"}</button>
@@ -300,7 +324,25 @@ export function NeteaseView() {
     <div className="library">
       {/* 导航栏（零 emoji，全部 SVG icon，对标 MineRadio #controls-cluster） */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <button className={`nav-pill ${view === "playlists" ? "nav-pill--active" : ""}`} onClick={loadPlaylists}>
+        {/* 栈式「返回上一级」：栈深 > 1 时显示，弹栈（useEffect 重新加载数据） */}
+        {canGoBack && (
+          <button
+            className="nav-pill nav-pill--ghost"
+            onClick={goBack}
+            title="返回上一级"
+            aria-label="返回上一级"
+          >
+            <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+            返回
+          </button>
+        )}
+        <button
+          className={`nav-pill ${view === "playlists" || view === "playlist" ? "nav-pill--active" : ""}`}
+          onClick={() => goToTab(TAB_ROOTS.myPlaylists)}
+        >
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 6h13" />
             <path d="M3 12h13" />
@@ -310,7 +352,10 @@ export function NeteaseView() {
           </svg>
           我的歌单
         </button>
-        <button className={`nav-pill ${view === "daily" ? "nav-pill--active" : ""} nav-pill--green`} onClick={loadDaily}>
+        <button
+          className={`nav-pill ${view === "daily" ? "nav-pill--active" : ""} nav-pill--green`}
+          onClick={() => goToTab(TAB_ROOTS.daily)}
+        >
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="5" width="18" height="16" rx="2" />
             <path d="M3 9h18" />
@@ -320,13 +365,19 @@ export function NeteaseView() {
           </svg>
           每日推荐
         </button>
-        <button className={`nav-pill ${view === "toplists" || view === "toplist" ? "nav-pill--active" : ""}`} onClick={loadToplists}>
+        <button
+          className={`nav-pill ${view === "toplists" || view === "toplist" ? "nav-pill--active" : ""}`}
+          onClick={() => goToTab(TAB_ROOTS.toplists)}
+        >
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
           </svg>
           排行榜
         </button>
-        <button className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`} onClick={() => setView("search")}>
+        <button
+          className={`nav-pill ${view === "search" ? "nav-pill--active" : ""}`}
+          onClick={() => goToTab(TAB_ROOTS.search)}
+        >
           <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
             <path d="m21 21-4.3-4.3" />
@@ -334,8 +385,9 @@ export function NeteaseView() {
           搜索
         </button>
         <div style={{ flex: 1 }} />
-        {(view === "playlists" || view === "toplists" || view === "playlist" || view === "toplist" || view === "daily") && (
-          <button className="nav-pill nav-pill--ghost" onClick={refreshCurrent} title="刷新">
+        {/* 刷新：search 视图重搜，其他视图重拉数据（不动栈） */}
+        {view !== "search" || keyword.trim() ? (
+          <button className="nav-pill nav-pill--ghost" onClick={triggerRefresh} title="刷新">
             <svg className="nav-pill__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21 2v6h-6" />
               <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
@@ -344,7 +396,7 @@ export function NeteaseView() {
             </svg>
             刷新
           </button>
-        )}
+        ) : null}
         <button className="nav-pill nav-pill--ghost" onClick={async () => { await invoke("netease_logout"); setLoggedIn(false); }}>退出</button>
       </div>
 
@@ -463,6 +515,17 @@ export function NeteaseView() {
         <>
           {(view === "playlist" || view === "toplist") && (
             <div className="section-title">
+              <button
+                className="section-title__back"
+                onClick={goBack}
+                title="返回上一级"
+                aria-label="返回上一级"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 12H5" />
+                  <path d="M12 19l-7-7 7-7" />
+                </svg>
+              </button>
               <h3>{view === "playlist" ? currentPlaylist : currentToplist}</h3>
               <span className="section-title__sub">{tracks.length} 首</span>
               <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
@@ -471,7 +534,37 @@ export function NeteaseView() {
           )}
           {view === "daily" && (
             <div className="section-title">
+              <button
+                className="section-title__back"
+                onClick={goBack}
+                title="返回上一级"
+                aria-label="返回上一级"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 12H5" />
+                  <path d="M12 19l-7-7 7-7" />
+                </svg>
+              </button>
               <h3>每日推荐</h3>
+              <span className="section-title__sub">{tracks.length} 首</span>
+              <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
+                onClick={() => handlePlay(tracks[0], 0)}>播放全部</button>
+            </div>
+          )}
+          {view === "search" && (
+            <div className="section-title">
+              <button
+                className="section-title__back"
+                onClick={goBack}
+                title="返回上一级"
+                aria-label="返回上一级"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 12H5" />
+                  <path d="M12 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h3>搜索结果</h3>
               <span className="section-title__sub">{tracks.length} 首</span>
               <button className="nav-pill nav-pill--active" style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 12 }}
                 onClick={() => handlePlay(tracks[0], 0)}>播放全部</button>

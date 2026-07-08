@@ -9,10 +9,15 @@ import { HeroSpectrum } from "./HeroSpectrum";
 import { RightWaveFlow } from "./RightWaveFlow";
 import "../../styles/home.css";
 
+/** 后端 aggregate_user_profile 返回的画像（完整字段）
+ *  缺失或为 0 表示用户尚未产生听歌数据
+ */
 interface UserProfile {
   top_artists?: [string, number][];
   top_genres?: [string, number][];
+  bpm_preference?: { min: number; max: number; center: number; distribution: number[] };
   total_listen_secs?: number;
+  [k: string]: unknown;
 }
 
 type HomeTone = "library" | "mix" | "playlist" | "local";
@@ -96,6 +101,16 @@ export function HomeView() {
   const topArtists = profile?.top_artists?.slice(0, 3) || [];
   const heroCover = getCoverUrl(currentTrack);
 
+  // ===== 数据真实性判断（决定标题/副标题显示真实数据 vs 明确空态）=====
+  const hasProfile = (profile?.total_listen_secs ?? 0) > 0;
+  const totalSecs = profile?.total_listen_secs ?? 0;
+  const fmtTotal = (s: number) => {
+    if (s >= 3600) return `${Math.floor(s / 3600)} 小时总时长`;
+    if (s >= 60) return `${Math.floor(s / 60)} 分钟总时长`;
+    return `${s} 秒总时长`;
+  };
+  const openProfilePanel = () => usePlayerStore.getState().setProfileOpen(true);
+
   const cards: {
     id: string;
     label: string;
@@ -119,14 +134,19 @@ export function HomeView() {
     {
       id: "daily",
       label: "Daily",
-      title: recommend?.[0]?.meta.title || "每日推荐",
-      sub: recommend ? "根据最近播放生成" : "多听几首解锁",
+      // 真实数据：recommend 列表的第一首
+      title: recommend?.[0]?.meta.title ?? "暂无推荐",
+      sub: recommend?.length
+        ? `基于最近 ${recentTracks.length || "几首"} 播放生成 · ${recommend.length} 首候选`
+        : "多听几首歌解锁",
       tone: "mix",
       cover: getCoverUrl(recommend?.[0]),
       onClick: () => {
         if (recommend?.length) {
           usePlayerStore.getState().setQueue(recommend);
           engineRef.playTrack(recommend[0], 0);
+        } else {
+          setSubView("library");
         }
       },
     },
@@ -134,7 +154,9 @@ export function HomeView() {
       id: "radio",
       label: "Radio",
       title: "私人电台",
-      sub: `${likedCount} 首收藏随机漫游`,
+      sub: likedCount
+        ? `${likedCount} 首收藏随机漫游`
+        : "收藏几首歌开启漫游",
       tone: "playlist",
       cover: getCoverUrl(libraryTracks.find((t) => t.liked)),
       onClick: () => {
@@ -142,53 +164,68 @@ export function HomeView() {
         if (liked.length) {
           usePlayerStore.getState().setQueue(liked);
           engineRef.playTrack(liked[Math.floor(Math.random() * liked.length)], 0);
+        } else {
+          setSubView("library");
         }
       },
     },
     {
       id: "continue",
       label: "Resume",
-      title: recentTracks[0]?.meta.title || "继续听",
-      sub: recentTracks.length ? `最近 ${recentTracks.length} 首` : "暂无播放历史",
+      // 真实数据：最近播放的最后一首
+      title: recentTracks[0]?.meta.title ?? "暂无播放历史",
+      sub: recentTracks.length
+        ? `最近 ${recentTracks.length} 首 · 上一首：${recentTracks[1]?.meta.artist ?? recentTracks[0].meta.artist}`
+        : "去音乐库挑首歌开始",
       tone: "mix",
       cover: getCoverUrl(recentTracks[0]),
       onClick: () => {
         if (recentTracks.length) {
           usePlayerStore.getState().setQueue(recentTracks);
           engineRef.playTrack(recentTracks[0], 0);
+        } else {
+          setSubView("library");
         }
       },
     },
     {
       id: "profile",
       label: "Profile",
-      title: "听歌画像",
-      sub: profile
-        ? `${Math.floor((profile.total_listen_secs || 0) / 3600) || Math.floor((profile.total_listen_secs || 0) / 60)}${(profile.total_listen_secs || 0) >= 3600 ? " 小时" : " 分钟"} 总时长`
-        : "画像生成中",
+      // 真实数据：累计播放时长 + 是否有数据
+      title: hasProfile ? fmtTotal(totalSecs) : "听歌画像未生成",
+      sub: hasProfile
+        ? topArtists[0]
+          ? `常听：${topArtists[0][0]}${topArtists[1] ? " / " + topArtists[1][0] : ""}`
+          : "播放历史聚合自本地 SQLite"
+        : "播放几首歌后自动生成",
       tone: "local",
-      onClick: () => setSettingsOpen(true),
+      onClick: openProfilePanel,
     },
     {
       id: "artist",
       label: "Artist",
-      title: topArtists[0]?.[0] || "常听歌手",
-      sub: topArtists.length ? `Top · ${topArtists.map(([a]) => a).join(" / ")}` : "数据积累中",
+      // 真实数据：top_artists 第一个
+      title: topArtists[0]?.[0] ?? "尚未统计",
+      sub: topArtists.length
+        ? `Top · ${topArtists.map(([a]) => a).join(" / ")}`
+        : "播放更多歌曲后显示常听歌手",
       tone: "local",
-      onClick: () => setSubView("search"),
+      onClick: openProfilePanel,
     },
   ];
 
-  const tiles = [
+  const tiles: { title: string; sub: string; source: "最近" | "推荐" | "本地"; cover: string | null; onClick: () => void }[] = [
     ...recentTracks.slice(0, 3).map((t) => ({
       title: t.meta.title,
       sub: t.meta.artist,
+      source: "最近" as const,
       cover: getCoverUrl(t),
       onClick: () => engineRef.playTrack(t, 0),
     })),
     ...(recommend?.slice(0, 2) || []).map((t) => ({
       title: t.meta.title,
-      sub: "推荐",
+      sub: t.meta.artist,
+      source: "推荐" as const,
       cover: getCoverUrl(t),
       onClick: () => {
         usePlayerStore.getState().setQueue(recommend!);
@@ -196,11 +233,13 @@ export function HomeView() {
       },
     })),
   ];
+  // 不足 5 个时：用本地库补齐（同时明确标 "本地" 来源，不混充"推荐"）
   while (tiles.length < 5 && tiles.length < libraryTracks.length) {
     const t = libraryTracks[tiles.length]!;
     tiles.push({
       title: t.meta.title,
       sub: t.meta.artist,
+      source: "本地" as const,
       cover: getCoverUrl(t),
       onClick: () => engineRef.playTrack(t, 0),
     });
@@ -271,7 +310,11 @@ export function HomeView() {
               <div className="home-hero__vinyl-disc">
                 <img src={heroCover} alt="" />
               </div>
-              <span className="home-hero__vinyl-folio">FOLIO · NO.01</span>
+              <span className="home-hero__vinyl-folio">
+                {currentTrack
+                  ? `${currentTrack.meta.title.slice(0, 12)}${currentTrack.meta.title.length > 12 ? "…" : ""} · ${currentTrack.meta.artist.slice(0, 10)}${currentTrack.meta.artist.length > 10 ? "…" : ""}`
+                  : "FOLIO · EMPTY"}
+              </span>
             </div>
           )}
         </div>
@@ -346,7 +389,11 @@ export function HomeView() {
                 </div>
                 <span className="home-queue__meta">
                   <span className="home-queue__name">{t.title}</span>
-                  <span className="home-queue__sub">{t.sub}</span>
+                  <span className="home-queue__sub">
+                    <span className={`home-queue__src home-queue__src--${t.source}`}>{t.source}</span>
+                    <span className="home-queue__sep">·</span>
+                    {t.sub}
+                  </span>
                 </span>
                 <span className="home-queue__spectrum" aria-hidden>
                   <i /><i /><i /><i /><i /><i /><i /><i />
