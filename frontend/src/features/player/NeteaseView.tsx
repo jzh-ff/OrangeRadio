@@ -15,6 +15,27 @@ import "../../styles/library.css";
 type View = "search" | "playlists" | "playlist" | "daily" | "toplists" | "toplist";
 type LoginMode = "cookie" | "browser" | null;
 
+interface UserInfo {
+  uid: string;
+  nickname: string;
+  avatar_url?: string;
+  vip: boolean;
+}
+
+const QUALITY_OPTIONS = [
+  { value: "standard", label: "标准" },
+  { value: "higher", label: "较高" },
+  { value: "exhigh", label: "极高" },
+  { value: "lossless", label: "无损" },
+  { value: "hires", label: "Hi-Res" },
+  { value: "jyeffect", label: "鲸云臻音" },
+  { value: "jymaster", label: "鲸云母带" },
+  { value: "sky", label: "沉浸环绕声" },
+  { value: "dolby", label: "杜比全景声" },
+];
+
+const STORAGE_QUALITY_KEY = "orangeradio-netease-quality";
+
 /** 各 tab 的根 view（点击 tab 即跳到此 view，栈被重置为单元素） */
 const TAB_ROOTS = {
   myPlaylists: "playlists" as View,
@@ -51,6 +72,8 @@ export function NeteaseView() {
   const [cookieInput, setCookieInput] = useState("");
   const [loginMode, setLoginMode] = useState<LoginMode>(null);
   const [browserLoading, setBrowserLoading] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [quality, setQuality] = useState("standard");
   // 导航：栈式历史，tab 切换 = 重置栈为根，点详情 = 压栈，返回 = 弹栈
   const [viewStack, setViewStack] = useState<View[]>(["playlists"]);
   const view = viewStack[viewStack.length - 1];
@@ -119,6 +142,7 @@ export function NeteaseView() {
       goToTab(TAB_ROOTS.myPlaylists);
       // 强制刷新当前 tab 数据：登录态切换后 viewStack 可能没变，需要 bump refreshKey 触发 useEffect 加载
       setRefreshKey((k) => k + 1);
+      loadUserInfo();
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setBrowserLoading(false); }
   };
@@ -132,9 +156,46 @@ export function NeteaseView() {
       goToTab(TAB_ROOTS.myPlaylists);
       // 强制刷新当前 tab 数据
       setRefreshKey((k) => k + 1);
+      loadUserInfo();
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
   };
+
+  // 加载当前登录用户信息
+  const loadUserInfo = async () => {
+    try {
+      const info = await invoke<UserInfo | null>("netease_current_user");
+      setUserInfo(info);
+    } catch { /* 静默失败 */ }
+  };
+
+  // 音质切换：持久化到 localStorage 并同步到后端
+  const handleQualityChange = async (level: string) => {
+    setQuality(level);
+    localStorage.setItem(STORAGE_QUALITY_KEY, level);
+    try {
+      await invoke("netease_set_quality", { level });
+    } catch (e: any) { setError(e?.message || "音质设置失败"); }
+  };
+
+  // 组件挂载 + 登录态变化时恢复/同步音质
+  useEffect(() => {
+    const restoreQuality = async () => {
+      const saved = localStorage.getItem(STORAGE_QUALITY_KEY);
+      const level = saved && QUALITY_OPTIONS.some((o) => o.value === saved) ? saved : "standard";
+      setQuality(level);
+      try {
+        await invoke("netease_set_quality", { level });
+      } catch { /* 后端可能还没 ready */ }
+    };
+    restoreQuality();
+  }, []);
+
+  // 登录态从 false -> true 时加载账号信息
+  useEffect(() => {
+    if (loggedIn) loadUserInfo();
+    else setUserInfo(null);
+  }, [loggedIn]);
 
   const doSearch = useCallback(async () => {
     if (!keyword.trim()) return;
@@ -341,6 +402,86 @@ export function NeteaseView() {
           搜索
         </button>
         <div style={{ flex: 1 }} />
+        {/* 账号信息 + 音质选择 */}
+        {userInfo && (
+          <div
+            title={`UID: ${userInfo.uid}`}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "4px 10px",
+              background: "rgba(255,255,255,0.06)",
+              borderRadius: 20,
+              marginRight: 8,
+              fontSize: 12,
+              color: "#e8e8ef",
+            }}
+          >
+            {userInfo.avatar_url ? (
+              <img
+                src={userInfo.avatar_url}
+                alt=""
+                style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: "#ff9248",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 10,
+                  color: "#fff",
+                }}
+              >
+                {userInfo.nickname.charAt(0)}
+              </div>
+            )}
+            <span style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {userInfo.nickname}
+            </span>
+            {userInfo.vip && (
+              <span
+                style={{
+                  padding: "1px 5px",
+                  background: "#ff9248",
+                  borderRadius: 4,
+                  fontSize: 10,
+                  color: "#fff",
+                  fontWeight: 600,
+                }}
+              >
+                VIP
+              </span>
+            )}
+          </div>
+        )}
+        <select
+          value={quality}
+          onChange={(e) => handleQualityChange(e.target.value)}
+          title="网易云播放音质"
+          style={{
+            background: "rgba(255,255,255,0.06)",
+            color: "#e8e8ef",
+            border: "none",
+            borderRadius: 6,
+            padding: "6px 8px",
+            fontSize: 12,
+            marginRight: 8,
+            cursor: "pointer",
+            outline: "none",
+          }}
+        >
+          {QUALITY_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value} style={{ background: "#1a1a24", color: "#e8e8ef" }}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         {/* 刷新：search 视图重搜，其他视图重拉数据（不动栈） */}
         {view !== "search" || keyword.trim() ? (
           <button className="nav-pill nav-pill--ghost" onClick={triggerRefresh} title="刷新">
