@@ -85,7 +85,7 @@ jobs:
         with:
           projectPath: apps/desktop/src-tauri
           # 已在上方手动构建前端，用 --config 覆盖 tauri.conf.json 的 beforeBuildCommand
-          args: ${{ matrix.args }} --config apps/desktop/src-tauri/tauri.ci.conf.json
+          args: ${{ matrix.args }} --config ./tauri.ci.conf.json
           tagName: ${{ github.ref_name }}
           releaseName: 'OrangeRadio ${{ github.ref_name }}'
           releaseBody: 'See the assets to download and install this version.'
