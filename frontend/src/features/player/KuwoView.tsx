@@ -12,7 +12,19 @@ import "../../styles/library.css";
 
 function coverOf(t: Track): string | null { return getCoverUrl(t); }
 
-/** 酷我音乐视图（免登录搜索 + 播放） */
+type View = "search" | "popular" | "chart";
+
+interface ChartOption { id: string; name: string }
+
+const CHARTS: ChartOption[] = [
+  { id: "93", name: "飙升榜" },
+  { id: "17", name: "热歌榜" },
+  { id: "16", name: "新歌榜" },
+  { id: "286", name: "抖音热歌榜" },
+  { id: "279", name: "电音榜" },
+];
+
+/** 酷我音乐视图：搜索 + 推荐 + 榜单 */
 export function KuwoView() {
   const [songs, setSongs] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
@@ -20,16 +32,17 @@ export function KuwoView() {
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [view, setView] = useState<View>("search");
+  const [chartId, setChartId] = useState(CHARTS[0].id);
+
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
   const doSearch = async () => {
     if (!keyword.trim()) return;
-    setLoading(true);
-    setError("");
-    setPage(1);
-    setHasMore(true);
+    setLoading(true); setError("");
+    setPage(1); setHasMore(true);
     try {
       const list = await invoke<Track[]>("kuwo_search", { keyword, page: 1 });
       if (list.length === 0) {
@@ -64,26 +77,126 @@ export function KuwoView() {
 
   const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
 
+  const loadPopular = async () => {
+    setLoading(true); setError("");
+    try {
+      const list = await invoke<Track[]>("kuwo_popular", { limit: 50 });
+      setSongs(list);
+      setQueue(list);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadChart = async (id: string) => {
+    setChartId(id);
+    setLoading(true); setError("");
+    try {
+      const list = await invoke<Track[]>("kuwo_chart_detail", { bangId: id, limit: 50 });
+      setSongs(list);
+      setQueue(list);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchView = (v: View) => {
+    setView(v);
+    setSongs([]);
+    setError("");
+    if (v === "popular") loadPopular();
+    if (v === "chart") loadChart(chartId);
+  };
+
   const handlePlay = (track: Track, index: number) => {
     engineRef.playTrack(track, index);
   };
 
+  const renderRow = (t: Track, i: number) => (
+    <>
+      <span className="col-title" onClick={() => handlePlay(t, i)}>
+        {coverOf(t) && <img src={coverOf(t)!} alt="" className="col-title__cover" loading="lazy" />}
+        <span className="col-title__txt">{t.meta.title}</span>
+        <span className="q-badge q-high">KW</span>
+      </span>
+      <span className="col-artist">{t.meta.artist}</span>
+      <span className="col-album">{t.meta.album || "—"}</span>
+      <span className="col-dur">
+        <TrackActions track={t} size={14} />
+      </span>
+    </>
+  );
+
   return (
     <div className="library">
-      <div style={{ marginBottom: 16 }}>
-        <ConsoleSearch
-          value={keyword}
-          onChange={setKeyword}
-          onSubmit={doSearch}
-          loading={loading}
-          placeholder="搜索酷我音乐…"
-        />
+      <div className="section-title">
+        <h3>酷我音乐</h3>
+        <span className="section-title__sub">
+          {view === "search" ? "搜索" : view === "popular" ? "推荐" : "榜单"}
+        </span>
       </div>
 
-      {error && (
-        <div className="library__error">
-          {error}
+      <div className="search-tabs" role="tablist" aria-label="酷我视图">
+        <button
+          type="button"
+          role="tab"
+          className={`search-tabs__tab ${view === "search" ? "search-tabs__tab--active" : ""}`}
+          onClick={() => switchView("search")}
+        >
+          搜索
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`search-tabs__tab ${view === "popular" ? "search-tabs__tab--active" : ""}`}
+          onClick={() => switchView("popular")}
+        >
+          推荐
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`search-tabs__tab ${view === "chart" ? "search-tabs__tab--active" : ""}`}
+          onClick={() => switchView("chart")}
+        >
+          榜单
+        </button>
+      </div>
+
+      {view === "search" && (
+        <div style={{ marginTop: 16, marginBottom: 16 }}>
+          <ConsoleSearch
+            value={keyword}
+            onChange={setKeyword}
+            onSubmit={doSearch}
+            loading={loading}
+            placeholder="搜索酷我音乐…"
+          />
         </div>
+      )}
+
+      {view === "chart" && (
+        <div className="search-tabs" style={{ marginTop: 12, marginBottom: 12 }} role="tablist">
+          {CHARTS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="tab"
+              className={`search-tabs__tab ${chartId === c.id ? "search-tabs__tab--active" : ""}`}
+              onClick={() => loadChart(c.id)}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div className="library__error">{error}</div>
       )}
 
       {songs.length === 0 && !loading ? (
@@ -95,7 +208,9 @@ export function KuwoView() {
             </svg>
           </div>
           <div className="library__empty-title">{error ? "加载失败" : "酷我音乐"}</div>
-          <div className="library__empty-desc">输入关键词搜索，曲库千万级</div>
+          <div className="library__empty-desc">
+            {view === "search" ? "输入关键词搜索" : view === "popular" ? "暂无推荐数据" : "选择榜单加载"}
+          </div>
         </div>
       ) : (
         <div className="library__list">
@@ -112,21 +227,8 @@ export function KuwoView() {
               activeId={currentTrack?.id}
               isPlaying={isPlaying}
               onPlay={handlePlay}
-              onItemsRendered={onItemsRendered}
-              renderRow={(t, i) => (
-                <>
-                  <span className="col-title" onClick={() => handlePlay(t, i)}>
-                    {coverOf(t) && <img src={coverOf(t)!} alt="" className="col-title__cover" loading="lazy" />}
-                    <span className="col-title__txt">{t.meta.title}</span>
-                    <span className="q-badge q-high">KW</span>
-                  </span>
-                  <span className="col-artist">{t.meta.artist}</span>
-                  <span className="col-album">{t.meta.album || "—"}</span>
-                  <span className="col-dur">
-                    <TrackActions track={t} />
-                  </span>
-                </>
-              )}
+              onItemsRendered={view === "search" ? onItemsRendered : undefined}
+              renderRow={renderRow}
             />
           </div>
         </div>

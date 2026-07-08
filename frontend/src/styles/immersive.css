@@ -1,187 +1,177 @@
-/* ===== 主页沉浸模式（Immersive View）=====
-   整个 app 切换到只展示壁纸 + 歌词：隐藏侧栏/顶栏/底栏/导航。
-   视觉：封面 blur 60px 充底 + 黑色半透叠层 + 中央巨字歌词舞台。 */
+/* ===== 主页沉浸模式（Immersive View）v2 =====
+   整个 app 切换到只展示背景 + 歌词：隐藏侧栏/顶栏/底栏/导航。
+   默认：当前封面轻微模糊 + 暗角 + 中央巨字歌词。
+   支持背景源切换：专辑封面 / 我的壁纸 / 动态粒子 / 纯色。 */
 
 .immersive {
   position: fixed;
   inset: 0;
-  z-index: 80;          /* 高于 PlayerBar (10) 和 FullPlayer (50) */
+  z-index: 80;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: transparent;              /* 透明，让 .immersive__bg-img 当底 */
-  animation: immersive-in 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
   color: #fff;
   font-family: var(--font-body, system-ui);
+  animation: immersive-in 0.45s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+  cursor: default;
 }
+
 @keyframes immersive-in {
-  from { opacity: 0; transform: scale(1.04); }
+  from { opacity: 0; transform: scale(1.03); }
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* ===== 背景：封面大图 + blur 30px + opacity 65% ===== */
+/* ===== 背景层 ===== */
 .immersive__bg {
   position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background: #04050a;                  /* 封面加载失败时的兜底黑 */
+  background: #050608;
 }
-.immersive__bg-img {
+
+.immersive__bg--cover,
+.immersive__bg--wallpaper {
+  background: #050608;
+}
+
+.immersive__bg-media {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(30px) saturate(1.25);           /* 30px 模糊 + 提饱和 */
-  transform: scale(1.15);                       /* 避免 blur 后边缘露白 */
-  opacity: 0.65;                                /* 壁纸更明显 */
-  animation: immersive-bg-drift 16s ease-in-out infinite alternate;
+  transform: scale(1.08);
+  transition: filter 0.4s ease, transform 0.8s ease;
 }
-@keyframes immersive-bg-drift {
-  from { transform: scale(1.15) translate(0, 0); }
-  to   { transform: scale(1.2) translate(-2.5%, -2%); }
+
+.immersive__bg-media--blur {
+  filter: blur(20px) saturate(1.25) brightness(0.95);
 }
-/* 弱化遮罩：仅左上角标题区稍暗保证可读，主体保持壁纸透出 */
-.immersive__bg-mask {
+
+.immersive__bg--particles .immersive__bg-media,
+.immersive__bg--particles canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.immersive__bg-dim {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 40% 30% at 0% 0%, rgba(4, 5, 10, 0.25), transparent 70%),
-    linear-gradient(180deg, rgba(4, 5, 10, 0.03), rgba(4, 5, 10, 0.12));
+    radial-gradient(ellipse 70% 55% at 50% 50%, rgba(5, 6, 8, 0.0), rgba(5, 6, 8, 0.32) 100%),
+    linear-gradient(180deg, rgba(5, 6, 8, 0.18), transparent 30%, transparent 70%, rgba(5, 6, 8, 0.28));
   pointer-events: none;
 }
 
-/* ===== 节拍呼吸：isPlaying 时整屏暖橙光缓慢呼吸 ===== */
-.immersive__breath {
+.immersive__bg-fallback {
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 107, 26, 0.12), transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(106, 27, 154, 0.12), transparent 50%),
+    #050608;
+}
+
+.immersive__bg-hint {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 60% 45% at 50% 50%, rgba(255, 157, 69, 0.18), transparent 70%);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 1;
-  animation: immersive-breath 2.4s ease-in-out infinite;
-  animation-play-state: paused;
-}
-.immersive.is-playing .immersive__breath { animation-play-state: running; }
-.immersive.is-paused  .immersive__breath { animation-play-state: paused; }
-@keyframes immersive-breath {
-  0%, 100% { opacity: 0; }
-  50%      { opacity: 1; }
+  display: grid;
+  place-items: center;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
+  font-size: 13px;
+  letter-spacing: 0.05em;
 }
 
-/* ===== 飘浮音符粒子：整屏散布，3 个速度组错开 ===== */
-.immersive__particles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  z-index: 1;
-}
-.immersive__particle {
-  position: absolute;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-  color: rgba(255, 196, 107, 0.6);
-  text-shadow: 0 0 8px rgba(255, 196, 107, 0.5), 0 0 16px rgba(255, 157, 69, 0.3);
-  user-select: none;
-  will-change: transform, opacity;
-  animation: immersive-particle-float-1 12s linear infinite;
-  animation-play-state: paused;
-}
-.immersive.is-playing .immersive__particle { animation-play-state: running; }
-.immersive.is-paused  .immersive__particle { animation-play-state: paused; }
-.immersive__particle--2 { animation-name: immersive-particle-float-2; animation-duration: 18s; }
-.immersive__particle--3 { animation-name: immersive-particle-float-3; animation-duration: 9s; }
-
-@keyframes immersive-particle-float-1 {
-  0%   { transform: translate(0, 30px)   rotate(0deg);   opacity: 0; }
-  10%  { opacity: 0.5; }
-  50%  { transform: translate(15px, -30px) rotate(180deg); opacity: 0.45; }
-  90%  { opacity: 0.3; }
-  100% { transform: translate(-10px, -90px) rotate(360deg); opacity: 0; }
-}
-@keyframes immersive-particle-float-2 {
-  0%   { transform: translate(0, 40px)   rotate(0deg);    opacity: 0; }
-  10%  { opacity: 0.4; }
-  50%  { transform: translate(-20px, -50px) rotate(-180deg); opacity: 0.35; }
-  90%  { opacity: 0.2; }
-  100% { transform: translate(10px, -120px) rotate(-360deg); opacity: 0; }
-}
-@keyframes immersive-particle-float-3 {
-  0%   { transform: translate(0, 20px)   rotate(0deg);  opacity: 0; }
-  10%  { opacity: 0.55; }
-  50%  { transform: translate(8px, -20px) rotate(90deg);  opacity: 0.5; }
-  90%  { opacity: 0.25; }
-  100% { transform: translate(-6px, -60px) rotate(180deg); opacity: 0; }
-}
-
-/* ===== 顶部信息条（cover 小圆 + 标题 + 退出按钮）===== */
+/* ===== 顶部信息条 ===== */
 .immersive__head {
   position: relative;
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 28px 40px;
+  gap: 16px;
+  padding: 24px 32px;
   flex-shrink: 0;
+  opacity: 0;
+  transform: translateY(-16px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  pointer-events: none;
 }
+
+.immersive__head--visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 .immersive__cover {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
   overflow: hidden;
   flex-shrink: 0;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.45);
   background: rgba(255, 255, 255, 0.04);
 }
+
 .immersive__cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   animation: immersive-cover-spin 24s linear infinite;
-  transform-origin: center;
+  animation-play-state: paused;
 }
+
+.is-playing .immersive__cover-img {
+  animation-play-state: running;
+}
+
 @keyframes immersive-cover-spin {
   to { transform: rotate(360deg); }
 }
+
 .immersive__cover-fallback {
   width: 100%;
   height: 100%;
   display: grid;
   place-items: center;
-  font-size: 24px;
+  font-size: 22px;
   color: var(--text-3);
 }
-.immersive__meta { flex: 1; min-width: 0; }
+
+.immersive__meta {
+  flex: 1;
+  min-width: 0;
+}
+
 .immersive__eyebrow {
   font-family: var(--font-mono, monospace);
   font-size: 9px;
-  letter-spacing: 0.32em;
+  letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: var(--champagne, rgba(244, 210, 138, 0.8));
-  margin-bottom: 6px;
+  color: var(--champagne, rgba(244, 210, 138, 0.75));
+  margin-bottom: 5px;
 }
+
 .immersive__title {
   font-family: var(--font-editorial, "Cormorant Garamond", serif);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 500;
   letter-spacing: -0.01em;
-  line-height: 1.15;
+  line-height: 1.2;
   color: var(--paper, #fff7e0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .immersive__artist {
   font-family: var(--font-mono, monospace);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-3, rgba(255, 255, 255, 0.6));
-  margin-top: 4px;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
+  margin-top: 3px;
 }
 
-/* 退出按钮（右上角） */
 .immersive__exit {
   display: inline-flex;
   align-items: center;
@@ -189,22 +179,24 @@
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.3s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+  transition: all 0.25s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
 }
+
 .immersive__exit:hover {
   background: rgba(255, 107, 26, 0.15);
-  border-color: rgba(255, 157, 69, 0.5);
+  border-color: rgba(255, 157, 69, 0.45);
   color: #fff;
   transform: scale(1.06);
 }
+
 .immersive__exit:active { transform: scale(0.94); }
 
-/* ===== 歌词舞台（核心：居中、当前行大字、四周渐变淡出）===== */
+/* ===== 歌词舞台 ===== */
 .immersive__stage {
   position: relative;
   z-index: 1;
@@ -215,195 +207,629 @@
   justify-content: center;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 40px 0;
+  padding: 0;
   scrollbar-width: none;
 }
+
 .immersive__stage::-webkit-scrollbar { display: none; }
 
 .immersive__lyrics {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  max-width: 920px;
+  gap: 18px;
+  max-width: 980px;
   width: 100%;
-  padding: 35vh 0;            /* 上下留出 35% 屏高的"空气"，让首尾行可滚动到中心 */
+  padding: 42vh 48px 42vh;
+  transition: all 0.4s ease;
+}
+
+.immersive__lyrics--left {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.immersive__lyrics:not(.immersive__lyrics--left) {
+  align-items: center;
+  text-align: center;
 }
 
 .immersive__hint {
-  color: var(--text-3);
+  color: var(--text-3, rgba(255, 255, 255, 0.45));
   font-family: var(--font-mono);
   font-size: 12px;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
   padding: 40px 0;
 }
 
 .immersive__line {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  text-align: center;
-  font-family: var(--font-zh-serif, "Noto Serif SC", serif);
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.28);
-  line-height: 1.5;
-  letter-spacing: 0.02em;
-  transition: color 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
-              font-size 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
-              transform 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
-              opacity 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
-              text-shadow 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+  flex-direction: column;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.32);
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+  transition: color 0.45s ease, font-size 0.45s ease, transform 0.45s ease, opacity 0.45s ease;
   cursor: pointer;
   max-width: 100%;
 }
-.immersive__line:hover { color: rgba(255, 255, 255, 0.5); }
 
-/* 当前行：巨字 + 暖白 + 淡橙光晕（沉浸模式核心视觉） */
-.immersive__line.is-active {
-  font-size: 36px;
-  font-weight: 600;
-  color: var(--paper, #fff7e0);
-  text-shadow:
-    0 0 32px rgba(255, 196, 107, 0.35),
-    0 0 64px rgba(255, 107, 26, 0.2);
-  transform: scale(1);
-  letter-spacing: 0.04em;
-  position: relative;       /* 音符 / 扫描光定位锚 */
-  filter: drop-shadow(0 0 24px rgba(255, 196, 107, 0.32))
-          drop-shadow(0 4px 18px rgba(0, 0, 0, 0.5));
+.immersive__line:hover { color: rgba(255, 255, 255, 0.48); }
+
+.immersive__line-text {
+  display: inline-block;
 }
-/* 当前行文字氛围：暖橙多层光晕（加强版） */
+
+.immersive__line-translation {
+  display: block;
+  font-size: 0.62em;
+  color: rgba(255, 255, 255, 0.38);
+  letter-spacing: 0.02em;
+  transition: color 0.45s ease;
+}
+
+/* 字号变体 */
+.immersive__lyrics--sm .immersive__line { font-size: 20px; }
+.immersive__lyrics--md .immersive__line { font-size: 26px; }
+.immersive__lyrics--lg .immersive__line { font-size: 34px; }
+.immersive__lyrics--xl .immersive__line { font-size: 44px; }
+
+/* 当前行：核心视觉（暖光大字 + 扫描光 + 强光晕） */
+.immersive__line.is-active {
+  color: var(--immersive-lyric-color, var(--paper, #fff7e0));
+  transform: scale(1);
+  filter:
+    drop-shadow(0 0 32px rgba(255, 196, 107, 0.55))
+    drop-shadow(0 0 64px rgba(255, 107, 26, 0.28))
+    drop-shadow(0 4px 18px rgba(0, 0, 0, 0.55));
+  position: relative;
+}
+
+/* 当前行文字多层暖光（保证深色背景上仍清晰） */
 .immersive__line.is-active .immersive__line-text {
   text-shadow:
-    0 0 22px rgba(255, 196, 107, 0.55),
-    0 0 48px rgba(255, 157, 69, 0.32),
-    0 0 90px rgba(255, 107, 26, 0.18);
+    0 0 18px rgba(255, 196, 107, 0.7),
+    0 0 36px rgba(255, 157, 69, 0.4),
+    0 0 72px rgba(255, 107, 26, 0.18);
 }
-/* 扫描光：1px 暖橙渐变线，从左扫到右，无限循环 */
+
+/* 扫描光：暖橙 1px 渐变线，从左扫到右（核心沉浸效果） */
 .immersive__line.is-active::before {
   content: "";
   position: absolute;
   left: -10%;
-  bottom: -4px;
+  bottom: -8px;
   width: 60%;
-  height: 1px;
+  height: 1.5px;
   background: linear-gradient(90deg,
     transparent,
     rgba(255, 196, 107, 0.85) 30%,
     rgba(255, 157, 69, 1)     50%,
     rgba(255, 196, 107, 0.85) 70%,
     transparent);
-  filter: drop-shadow(0 0 6px rgba(255, 196, 107, 0.8));
+  filter: drop-shadow(0 0 8px rgba(255, 196, 107, 0.85));
   pointer-events: none;
   animation: immersive-line-scan 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
 @keyframes immersive-line-scan {
   0%   { transform: translateX(0);     opacity: 0; }
   15%  { opacity: 1; }
   85%  { opacity: 1; }
   100% { transform: translateX(220%);  opacity: 0; }
 }
-/* 音符跳动：4 个音符从 active 行顶部飘上消失，错开 delay */
-.immersive__note {
+
+/* 当前行左缘暖橙竖线（持续呼吸，提示"这里"） */
+.immersive__line.is-active::after {
+  content: "";
   position: absolute;
-  bottom: 100%;
-  color: rgba(255, 196, 107, 0.92);
-  font-size: 22px;
-  font-weight: 700;
-  font-family: var(--font-mono, monospace);
+  left: -18px;
+  top: 12%;
+  bottom: 12%;
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, transparent, var(--orange-2, #ff9d45), transparent);
+  box-shadow: 0 0 10px rgba(255, 157, 69, 0.7);
   pointer-events: none;
-  user-select: none;
-  text-shadow: 0 0 14px rgba(255, 196, 107, 0.7), 0 0 28px rgba(255, 157, 69, 0.4);
-  opacity: 0;
-  animation: immersive-note-float 4.5s ease-out infinite;
-  will-change: transform, opacity;
-}
-.immersive__note--1 { left: 6%;  animation-delay: 0s;    }
-.immersive__note--2 { left: 38%; animation-delay: 1.1s;  }
-.immersive__note--3 { left: 68%; animation-delay: 2.3s;  }
-.immersive__note--4 { left: 88%; animation-delay: 3.4s;  }
-
-@keyframes immersive-note-float {
-  0%   { transform: translate(0, 12px) scale(0.55) rotate(-10deg); opacity: 0; }
-  12%  { opacity: 0.95; }
-  35%  { transform: translate(6px, -28px) scale(1) rotate(6deg);    opacity: 0.92; }
-  70%  { transform: translate(-4px, -64px) scale(0.95) rotate(-4deg); opacity: 0.6; }
-  100% { transform: translate(2px, -110px) scale(0.6) rotate(12deg);  opacity: 0; }
-}
-.immersive__line.is-active .immersive__line-time {
-  color: var(--orange-2, #ff9d45);
-  font-weight: 700;
-  font-size: 13px;
-  text-shadow: 0 0 12px rgba(255, 157, 69, 0.6);
-  opacity: 1;
+  animation: immersive-line-rail 1.6s ease-in-out infinite;
 }
 
-/* 临近行：稍大、半亮（n-1, n+1） */
+@keyframes immersive-line-rail {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+.immersive__lyrics--sm .immersive__line.is-active { font-size: 26px; font-weight: 600; }
+.immersive__lyrics--md .immersive__line.is-active { font-size: 36px; font-weight: 600; }
+.immersive__lyrics--lg .immersive__line.is-active { font-size: 50px; font-weight: 600; }
+.immersive__lyrics--xl .immersive__line.is-active { font-size: 64px; font-weight: 600; }
+
+.immersive__line.is-active .immersive__line-translation {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* 临近行 */
 .immersive__line.is-near {
-  font-size: 22px;
   color: rgba(255, 255, 255, 0.55);
   transform: scale(0.96);
 }
 
-/* 远行：更暗（n-2, n+2） */
+/* 远行 */
 .immersive__line.is-far {
-  font-size: 18px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.32);
   transform: scale(0.92);
 }
 
-/* 更远：几乎不可见（>2 行） */
+/* 更远 */
 .immersive__line.is-farther {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.18);
   transform: scale(0.88);
 }
 
-.immersive__line-time {
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  font-variant-numeric: tabular-nums;
-  color: var(--orange-2, #ff9d45);
-  opacity: 0;
-  transition: opacity 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)), color 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
-  flex-shrink: 0;
-  width: 50px;
-  text-align: right;
-}
-.immersive__line.is-near .immersive__line-time,
-.immersive__line.is-far .immersive__line-time,
-.immersive__line.is-farther .immersive__line-time { display: none; }
-
-.immersive__line-text {
-  display: inline-block;
-}
-
-/* 上下淡出蒙层：让歌词边缘自然 fade 到背景，弱化避免"硬切"感 */
+/* 上下淡出蒙层 */
 .immersive__fade {
   position: absolute;
   left: 0;
   right: 0;
-  height: 18vh;
+  height: 20vh;
   pointer-events: none;
   z-index: 2;
 }
+
 .immersive__fade--top {
   top: 0;
-  background: linear-gradient(180deg, rgba(4, 5, 10, 0.55) 0%, rgba(4, 5, 10, 0.18) 60%, transparent 100%);
-}
-.immersive__fade--bottom {
-  bottom: 0;
-  background: linear-gradient(0deg, rgba(4, 5, 10, 0.55) 0%, rgba(4, 5, 10, 0.18) 60%, transparent 100%);
+  background: linear-gradient(180deg, rgba(5, 6, 8, 0.55) 0%, rgba(5, 6, 8, 0.15) 60%, transparent 100%);
 }
 
-/* 进入动画：歌词行错列上浮（stagger via animation-delay） */
-.immersive__line {
-  animation: immersive-line-rise 0.7s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)) backwards;
-  animation-delay: calc(min(var(--i, 0), 8) * 60ms);
+.immersive__fade--bottom {
+  bottom: 0;
+  background: linear-gradient(0deg, rgba(5, 6, 8, 0.55) 0%, rgba(5, 6, 8, 0.15) 60%, transparent 100%);
 }
-@keyframes immersive-line-rise {
-  from { opacity: 0; transform: translateY(18px) scale(0.96); }
+
+/* ===== 底部进度条 ===== */
+.immersive__footer {
+  position: relative;
+  z-index: 2;
+  padding: 18px 32px 24px;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  pointer-events: none;
+}
+
+.immersive__footer--visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.immersive__progress {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.immersive__progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--orange-2, #ff9d45), var(--champagne, #f4d28a));
+  border-radius: 2px;
+  transition: width 0.15s linear;
+}
+
+.immersive__time {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ===== 控制面板触发按钮 ===== */
+.immersive__controls-trigger {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.immersive__controls-trigger:hover,
+.immersive__controls-trigger--active {
+  background: rgba(255, 107, 26, 0.18);
+  border-color: rgba(255, 157, 69, 0.45);
+  color: #fff;
+  transform: scale(1.06);
+}
+
+/* ===== 控制面板 ===== */
+.immersive__controls-overlay {
+  position: fixed;
+  right: 24px;
+  bottom: 82px;
+  z-index: 6;
+  width: 320px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 13, 18, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  padding: 18px;
+  animation: controls-in 0.25s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+  scrollbar-width: thin;
+}
+
+.immersive__controls-overlay::-webkit-scrollbar { width: 4px; }
+.immersive__controls-overlay::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+@keyframes controls-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.immersive__controls-section + .immersive__controls-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.immersive__controls-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 12px;
+}
+
+.immersive__bg-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.immersive__bg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.immersive__bg-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.immersive__bg-btn--active {
+  background: rgba(255, 107, 26, 0.18);
+  border-color: rgba(255, 157, 69, 0.5);
+  color: #fff;
+}
+
+.immersive__bg-btn__icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.immersive__bg-btn__label {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.immersive__wallpaper-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.immersive__wp-thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.immersive__wp-thumb img,
+.immersive__wp-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.immersive__wp-thumb--active {
+  border-color: var(--orange-2, #ff9d45);
+  box-shadow: 0 0 0 2px rgba(255, 157, 69, 0.25);
+}
+
+.immersive__wp-thumb__galaxy {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 107, 26, 0.15), transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(106, 27, 154, 0.15), transparent 50%),
+    #0a0b10;
+}
+
+.immersive__wp-thumb__video {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.7);
+  background: #0a0b10;
+}
+
+.immersive__solid-row,
+.immersive__lyric-row,
+.immersive__toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.immersive__color-input {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.immersive__color-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.immersive__lyric-label {
+  width: 36px;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.immersive__size-btns,
+.immersive__align-btns {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.immersive__size-btns button,
+.immersive__align-btns button {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.immersive__size-btns button:hover,
+.immersive__align-btns button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.immersive__size-btns button.active,
+.immersive__align-btns button.active {
+  background: rgba(255, 107, 26, 0.2);
+  border-color: rgba(255, 157, 69, 0.45);
+  color: #fff;
+}
+
+.immersive__toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--orange-2, #ff9d45);
+  cursor: pointer;
+}
+
+/* ===== 进入动画：歌词行错列上浮 ===== */
+.immersive__line {
+  animation: immersive-line-rise 0.6s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)) backwards;
+  animation-delay: calc(min(var(--i, 0), 8) * 50ms);
+}
+
+@keyframes immersive-line-rise {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ===== 沉浸模式 v3 歌词舞台：MineRadio 风格 =====
+   中央：当前行超大 + 暖光 + 扫描光
+   上下：1 行弱预览，节奏提示
+   自动滚动跟随 activeIndex；保持与 FullPlayer 律动布局视觉同源 */
+.immersive__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+  max-width: 1100px;
+  width: 100%;
+  padding: 0 32px;
+  transition: all 0.35s ease;
+}
+
+.immersive__stack--left { align-items: flex-start; text-align: left; }
+.immersive__stack:not(.immersive__stack--left) { align-items: center; text-align: center; }
+
+.immersive__stack--sm .immersive__current-text { font-size: 38px; }
+.immersive__stack--md .immersive__current-text { font-size: 52px; }
+.immersive__stack--lg .immersive__current-text { font-size: 72px; }
+.immersive__stack--xl .immersive__current-text { font-size: 96px; }
+
+.immersive__stack--sm .immersive__prev-text,
+.immersive__stack--sm .immersive__next-text { font-size: 16px; }
+.immersive__stack--md .immersive__prev-text,
+.immersive__stack--md .immersive__next-text { font-size: 18px; }
+.immersive__stack--lg .immersive__prev-text,
+.immersive__stack--lg .immersive__next-text { font-size: 20px; }
+.immersive__stack--xl .immersive__prev-text,
+.immersive__stack--xl .immersive__next-text { font-size: 22px; }
+
+/* 当前行：极简单一冷暖轴（暖白纸 + 极光 4 层光晕 + 单条扫描线 + 350ms 极简入场） */
+.immersive__current {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: inherit;
+  gap: 14px;
+  max-width: 100%;
+  padding: 20px 0;
+}
+
+.immersive__current-time {
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+  color: var(--or-aurora, #7adfb0);
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+.immersive__current-text-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.immersive__current-text {
+  position: relative;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0;
+  padding: 8px 0 22px;
+  color: var(--or-paper, #f6f5ef);
+  text-shadow:
+    0 0 24px rgba(122, 223, 176, 0.45),
+    0 0 64px rgba(122, 223, 176, 0.20);
+  /* 入场：350ms 极简 fade + 0.5px translateY（不是 3D 旋转） */
+  animation: or-fade-up 350ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+/* 共享入场 keyframes（与 FullPlayer 同源） */
+@keyframes or-fade-up {
+  0%   { opacity: 0; transform: translateY(0.5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* 单条扫描线：1.5px 极光线，节拍呼吸 opacity */
+.immersive__current-text::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  background: var(--or-aurora, #7adfb0);
+  opacity: 0.35;
+  filter: drop-shadow(0 0 4px rgba(122, 223, 176, 0.6));
+  pointer-events: none;
+  animation: immersive-current-beat 0.42s ease-out infinite;
+}
+
+@keyframes immersive-current-beat {
+  0%   { opacity: 0.20; transform: scaleX(0.85); }
+  18%  { opacity: 0.95; transform: scaleX(1.0); }
+  100% { opacity: 0.20; transform: scaleX(0.85); }
+}
+
+.immersive__current-trans {
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: clamp(13px, 1.4vw, 16px);
+  font-style: normal;
+  color: rgba(246, 245, 239, 0.55);
+  letter-spacing: 0;
+  text-align: center;
+  margin-top: -4px;
+}
+
+/* 上一行 / 下一行弱预览（节奏提示） */
+.immersive__prev,
+.immersive__next {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: var(--font-zh-serif, "Noto Serif SC", serif);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  max-width: 100%;
+}
+
+.immersive__prev {
+  opacity: 0.7;
+}
+
+.immersive__next {
+  opacity: 0.55;
+  margin-top: 8px;
+}
+
+.immersive__prev-text,
+.immersive__next-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.immersive__prev-time,
+.immersive__next-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 157, 69, 0.4);
+  font-weight: 500;
+  flex-shrink: 0;
 }

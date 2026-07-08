@@ -152,6 +152,23 @@ export interface VisualParams {
   wallpaperScale: number;
   /** 自定义壁纸暗角（0-1） */
   wallpaperDim: number;
+  // ===== 沉浸模式设置 =====
+  /** 沉浸模式背景源 */
+  immersiveBg: "cover" | "wallpaper" | "particles" | "solid";
+  /** 沉浸模式歌词字号 */
+  immersiveLyricSize: "sm" | "md" | "lg" | "xl";
+  /** 沉浸模式歌词对齐 */
+  immersiveLyricAlign: "center" | "left";
+  /** 沉浸模式是否显示翻译 */
+  immersiveShowTranslation: boolean;
+  /** 沉浸模式纯色背景 */
+  immersiveSolidColor: string;
+  /** 沉浸模式封面是否模糊 */
+  immersiveCoverBlur: boolean;
+  /** 歌词自定义颜色（hex） */
+  lyricColor: string;
+  /** 歌词颜色是否跟随封面主色 */
+  lyricColorAuto: boolean;
   // ===== 前景组件透明度（壁纸视觉重构）=====
   /** 侧栏透明度（0-1，调低让全局壁纸透出） */
   sidebarOpacity: number;
@@ -198,6 +215,15 @@ function loadVisualParams(): VisualParams {
     playerBarOpacity: 0.6,
     mainOpacity: 0.5,
     fullPlayerOpacity: 0.5,
+    // ===== 沉浸模式默认 =====
+    immersiveBg: "cover",
+    immersiveLyricSize: "xl",
+    immersiveLyricAlign: "center",
+    immersiveShowTranslation: true,
+    immersiveSolidColor: "#0a0a0f",
+    immersiveCoverBlur: true,
+    lyricColor: "#fff7e0",
+    lyricColorAuto: true,
   };
   try {
     const raw = localStorage.getItem("orangeradio_visual_params");

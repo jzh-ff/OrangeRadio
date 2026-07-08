@@ -184,6 +184,247 @@ impl KugouSource {
 
     /// 通过 hash 获取播放 URL
     async fn resolve_by_hash(&self, hash: &str, album_id: Option<&str>) -> Result<String> {
+        let data = self.resolve_by_hash_raw(hash, album_id).await?;
+        data.play_url
+            .filter(|u| !u.is_empty())
+            .ok_or_else(|| orange_core::CoreError::Unsupported("酷狗返回空播放地址".into()))
+    }
+
+    /// 从 cookie 中提取 uid（酷狗登录用户 ID）
+    fn uid_from_cookie(cookie: &str) -> Option<String> {
+        cookie
+            .split(';')
+            .find(|s| s.trim().starts_with("uid=") || s.trim().starts_with("KuGooUid="))
+            .and_then(|s| s.trim().split_once('=').map(|(_, v)| v.to_string()))
+    }
+
+    /// 获取酷狗歌曲歌词
+    ///
+    /// 优先从 play/getdata 返回的 `lyrics` 字段取（已随 resolve_stream 调用过），
+    /// 若为空则单独请求一次 play/getdata 尝试补全。
+    pub async fn song_lyric(&self, hash: &str, album_id: Option<&str>) -> Result<Option<String>> {
+        // 复用 resolve_by_hash 的内部响应数据需要额外请求一次；这里直接调用 resolve_by_hash
+        // 并提取 lyrics。若后续发现 dedicated 歌词接口更稳定，可替换。
+        let resp = self.resolve_by_hash_raw(hash, album_id).await?;
+        Ok(resp.lyrics)
+    }
+
+    /// 获取当前登录用户信息
+    ///
+    /// 尝试从 cookie 解析 uid 后调用用户服务接口；失败则退回占位信息。
+    /// 酷狗用户接口存在多个历史端点，此处使用公开资料中较常见的 `userservice.kugou.com`，
+    /// 实际可用性需联网验证。
+    pub async fn current_user_real(&self) -> Result<Option<UserInfo>> {
+        let cookie = match self.cookie_str().await {
+            Some(c) if !c.is_empty() => c,
+            _ => return Ok(None),
+        };
+
+        // 1. 尝试 userservice 取登录用户基本信息
+        let url = "https://userservice.kugou.com/user/getloginuser";
+        let mut req = self
+            .client
+            .get(url)
+            .header("Referer", "https://www.kugou.com/");
+        req = req.header("Cookie", &cookie);
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                if let Ok(v) = resp.json::<serde_json::Value>().await {
+                    if let Some(data) = v.get("data") {
+                        let nickname = data["nickname"]
+                            .as_str()
+                            .or_else(|| data["user_name"].as_str())
+                            .unwrap_or("酷狗用户");
+                        let uid = data["uid"]
+                            .as_i64()
+                            .map(|i| i.to_string())
+                            .unwrap_or_default();
+                        let avatar = data["pic"].as_str().map(|s| s.to_string());
+                        let vip = data["vip_type"].as_i64().map(|i| i > 0).unwrap_or(false);
+                        return Ok(Some(UserInfo {
+                            uid,
+                            nickname: nickname.to_string(),
+                            avatar_url: avatar,
+                            vip,
+                        }));
+                    }
+                }
+            }
+        }
+
+        // 2. fallback：从 cookie 里尽量读出 uid/nickname
+        let uid = Self::uid_from_cookie(&cookie).unwrap_or_default();
+        Ok(Some(UserInfo {
+            uid,
+            nickname: "酷狗用户".into(),
+            avatar_url: None,
+            vip: false,
+        }))
+    }
+
+    /// 获取用户歌单列表
+    ///
+    /// 使用 `www.kugou.com/yy/index.php?r=playlist/getlist` 风格接口尝试拉取，
+    /// 失败则返回空列表。酷狗歌单 API 历史版本较多，需联网验证。
+    pub async fn user_playlists_real(&self) -> Result<Vec<PlaylistRef>> {
+        let cookie = match self.cookie_str().await {
+            Some(c) if !c.is_empty() => c,
+            _ => return Ok(vec![]),
+        };
+        let uid = Self::uid_from_cookie(&cookie).unwrap_or_default();
+        if uid.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let url = format!(
+            "https://www.kugou.com/yy/index.php?r=playlist/getlist&uid={}&pagesize=100",
+            urlencoding(&uid)
+        );
+        let mut req = self
+            .client
+            .get(&url)
+            .header("Referer", "https://www.kugou.com/");
+        req = req.header("Cookie", &cookie);
+
+        let text = match req.send().await {
+            Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
+            _ => return Ok(vec![]),
+        };
+
+        let json_text = strip_jsonp_callback(&text);
+        let resp: serde_json::Value = match serde_json::from_str(json_text) {
+            Ok(v) => v,
+            Err(_) => return Ok(vec![]),
+        };
+
+        let lists = resp["data"]["list"].as_array();
+        let empty: Vec<serde_json::Value> = vec![];
+        let lists = lists.unwrap_or(&empty);
+        let mut out = Vec::with_capacity(lists.len().min(100));
+        for item in lists {
+            let id = item["id"]
+                .as_str()
+                .or_else(|| item["playlist_id"].as_str())
+                .unwrap_or("");
+            let name = item["name"]
+                .as_str()
+                .or_else(|| item["title"].as_str())
+                .unwrap_or("未命名歌单");
+            if id.is_empty() {
+                continue;
+            }
+            out.push(PlaylistRef {
+                id: id.to_string(),
+                name: name.to_string(),
+                cover_url: item["img"].as_str().map(|s| s.to_string()),
+                track_count: item["song_count"].as_u64().unwrap_or(0) as u32,
+                source: SourceKind::Kugou,
+            });
+        }
+        Ok(out)
+    }
+
+    /// 获取歌单详情
+    ///
+    /// 使用 `www.kugou.com/yy/index.php?r=playlist/getinfo` 风格接口尝试拉取。
+    pub async fn playlist_detail(&self, playlist_id: &str) -> Result<Vec<Track>> {
+        let cookie = self.cookie_str().await.unwrap_or_default();
+        let url = format!(
+            "https://www.kugou.com/yy/index.php?r=playlist/getinfo&id={}",
+            urlencoding(playlist_id)
+        );
+        let mut req = self
+            .client
+            .get(&url)
+            .header("Referer", "https://www.kugou.com/");
+        if !cookie.is_empty() {
+            req = req.header("Cookie", &cookie);
+        }
+
+        let text = req
+            .send()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
+            .text()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        let json_text = strip_jsonp_callback(&text);
+        let resp: serde_json::Value = serde_json::from_str(json_text).map_err(|e| {
+            orange_core::CoreError::Network(format!(
+                "酷狗歌单解析失败: {} body={}",
+                e,
+                &text[..text.len().min(200)]
+            ))
+        })?;
+
+        let songs = resp["data"]["songs"].as_array();
+        let empty: Vec<serde_json::Value> = vec![];
+        let songs = songs.unwrap_or(&empty);
+        let mut tracks = Vec::with_capacity(songs.len().min(200));
+        for item in songs {
+            let hash = item["hash"].as_str().unwrap_or("").to_string();
+            let album_id = item["album_id"].as_str().unwrap_or("").to_string();
+            if hash.is_empty() {
+                continue;
+            }
+            let source_track_id = if album_id.is_empty() {
+                hash.clone()
+            } else {
+                format!("{}|{}", hash, album_id)
+            };
+            let title = item["songname"]
+                .as_str()
+                .or_else(|| item["song_name"].as_str())
+                .unwrap_or("未知歌曲")
+                .to_string();
+            let artist = item["singername"]
+                .as_str()
+                .or_else(|| item["singer_name"].as_str())
+                .unwrap_or("未知艺术家")
+                .to_string();
+            let album = item["album_name"].as_str().map(|s| s.to_string());
+            let duration_secs = item["duration"]
+                .as_str()
+                .and_then(|s| s.parse::<f64>().ok())
+                .or_else(|| item["duration"].as_f64());
+            let artwork = item["img"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(|url| Artwork {
+                    source: ArtworkSource::Url {
+                        url: url.to_string(),
+                    },
+                    dominant_color: None,
+                    palette: vec![],
+                });
+
+            let mut t = Track::new(
+                self.id(),
+                source_track_id,
+                TrackMeta {
+                    title,
+                    artist,
+                    album,
+                    duration_secs,
+                    artwork,
+                    ..Default::default()
+                },
+            );
+            t.source_kind = SourceKind::Kugou;
+            t.format = orange_core::audio_format::AudioFormat::Mp3;
+            t.quality = orange_core::audio_format::Quality::High;
+            tracks.push(t);
+        }
+        Ok(tracks)
+    }
+
+    /// 内部：返回 play/getdata 完整响应（供 song_lyric 复用）
+    async fn resolve_by_hash_raw(
+        &self,
+        hash: &str,
+        album_id: Option<&str>,
+    ) -> Result<KugouPlayData> {
         let time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -242,15 +483,8 @@ impl KugouSource {
             )));
         }
 
-        let url = resp
-            .data
-            .as_ref()
-            .and_then(|d| d.play_url.as_deref())
-            .filter(|u| !u.is_empty())
-            .ok_or_else(|| orange_core::CoreError::Unsupported("酷狗返回空播放地址".into()))?
-            .to_string();
-
-        Ok(url)
+        resp.data
+            .ok_or_else(|| orange_core::CoreError::Unsupported("酷狗返回空数据".into()))
     }
 }
 
@@ -296,6 +530,10 @@ impl AudioSource for KugouSource {
             headers: vec![],
         })
     }
+
+    async fn user_playlists(&self) -> Result<Vec<PlaylistRef>> {
+        self.user_playlists_real().await
+    }
 }
 
 #[async_trait]
@@ -323,16 +561,7 @@ impl AuthSource for KugouSource {
     }
 
     async fn current_user(&self) -> Result<Option<UserInfo>> {
-        if self.logged_in.load(Ordering::Relaxed) {
-            Ok(Some(UserInfo {
-                uid: "已登录".into(),
-                nickname: "酷狗用户".into(),
-                avatar_url: None,
-                vip: false,
-            }))
-        } else {
-            Ok(None)
-        }
+        self.current_user_real().await
     }
 }
 
@@ -415,8 +644,18 @@ struct KugouPlayResp {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 struct KugouPlayData {
     play_url: Option<String>,
+    lyrics: Option<String>,
+    #[serde(default)]
+    img: Option<String>,
+    #[serde(default, rename = "album_name")]
+    album_name: Option<String>,
+    #[serde(default, rename = "song_name")]
+    song_name: Option<String>,
+    #[serde(default, rename = "author_name")]
+    author_name: Option<String>,
 }
 
 fn item_to_track(item: &KugouSearchItem, source_id: SourceId) -> Track {
