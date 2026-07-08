@@ -21,6 +21,7 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   spotify: { label: "SP", cls: "q-master" },
   web_radio: { label: "LIVE", cls: "q-hires" },
   podcast: { label: "POD", cls: "q-std" },
+  unknown: { label: "其他", cls: "q-std" },
 };
 
 /** tab 顺序：按主流 → 长尾排（"全部" 永远在最左） */
@@ -34,6 +35,7 @@ const TAB_ORDER = [
   "spotify",
   "web_radio",
   "podcast",
+  "unknown",
 ] as const;
 type SourceKindKey = (typeof TAB_ORDER)[number];
 
@@ -57,10 +59,12 @@ export function SearchView() {
     engineRef.playTrack(track, index);
   };
 
-  // 统计各源结果数
+  // 统计各源结果数 —— 兜底：source_kind 为空 / 不在 TAB_ORDER 里都归到 "unknown"
   const sourceCounts = useMemo(() => {
     return results.reduce((acc, t) => {
-      const k = (t.source_kind || "local") as SourceKind;
+      const k = (t.source_kind && (TAB_ORDER as readonly string[]).includes(t.source_kind))
+        ? t.source_kind
+        : "unknown";
       acc[k] = (acc[k] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
@@ -69,12 +73,17 @@ export function SearchView() {
   // 根据当前 tab 过滤可见结果
   const visibleResults = useMemo(() => {
     if (sourceFilter === "all") return results;
-    return results.filter((t) => (t.source_kind || "local") === sourceFilter);
+    return results.filter((t) => {
+      const k = (t.source_kind && (TAB_ORDER as readonly string[]).includes(t.source_kind))
+        ? t.source_kind
+        : "unknown";
+      return k === sourceFilter;
+    });
   }, [results, sourceFilter]);
 
-  // 切 tab 时重置虚拟滚动 / loadMore 状态：如果该源结果数 < 30，
-  // 就别触发 loadMore（按"全 30 条才认为有更多"的保守规则在 store 里）
-  const visibleHasMore = sourceFilter === "all" ? hasMore : visibleResults.length >= 30;
+  // 切 tab 时重置虚拟滚动 / loadMore 状态：如果该源结果数 < page_size(50)，
+  // 就别触发 loadMore（按"满 page_size 才认为有更多"的保守规则在 store 里）
+  const visibleHasMore = sourceFilter === "all" ? hasMore : visibleResults.length >= 50;
   const onItemsRendered = useVirtualInfiniteScroll({
     hasMore: visibleHasMore,
     loading,

@@ -1050,6 +1050,33 @@
   z-index: 5;
 }
 
+/* 跳动的音符层（pointer-events 透传，z-index 4 在 input 之下不挡 scrub） */
+.fp-notes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 4;
+}
+.fp-note {
+  position: absolute;
+  top: -4px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  animation: fp-note-jump 1.5s ease-out forwards;
+  will-change: transform, opacity;
+}
+@keyframes fp-note-jump {
+  0%   { opacity: 1;    transform: translate(-50%, 0)     scale(0.55) rotate(-10deg); }
+  30%  { opacity: 1;    transform: translate(-50%, -22px) scale(1.2)  rotate(10deg); }
+  60%  { opacity: 0.85; transform: translate(-50%, -38px) scale(1)    rotate(-8deg); }
+  100% { opacity: 0;    transform: translate(-50%, -60px) scale(0.5)  rotate(14deg); }
+}
+
 /* Scrub 预览：hover 时显示的时间码浮窗 */
 .fp-progress-tooltip {
   position: absolute;

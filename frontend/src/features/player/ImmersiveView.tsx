@@ -92,6 +92,18 @@ export function ImmersiveView() {
     return () => document.removeEventListener("keydown", onKey);
   }, [immersiveMode, setImmersiveMode]);
 
+  // 飘浮粒子：30 个 ♪♫♬♩ 散布整屏，3 种速度组错开（12s/18s/9s 循环）
+  const particles = useMemo(() => {
+    const NOTES = ["♪", "♫", "♬", "♩"];
+    return Array.from({ length: 30 }, (_, i) => ({
+      x: Math.random() * 100,                    // 横向位置 0-100%
+      y: Math.random() * 100,                    // 纵向位置 0-100%
+      char: NOTES[i % NOTES.length],             // 循环分配字符
+      variant: (i % 3) + 1,                      // 1/2/3 三种速度组
+      delay: -Math.random() * 18,                // 负 delay 让动画已经"播到中间"，避免入场时的集体淡入
+    }));
+  }, []);
+
   if (!immersiveMode) return null;
 
   const cover = getCoverUrl(currentTrack);
@@ -99,11 +111,31 @@ export function ImmersiveView() {
   const artist = (currentTrack as { meta?: { artist?: string } })?.meta?.artist || "";
 
   return (
-    <div className="immersive" role="dialog" aria-label="沉浸播放模式">
-      {/* 背景：封面 blur 60px + 黑色渐变叠层（保证歌词可读） */}
+    <div
+      className={`immersive ${isPlaying ? "is-playing" : "is-paused"}`}
+      role="dialog"
+      aria-label="沉浸播放模式"
+    >
+      {/* 背景：封面 blur 30px + opacity 65% + 弱化遮罩 */}
       <div className="immersive__bg">
         {cover && <img src={cover} alt="" className="immersive__bg-img" />}
         <div className="immersive__bg-mask" />
+      </div>
+
+      {/* 节拍呼吸：isPlaying 时整屏暖橙光缓慢呼吸 2.4s 循环 */}
+      <div className="immersive__breath" aria-hidden />
+
+      {/* 飘浮粒子：30 个 ♪♫♬♩ 散布整屏，3 种速度组错开（12s/18s/9s） */}
+      <div className="immersive__particles" aria-hidden>
+        {particles.map((p, i) => (
+          <span
+            key={i}
+            className={`immersive__particle immersive__particle--${p.variant}`}
+            style={{ left: `${p.x}%`, top: `${p.y}%`, animationDelay: `${p.delay}s` }}
+          >
+            {p.char}
+          </span>
+        ))}
       </div>
 
       {/* 顶部标题区（cover + title + artist） */}
@@ -157,6 +189,14 @@ export function ImmersiveView() {
                 >
                   {isActive && <span className="immersive__line-time">{fmt(line.time)}</span>}
                   <span className="immersive__line-text">{line.text}</span>
+                  {isActive && (
+                    <>
+                      <span className="immersive__note immersive__note--1" aria-hidden>♪</span>
+                      <span className="immersive__note immersive__note--2" aria-hidden>♫</span>
+                      <span className="immersive__note immersive__note--3" aria-hidden>♪</span>
+                      <span className="immersive__note immersive__note--4" aria-hidden>♫</span>
+                    </>
+                  )}
                 </div>
               );
             })

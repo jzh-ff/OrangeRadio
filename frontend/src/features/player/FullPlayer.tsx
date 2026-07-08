@@ -51,6 +51,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const position = usePlayerStore((s) => s.position);
   const duration = usePlayerStore((s) => s.duration);
   const fullLayout = usePlayerStore((s) => s.fullLayout);
+  const progress = duration > 0 ? (position / duration) * 100 : 0;
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
@@ -217,6 +218,36 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
     return () => window.removeEventListener("keydown", onKey);
   }, [setFullPlayer]);
 
+  // 跳动的音符：每 1.5s 在 FullPlayer 进度条当前位置生成 ♪♫♬♩，1.5s 后自动消失
+  const notesRef = useRef<HTMLDivElement>(null);
+  const progressRefFull = useRef(progress);
+  useEffect(() => { progressRefFull.current = progress; }, [progress]);
+  useEffect(() => {
+    if (!isPlaying) return;
+    const container = notesRef.current;
+    if (!container) return;
+    const NOTES = ["♪", "♫", "♬", "♩"];
+    const COLORS = [
+      "rgba(255, 107, 26, 0.95)",
+      "rgba(255, 157, 69, 0.95)",
+      "rgba(255, 196, 107, 0.95)",
+      "rgba(244, 210, 138, 0.95)",
+    ];
+    const tick = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const note = document.createElement("span");
+      note.className = "fp-note";
+      note.textContent = NOTES[Math.floor(Math.random() * NOTES.length)];
+      note.style.left = `${(progressRefFull.current / 100) * rect.width}px`;
+      note.style.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      container.appendChild(note);
+      setTimeout(() => note.remove(), 1500);
+    };
+    const interval = setInterval(tick, 1500);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
   const { lines, activeIndex, activeProgress } = useLyrics(lyricData?.raw_lrc || null, lyricData?.translated_lrc);
 
   // 歌词自动居中：必须在 layout 稳定后测量，且不能用 smooth（与字号变化引起的 reflow 叠加会先「跳到底再滚回」）
@@ -264,7 +295,6 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
     if (!isActive || progress <= 0) return undefined;
     return { ["--lyric-p" as string]: `${Math.round(progress * 1000) / 10}%` } as React.CSSProperties;
   };
-  const progress = duration > 0 ? (position / duration) * 100 : 0;
   const title = currentTrack?.meta.title || "未在播放";
   const artist = currentTrack?.meta.artist || "";
   const coverUrl = getCoverUrl(currentTrack);
@@ -566,7 +596,9 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
               <span className="fp-progress-edge" aria-hidden />
             </div>
             <div className="fp-progress-glow" style={{ left: `${progress}%` }} aria-hidden />
-            {/* Scrub 预览：hover 时显示鼠标位置的时间码浮窗（位置由 --fp-thumb-x 驱动） */}
+            {/* 跳动的音符层（pointer-events 透传，不挡 scrub） */}
+            <div className="fp-notes" ref={notesRef} aria-hidden />
+            {/* Scrub Ԥ����hover ʱ��ʾ���λ�õ�ʱ���븡����λ���� --fp-thumb-x ������ */}
             {scrubPos != null && duration > 0 && (
               <div className="fp-progress-tooltip">{fmt(scrubPos * duration)}</div>
             )}

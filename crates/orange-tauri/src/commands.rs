@@ -969,14 +969,14 @@ pub async fn search_all(
         keyword: keyword.clone(),
         kind: None,
         page: page.unwrap_or(1),
-        page_size: 30,
+        page_size: 50,
     });
 
     // 本地库（同步 DB 查询，放 spawn_blocking）
     let lib = state.library.clone();
     let q_local = (*query).clone();
     let local_task = tokio::task::spawn_blocking(move || {
-        lib.search(&q_local).into_iter().take(50).collect::<Vec<_>>()
+        lib.search(&q_local)
     });
 
     // 遍历源注册表，为每个就绪音源起一个并发搜索任务
