@@ -49,6 +49,8 @@ desktop.ini
 *.png
 screenshot*.png
 webview*.log
+# 例外：Tauri 图标目录里的必要图标必须入库，否则 CI 找不到
+!apps/desktop/src-tauri/icons/
 
 # ===== 测试音频（不入库）=====
 test-music/
