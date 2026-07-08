@@ -19,6 +19,7 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   kuwo: { label: "KW", cls: "q-high" },
   qishui: { label: "QS", cls: "q-hires" },
   spotify: { label: "SP", cls: "q-master" },
+  gequbao: { label: "GQB", cls: "q-high" },
   web_radio: { label: "LIVE", cls: "q-hires" },
   podcast: { label: "POD", cls: "q-std" },
   unknown: { label: "其他", cls: "q-std" },
@@ -33,6 +34,7 @@ const TAB_ORDER = [
   "kuwo",
   "qishui",
   "spotify",
+  "gequbao",
   "web_radio",
   "podcast",
   "unknown",
@@ -115,7 +117,7 @@ export function SearchView() {
           onChange={setKeyword}
           onSubmit={doSearch}
           loading={loading}
-          placeholder="搜索本地、网易云、QQ 音乐、Spotify、电台…"
+          placeholder="搜索本地、网易云、QQ 音乐、酷狗、酷我、歌曲宝、Spotify、电台…"
         />
       </div>
 
@@ -223,7 +225,7 @@ export function SearchView() {
             </svg>
           </div>
           <div className="library__empty-title">输入关键词搜索</div>
-          <div className="library__empty-desc">同时搜索本地库、网易云、QQ音乐、Spotify、电台</div>
+          <div className="library__empty-desc">同时搜索本地库、网易云、QQ音乐、酷狗、酷我、歌曲宝、Spotify、电台</div>
         </div>
       )}
     </div>
