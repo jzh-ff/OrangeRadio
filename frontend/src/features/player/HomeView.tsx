@@ -29,6 +29,38 @@ const TONE: Record<HomeTone, [string, string]> = {
   local: ["#f4d28a", "#8fe9ff"],
 };
 
+/** 来源徽章（与 SearchView/LibraryView 全局一致） */
+const SOURCE_BADGE: Record<string, { label: string; cls: string; color: string }> = {
+  local:          { label: "本", cls: "q-std",     color: "#b9c7c4" },
+  netease_cloud_music: { label: "NE", cls: "q-lossless", color: "#d63d3d" },
+  qq_music:       { label: "QQ", cls: "q-high",    color: "#4ea3ff" },
+  kugou:          { label: "KG", cls: "q-high",    color: "#7adfb0" },
+  kuwo:           { label: "KW", cls: "q-high",    color: "#ff8a4c" },
+  qishui:         { label: "QS", cls: "q-hires",   color: "#c084fc" },
+  gequbao:        { label: "GQB", cls: "q-high",   color: "#9cffdf" },
+  spotify:        { label: "SP", cls: "q-master",  color: "#1ed760" },
+  apple_music:    { label: "AM", cls: "q-master",  color: "#fc3c5c" },
+  web_radio:      { label: "LIVE", cls: "q-hires", color: "#f4d28a" },
+  podcast:        { label: "POD", cls: "q-std",    color: "#a8c4d6" },
+};
+
+/** 统计一个曲库的来源分布（按数量降序） */
+function countSources(tracks: Track[]): { key: string; count: number; label: string; color: string }[] {
+  const m: Record<string, number> = {};
+  for (const t of tracks) {
+    const k = (t.source_kind as string) || "local";
+    m[k] = (m[k] || 0) + 1;
+  }
+  return Object.entries(m)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, count]) => ({
+      key,
+      count,
+      label: SOURCE_BADGE[key]?.label || key,
+      color: SOURCE_BADGE[key]?.color || "#b9c7c4",
+    }));
+}
+
 function greeting() {
   const h = new Date().getHours();
   if (h < 6) return "夜深了，还有旋律陪你";
@@ -119,16 +151,31 @@ export function HomeView() {
     tone: HomeTone;
     featured?: boolean;
     cover?: string | null;
+    /** 封面右下角叠加的来源徽章（最多 4 个） */
+    sourceBadges?: { key: string; count: number; label: string; color: string }[];
     onClick: () => void;
   }[] = [
     {
       id: "library",
       label: "Library",
       title: "我的歌单",
-      sub: `${libraryTracks.length} 首 · ${likedCount} 收藏`,
+      sub: (() => {
+        const list = countSources(libraryTracks);
+        const total = libraryTracks.length;
+        if (total === 0) return "还没有歌曲，去搜一首吧";
+        // 拼成 "本 32 · NE 18 · QQ 12 · 共 78"
+        const shown = list.slice(0, 3);
+        const left = total - shown.reduce((s, x) => s + x.count, 0);
+        return [
+          ...shown.map((x) => `${x.label} ${x.count}`),
+          left > 0 ? `其他 ${left}` : null,
+          `共 ${total}`,
+        ].filter(Boolean).join(" · ");
+      })(),
       tone: "library",
       featured: true,
       cover: getCoverUrl(libraryTracks[0]),
+      sourceBadges: countSources(libraryTracks).slice(0, 4),  // 封面右下角徽章层
       onClick: () => setSubView("library"),
     },
     {
@@ -365,6 +412,21 @@ export function HomeView() {
               <span className="home-card__sub">{c.sub}</span>
               <div className="home-card__art">
                 {c.cover ? <img src={c.cover} alt="" /> : <div className="home-card__disc" />}
+                {/* 来源徽章层（右下角，最多 4 个：NE 18 / QQ 12 / KG 8 ...） */}
+                {c.sourceBadges && c.sourceBadges.length > 0 && (
+                  <div className="home-card__badges">
+                    {c.sourceBadges.map((b) => (
+                      <span
+                        key={b.key}
+                        className="home-card__badge"
+                        style={{ ["--badge-color" as string]: b.color }}
+                        title={`${b.label}: ${b.count} 首`}
+                      >
+                        {b.label} <em>{b.count}</em>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </button>
           );

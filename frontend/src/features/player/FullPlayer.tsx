@@ -5,6 +5,7 @@ import { engineRef } from "../../App";
 import { CoverParticles } from "../../visual/CoverParticles";
 import { BeatParticles } from "../../visual/BeatParticles";
 import { LyricStage3D } from "../../visual/LyricStage3D";
+import { PresetStage } from "../../visual/PresetStage";
 import { FullPlayerRightDrawer } from "./FullPlayerRightDrawer";
 import { useLyrics } from "./useLyrics";
 import { getCoverUrl } from "./useCover";
@@ -55,6 +56,11 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
+  const { lyricColor, lyricColorAuto } = usePlayerStore((s) => s.visualParams);
+  const dominantColor = usePlayerStore((s) => s.dominantColor);
+  const effectiveLyricColor = lyricColorAuto
+    ? (dominantColor ? `rgb(${dominantColor.join(",")})` : "rgba(255,255,255,0.85)")
+    : lyricColor;
   const mode = usePlayerStore((s) => s.mode);
   const setMode = usePlayerStore((s) => s.setMode);
   const volume = usePlayerStore((s) => s.volume);
@@ -195,6 +201,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
         ? "netease_lyric"
         : kind === "qq_music"
         ? "qqmusic_lyric"
+        : kind === "kugou"
+        ? "kugou_lyric"
+        : kind === "kuwo"
+        ? "kuwo_lyric"
         : null;
     if (!cmd) {
       // 本地曲目：用扫描时提取的内嵌歌词（USLT/LRC）
@@ -307,18 +317,18 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
       className={`fp-overlay fp-overlay--editorial fp-overlay--${fullLayout} ${
         fullLayout === "rhythmic-album" || fullLayout === "rhythmic-particles" ? "fp-overlay--solid" : ""
       }`}
-      style={{ "--ui-opacity": fullPlayerOpacity } as React.CSSProperties}
+      style={{ "--ui-opacity": fullPlayerOpacity, "--lyric-color": effectiveLyricColor } as React.CSSProperties}
     >
-      {/* 律动专辑：纯封面粒子方阵（不透明背景 · 随节奏律动 · 对标 MineRadio coverParticleGrid） */}
+      {/* 律动专辑：固定用 CoverParticles（封面像素矩阵 + 节奏律动，参考 MineRadio coverParticleGrid） */}
       {fullLayout === "rhythmic-album" && (
         <div className="fp-particles-bg">
           <CoverParticles />
         </div>
       )}
-      {/* 粒子律动：球面漂浮粒子 + BeatCam 电影运镜（不透明背景 · 对标 MineRadio BeatParticles） */}
+      {/* 粒子律动：跟视觉控制台 preset 切换（BeatParticles / StarRiver / VinylRecord / CoverParticles） */}
       {fullLayout === "rhythmic-particles" && (
         <div className="fp-particles-bg">
-          <BeatParticles />
+          <PresetStage />
         </div>
       )}
       {/* 顶部：品牌 + 工具区（布局选择移到 popover，不再占行） */}
@@ -341,82 +351,82 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
       {/* ===== 律动专辑 / 粒子律动：粒子背景 + 中央歌词舞台（共用同一套中心内容） ===== */}
       {(fullLayout === "rhythmic-album" || fullLayout === "rhythmic-particles") && (
         <div className={`fp-cinema fp-cinema--${fullLayout}`}>
-          {/* 中央歌曲信息 */}
-          <div className="fp-cinema-info">
-            <div className="fp-cinema-title">{title}</div>
-            <div className="fp-cinema-artist">{artist}</div>
-            {aiBackground && (
-              <div className="fp-ai-bg-card fp-ai-bg-card--cinema">
-                <span className="fp-ai-bg-label">AI 背景</span>
-                <span className="fp-ai-bg-text">{aiBackground}</span>
-                <button className="fp-ai-bg-close" onClick={() => setAiBackground(null)} title="关闭" aria-label="关闭">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
-                </button>
-              </div>
-            )}
+          {/* ★ 顶部信息条：纯文字"歌名 - 歌手"居中横排（透出粒子） */}
+          <div className="fp-cinema-top">
+            <span className="fp-cinema-top__title">{title}</span>
+            <span className="fp-cinema-top__sep">—</span>
+            <span className="fp-cinema-top__artist">{artist}</span>
           </div>
-          {/* ★ 主视觉大字锚点：对标 Mineradio 中央大字标题"标题 · 歌手" */}
-          <div className="fp-cinema-hero">
-            <div className="fp-cinema-hero__title">{title}</div>
-            <div className="fp-cinema-hero__sep">·</div>
-            <div className="fp-cinema-hero__artist">{artist}</div>
-          </div>
-          {/* 3D 歌词舞台（shader 化当前行主词，叠加在粒子背景之上，对标 MineRadio stageLyrics） */}
-          {lines.length > 0 && activeIndex >= 0 && (
-            <LyricStage3D text={lines[activeIndex].text} progress={activeProgress} />
-          )}
-          {/* ★ 数字年表装饰层：对标 Mineradio 下方发光数字"20051208" */}
-          {(() => {
-            const year = (currentTrack as { meta?: { year?: number; album?: string } })?.meta?.year;
-            const stamp = year ? `${year}` : (currentTrack as any)?.meta?.album || "未知";
-            return (
-              <div className="fp-cinema-year">
-                <span className="fp-cinema-year__label">RELEASE</span>
-                <span className="fp-cinema-year__sep">·</span>
-                <span className="fp-cinema-year__num">{stamp}</span>
-              </div>
-            );
-          })()}
-          {/* 底部当前歌词（1~2 行，含时间戳 + 翻译/注解） */}
-          <div className="fp-cinema-lyrics">
+
+          {/* ★ 中央大歌词舞台：当前行超大 + MineRadio 风格扫描光 + 暖光晕 */}
+          <div className="fp-cinema-stage">
             {lines.length > 0 && activeIndex >= 0 ? (
               (() => {
                 const cur = lines[activeIndex];
+                const next = lines[activeIndex + 1];
                 const ann = annotatedMap.get(cur.text.trim());
                 return (
                   <>
-                    <div className="fp-cinema-lyric-line">
-                      <span className="fp-lyric-time">{fmtLyricTime(cur.time)}</span>
-                      <span className="fp-lyric-content" style={lyricStyle(true, activeProgress)}>{cur.text}</span>
+                    {/* 主大字：当前行歌词字面，OrangeRadio 入场 + 冷调薄荷扫光 */}
+                    <div className="fp-cinema-stage__main">
+                      <div className="fp-cinema-stage__time">{fmtLyricTime(cur.time)}</div>
+                      <div className="fp-cinema-stage__text-wrap">
+                        <div
+                          className="fp-cinema-stage__text"
+                          style={lyricStyle(true, activeProgress) as React.CSSProperties}
+                        >
+                          {cur.text}
+                        </div>
+                      </div>
+                      {/* 翻译/注解（紧跟主字） */}
+                      {cur.translation && (
+                        <div className="fp-cinema-stage__trans">{cur.translation}</div>
+                      )}
+                      {!cur.translation && ann?.translation && (
+                        <div className="fp-cinema-stage__trans fp-cinema-stage__trans--ai">
+                          {ann.translation}
+                        </div>
+                      )}
+                      {ann?.annotation && (
+                        <div className="fp-cinema-stage__annot">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ marginRight: 6, verticalAlign: -2 }}>
+                            <path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2zm-2 19a2 2 0 0 0 4 0h-4z" />
+                          </svg>
+                          {ann.annotation}
+                        </div>
+                      )}
                     </div>
-                    {cur.translation && (
-                      <div className="fp-cinema-lyric-trans">{cur.translation}</div>
-                    )}
-                    {/* AI 译注翻译只在原生翻译缺失时补充（避免重复） */}
-                    {!cur.translation && ann?.translation && (
-                      <div className="fp-cinema-lyric-trans fp-cinema-lyric-trans--ai">{ann.translation}</div>
-                    )}
-                    {ann?.annotation && (
-                      <div className="fp-cinema-lyric-annot">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ marginRight: 6, verticalAlign: -2 }}>
-                          <path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2zm-2 19a2 2 0 0 0 4 0h-4z" />
-                        </svg>
-                        {ann.annotation}
+                    {/* 下一行预览：弱提示节奏 */}
+                    {next && (
+                      <div className="fp-cinema-stage__next">
+                        <span className="fp-cinema-stage__time fp-cinema-stage__time--next">{fmtLyricTime(next.time)}</span>
+                        <span className="fp-cinema-stage__next-text">{next.text}</span>
                       </div>
                     )}
                   </>
                 );
               })()
             ) : loading ? (
-              <div className="fp-cinema-lyric-line fp-cinema-lyric-line--empty">加载歌词中…</div>
+              <div className="fp-cinema-stage__hint">加载歌词中…</div>
             ) : (
-              <div className="fp-cinema-lyric-line fp-cinema-lyric-line--empty">
+              <div className="fp-cinema-stage__hint">
                 {lyricData ? "纯音乐，请欣赏" : "暂无歌词"}
               </div>
             )}
           </div>
+
+          {/* AI 背景小卡片（译注完成后展示，可关闭） */}
+          {aiBackground && (
+            <div className="fp-ai-bg-card fp-ai-bg-card--cinema">
+              <span className="fp-ai-bg-label">AI 背景</span>
+              <span className="fp-ai-bg-text">{aiBackground}</span>
+              <button className="fp-ai-bg-close" onClick={() => setAiBackground(null)} title="关闭" aria-label="关闭">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+          )}
           {/* 视觉控制台已迁移到右侧工具抽屉（FullPlayerRightDrawer） */}
           {/* 评论抽屉按钮（零 emoji SVG icon） */}
           <button
