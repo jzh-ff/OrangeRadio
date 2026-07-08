@@ -22,7 +22,9 @@ export type SourceKind =
   | "web_radio"
   | "podcast"
   | "kugou"
+  | "kuwo"
   | "qishui"
+  | "gequbao"
   | "plugin";
 
 /** 曲目（与 Rust Track 对应的精简结构） */
