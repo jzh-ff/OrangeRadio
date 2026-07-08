@@ -2206,46 +2206,38 @@ pub fn studio_project_load(path: String) -> Result<serde_json::Value, String> {
 
 /// 内置 demo 曲元信息（首启自动播放用）
 ///
-/// 从打包到安装包中的 `resources/demo/` 目录读取元数据。
-/// - `track.lrc`：UTF-8 编码的 LRC 歌词（无 BOM）
-/// - `cover.jpg`：封面图
-///
-/// 返回的 `cover_path` 是绝对路径，前端用 `convertFileSrc()` 转 `asset://` 后
-/// 才能喂给 `<img>` / Web Audio。
+/// 从打包到安装包中的 `resources/demo/track.mp3` 直接读 ID3：
+/// - title / artist / album / duration_secs 由 lofty 解析
+/// - 专辑封面抽取到 `app_data_dir/covers/` 缓存（用 FNV-1a 哈希命名防重复）
+/// - 歌词优先用 ID3 内嵌 USLT；如果没有，回退读 `resources/demo/track.lrc`
 #[tauri::command]
 pub async fn builtin_track_meta(app: AppHandle) -> Result<TrackMeta, String> {
-    let dir = app
+    let mp3_path = app
         .path()
-        .resolve("resources/demo", BaseDirectory::Resource)
-        .map_err(|e| format!("resolve demo resource dir failed: {e}"))?;
-    let lrc_path = dir.join("track.lrc");
-    let cover_path = dir.join("cover.jpg");
+        .resolve("resources/demo/track.mp3", BaseDirectory::Resource)
+        .map_err(|e| format!("resolve demo track.mp3 failed: {e}"))?;
+    let lrc_path = app
+        .path()
+        .resolve("resources/demo/track.lrc", BaseDirectory::Resource)
+        .ok();
 
-    let lyrics = match std::fs::read_to_string(&lrc_path) {
-        Ok(s) => Some(s),
-        Err(e) => {
-            tracing::warn!("builtin demo 歌词读取失败 {}: {}", lrc_path.display(), e);
-            None
+    // 封面缓存目录：app_data_dir/covers/（dev 模式走 cwd/.orangeradio/covers）
+    let covers_dir = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("covers"));
+
+    let mut meta = orange_library::metadata::read_track_meta(&mp3_path, covers_dir.as_deref());
+
+    // 歌词：优先用 ID3 内嵌 USLT，否则读 track.lrc
+    if meta.lyrics.is_none() {
+        if let Some(lrc) = lrc_path {
+            match std::fs::read_to_string(&lrc) {
+                Ok(s) => meta.lyrics = Some(s),
+                Err(e) => tracing::warn!("builtin demo LRC 读取失败 {}: {}", lrc.display(), e),
+            }
         }
-    };
-
-    let mut meta = TrackMeta {
-        title: "OrangeRadio Demo".into(),
-        artist: "OrangeStudio".into(),
-        album: Some("Built-in".into()),
-        duration_secs: Some(30.0),
-        lyrics,
-        ..Default::default()
-    };
-    // 把封面绝对路径塞到 meta.artwork 让前端能拿到
-    if cover_path.exists() {
-        meta.artwork = Some(orange_core::track::Artwork {
-            source: orange_core::track::ArtworkSource::Local {
-                path: cover_path.to_string_lossy().into_owned(),
-            },
-            dominant_color: None,
-            palette: vec![],
-        });
     }
 
     Ok(meta)
