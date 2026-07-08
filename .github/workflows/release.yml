@@ -84,7 +84,8 @@ jobs:
           # AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
         with:
           projectPath: apps/desktop/src-tauri
-          args: ${{ matrix.args }}
+          # 已在上方手动构建前端，跳过 tauri.conf.json 中的 beforeBuildCommand
+          args: ${{ matrix.args }} --no-before-build-command
           tagName: ${{ github.ref_name }}
           releaseName: 'OrangeRadio ${{ github.ref_name }}'
           releaseBody: 'See the assets to download and install this version.'
