@@ -1,17 +1,44 @@
 [
   {
-    "id": "builtin-aurora",
-    "name": "极光之夜",
-    "type": "image",
-    "src": "aurora.jpg",
-    "thumbnail": "aurora-thumb.jpg",
+    "id": "builtin-kid-goku-flying-nimbus",
+    "name": "小悟空·筋斗云",
+    "type": "video",
+    "src": "PREVIEW-Kid-Goku-Flying-Nimbus.mp4",
     "addedAt": 0
   },
   {
-    "id": "builtin-galaxy-webm",
-    "name": "银河",
+    "id": "builtin-megumi-fushiguro",
+    "name": "伏黑惠",
     "type": "video",
-    "src": "galaxy.webm",
+    "src": "PREVIEW-Megumi-Fushiguro-1.mp4",
+    "addedAt": 0
+  },
+  {
+    "id": "builtin-night-blade",
+    "name": "夜刃",
+    "type": "video",
+    "src": "PREVIEW-Night-Blade.mp4",
+    "addedAt": 0
+  },
+  {
+    "id": "builtin-ninja-full-moon",
+    "name": "忍者·满月",
+    "type": "video",
+    "src": "PREVIEW-Ninja-Full-Moon.mp4",
+    "addedAt": 0
+  },
+  {
+    "id": "builtin-snorlax-night-sleep",
+    "name": "卡比兽·夜眠",
+    "type": "video",
+    "src": "PREVIEW-Snorlax-Night-Sleep.mp4",
+    "addedAt": 0
+  },
+  {
+    "id": "builtin-the-shade-and-the-knight",
+    "name": "暗影与骑士",
+    "type": "video",
+    "src": "PREVIEW-The-Shade-and-the-Knight.mp4",
     "addedAt": 0
   }
 ]
