@@ -170,7 +170,7 @@ export type FullLayout = "immersive" | "lyric-stream" | "triple" | "rhythmic-alb
 function loadVisualParams(): VisualParams {
   const def: VisualParams = {
     sensitivity: 1.4,
-    particleCount: 6000,
+    particleCount: 2200,
     bloomStrength: 1.1,
     colorTheme: "orange",
     cameraShake: true,

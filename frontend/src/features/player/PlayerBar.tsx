@@ -2,24 +2,8 @@ import { usePlayerStore, type PlaybackMode } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { getCoverUrl, DEFAULT_COVER } from "./useCover";
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-/** PlayerBar 折叠：只显示进度条，隐藏封面/元数据/按钮/音量等 */
-function usePlayerBarCollapsed() {
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem("orangeradio:playerbar-collapsed") === "1"; }
-    catch { return false; }
-  });
-  return {
-    collapsed,
-    toggle: () => setCollapsed((prev) => {
-      const next = !prev;
-      try { localStorage.setItem("orangeradio:playerbar-collapsed", next ? "1" : "0"); }
-      catch {}
-      return next;
-    }),
-  };
-}
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toggleLyricOverlay, setLyricLock } from "../../lib/lyricWindow";
 import { joinRoom, leaveRoom } from "../../lib/listenTogether";
@@ -213,12 +197,81 @@ export function PlayerBar() {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  // PlayerBar 折叠（持久化到 localStorage）
-  const { collapsed: pbCollapsed, toggle: togglePbCollapsed } = usePlayerBarCollapsed();
+  // 音量弹出层：单击钮切换 + 点击外部关闭
+  const [volOpen, setVolOpen] = useState(false);
+  const volWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!volOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (volWrapRef.current && !volWrapRef.current.contains(e.target as Node)) {
+        setVolOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setVolOpen(false);
+    };
+    window.addEventListener("pointerdown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [volOpen]);
+  const volTrackRef = useRef<HTMLDivElement>(null);
+  const updateVolFromY = (clientY: number) => {
+    const track = volTrackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    const ratio = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    engineRef.setVol(parseFloat(ratio.toFixed(3)));
+  };
+  const onVolPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    updateVolFromY(e.clientY);
+    const onMove = (ev: PointerEvent) => updateVolFromY(ev.clientY);
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // 跳动的音符：每 1.2s 在进度条当前位置生成 ♪♫♬♩，1.5s 后自动消失
+  // progress 通过 ref 兜底，避免 setInterval 闭包捕获过期值
+  const notesRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef(progress);
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+  useEffect(() => {
+    if (!isPlaying) return;
+    const container = notesRef.current;
+    if (!container) return;
+    const NOTES = ["♪", "♫", "♬", "♩"];
+    const COLORS = [
+      "rgba(255, 107, 26, 0.95)",
+      "rgba(255, 157, 69, 0.95)",
+      "rgba(255, 196, 107, 0.95)",
+      "rgba(244, 210, 138, 0.95)",
+    ];
+    const tick = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const note = document.createElement("span");
+      note.className = "pb-note";
+      note.textContent = NOTES[Math.floor(Math.random() * NOTES.length)];
+      note.style.left = `${(progressRef.current / 100) * rect.width}px`;
+      note.style.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      container.appendChild(note);
+      setTimeout(() => note.remove(), 1500);
+    };
+    const interval = setInterval(tick, 1200);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   return (
     <div
-      className={`playerbar ${currentTrack ? "playerbar--visible" : ""} ${pbCollapsed ? "playerbar--collapsed" : ""}`}
+      className={`playerbar ${currentTrack ? "playerbar--visible" : ""}`}
       style={{ "--ui-opacity": playerBarOpacity } as React.CSSProperties}
     >
       {/* 左：曲目信息 */}
@@ -270,6 +323,7 @@ export function PlayerBar() {
               <div className="pb-slider__thumb" style={{ left: `${progress}%` }} />
             </div>
             <ProgressParticles progress={progress} isPlaying={isPlaying} />
+            <div className="pb-notes" ref={notesRef} aria-hidden />
             <input
               type="range"
               min={0}
@@ -371,42 +425,50 @@ export function PlayerBar() {
             <path d="M9 10h6v4H9z" />
           </svg>
         </button>
-        <div className="pb-vol">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" />
-            {volume > 0.3 && <path d="M15.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
-            {volume > 0.6 && <path d="M18.5 5.5a9 9 0 0 1 0 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
-          </svg>
-          <span className="pb-vol-pct">{volPct}</span>
-          <div className="pb-vol-slider">
-            <div className="pb-vol-track">
-              <div className="pb-vol-fill" style={{ width: `${volPct}%` }} />
+        <div className="pb-vol-wrap" ref={volWrapRef}>
+          <button
+            type="button"
+            className={`pb-btn pb-btn--vol ${volOpen ? "pb-btn--vol-active" : ""}`}
+            onClick={() => setVolOpen((v) => !v)}
+            title={`音量 ${volPct}`}
+            aria-label={`音量 ${volPct}`}
+            aria-expanded={volOpen}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" />
+              {volume > 0.3 && <path d="M15.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
+              {volume > 0.6 && <path d="M18.5 5.5a9 9 0 0 1 0 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
+              {volume === 0 && <path d="M22 9l-4 4m0-4l-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
+            </svg>
+          </button>
+          {volOpen && (
+            <div
+              className="pb-vol-popover"
+              role="dialog"
+              aria-label="音量调节"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <div className="pb-vol-popover__pct">{volPct}</div>
+              <div
+                className="pb-vol-vertical"
+                ref={volTrackRef}
+                onPointerDown={onVolPointerDown}
+                role="slider"
+                aria-label="音量"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={volPct}
+                tabIndex={0}
+              >
+                <div className="pb-vol-vtrack">
+                  <div className="pb-vol-vfill" style={{ height: `${volPct}%` }} />
+                </div>
+                <div className="pb-vol-vthumb" style={{ bottom: `calc(${volPct}% - 7px)` }} />
+              </div>
             </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={volume}
-              onChange={(e) => engineRef.setVol(parseFloat(e.target.value))}
-              className="pb-vol-input"
-            />
-          </div>
+          )}
         </div>
       </div>
-
-      {/* 折叠按钮：固定在 bar 顶缘中央，▼ 切 ▲ 旋转 180°（同 FullPlayer footer 风格） */}
-      <button
-        type="button"
-        className="pb-toggle"
-        onClick={togglePbCollapsed}
-        title={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
-        aria-label={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
 
       {/* "添加到歌单" 弹窗（v0.4 分区版） */}
       {showAddDialog && currentTrack && (

@@ -52,55 +52,6 @@
   display: none;
 }
 
-/* ===== PlayerBar 折叠：只显示进度条 =====
-   隐藏 .pb-left（封面+元数据）/.pb-right（动作台）/.pb-controls（transport），
-   让 .pb-progress 进度条吃掉全部宽度。 */
-.playerbar--collapsed .pb-left,
-.playerbar--collapsed .pb-right,
-.playerbar--collapsed .pb-controls {
-  display: none;
-}
-.playerbar--collapsed .pb-center {
-  width: 100%;
-  max-width: none;
-  padding: 0 24px;
-}
-.playerbar--collapsed .pb-progress {
-  width: 100%;
-}
-
-/* 折叠按钮：顶缘中央贴出，▼ 切 ▲ */
-.pb-toggle {
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 42px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px 10px 0 0;
-  background: linear-gradient(180deg, rgba(20, 22, 32, 0.95), rgba(10, 12, 20, 0.95));
-  border: 1px solid rgba(244, 210, 138, 0.18);
-  border-bottom: none;
-  color: var(--text-2);
-  cursor: pointer;
-  z-index: 5;
-  transition: all 0.3s var(--ease);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
-}
-.pb-toggle:hover {
-  color: var(--orange-2);
-  background: linear-gradient(180deg, rgba(255, 107, 26, 0.18), rgba(255, 107, 26, 0.05));
-  border-color: rgba(255, 157, 69, 0.4);
-}
-.pb-toggle:active { transform: translateX(-50%) scale(0.94); }
-.pb-toggle svg {
-  transition: transform 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.playerbar--collapsed .pb-toggle svg { transform: rotate(180deg); }
-
 /* ===== 左：曲目信息 ===== */
 .pb-left {
   position: relative;
@@ -221,6 +172,11 @@
   font-family: inherit;
 }
 .pb-btn:hover { color: var(--text); background: var(--bg-hover); transform: translateY(-1px) scale(1.08); }
+/* 覆盖全局 2px 琥珀 outline：改用柔和内描边，避免 focus 时出现一个"橙圈" */
+.pb-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(255, 196, 107, 0.5);
+}
 
 /* 单字按钮（桌面歌词"词"）—— 视觉权重介于图标和文字按钮之间 */
 .pb-btn--lyric {
@@ -291,28 +247,69 @@
 }
 
 /* 自定义进度条 */
-.pb-slider { position: relative; flex: 1; height: 22px; display: flex; align-items: center; }
+.pb-slider { position: relative; flex: 1; height: 34px; display: flex; align-items: center; }
 .pb-slider__track {
-  position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12); overflow: visible;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+  position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1); overflow: visible;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  transition: height 0.18s var(--ease);
 }
+.pb-slider:hover .pb-slider__track { height: 8px; }
 .pb-slider__fill {
-  height: 100%; border-radius: 2px;
-  background: linear-gradient(90deg, var(--orange-hot), var(--orange), var(--amber));
-  box-shadow: 0 0 18px rgba(255, 107, 26, 0.36);
+  height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg,
+    var(--orange-hot) 0%, var(--orange) 25%, var(--amber) 50%,
+    var(--orange) 75%, var(--orange-hot) 100%);
+  background-size: 200% 100%;
+  box-shadow: 0 0 18px rgba(255, 107, 26, 0.4);
   transition: width 0.1s linear;
+  animation: pb-fill-flow 3s linear infinite;
+}
+@keyframes pb-fill-flow {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }
 .pb-slider__thumb {
-  position: absolute; top: 50%; width: 12px; height: 12px;
+  position: absolute; top: 50%; width: 14px; height: 14px;
   border-radius: 50%; background: #fff; transform: translate(-50%, -50%);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4); opacity: 0;
-  transition: opacity 0.15s;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.95),
+    0 0 10px rgba(255, 196, 107, 0.8),
+    0 0 20px rgba(255, 157, 69, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s var(--ease);
 }
-.pb-slider:hover .pb-slider__thumb { opacity: 1; }
+.pb-slider:hover .pb-slider__thumb { transform: translate(-50%, -50%) scale(1.25); }
 .pb-slider__input {
-  position: absolute; left: 0; right: 0; width: 100%; height: 22px;
+  position: absolute; left: 0; right: 0; width: 100%; height: 34px;
   opacity: 0; cursor: pointer; margin: 0;
+}
+
+/* 跳动的音符层（覆盖在 fill 之上，pointer-events 透传） */
+.pb-notes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2;
+}
+.pb-note {
+  position: absolute;
+  top: -2px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 0 8px currentColor, 0 0 16px currentColor;
+  animation: pb-note-jump 1.5s ease-out forwards;
+  will-change: transform, opacity;
+}
+@keyframes pb-note-jump {
+  0%   { opacity: 1;    transform: translate(-50%, 0)    scale(0.5)  rotate(-8deg); }
+  30%  { opacity: 1;    transform: translate(-50%, -16px) scale(1.15) rotate(8deg); }
+  60%  { opacity: 0.85; transform: translate(-50%, -28px) scale(0.95) rotate(-6deg); }
+  100% { opacity: 0;    transform: translate(-50%, -44px) scale(0.5)  rotate(12deg); }
 }
 /* 粒子层（覆盖在轨道之上、输入透明层之下）：绝对铺满 slider 容器，pointer-events 透传 */
 .pb-slider canvas {
@@ -332,7 +329,7 @@
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   justify-content: flex-end;
 }
 
@@ -344,28 +341,89 @@
 }
 .pb-mode-label { font-size: 12px; color: var(--text-2); }
 
-.pb-vol { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
-.pb-vol-pct {
-  min-width: 22px;
-  color: var(--text-3);
+/* 音量：单击钮 + 弹出竖向拖动条（自实现 pointer 事件，跨浏览器一致） */
+.pb-vol-wrap {
+  position: relative;
+}
+.pb-btn--vol-active {
+  color: var(--orange-2);
+  background: rgba(255, 107, 26, 0.14);
+}
+.pb-vol-popover {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  right: -10px;
+  width: 60px;
+  padding: 14px 6px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: rgba(var(--glass-rgb), 0.92);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border-soft);
+  border-radius: 18px;
+  box-shadow: var(--glass-shadow), 0 10px 28px rgba(0, 0, 0, 0.42);
+  z-index: 30;
+  transform-origin: bottom center;
+  animation: pb-vol-pop 0.18s var(--ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+@keyframes pb-vol-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pb-vol-popover__pct {
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
-
-.pb-vol-slider { position: relative; width: 90px; height: 16px; display: flex; align-items: center; }
-.pb-vol-track {
-  position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px;
+.pb-vol-vertical {
+  position: relative;
+  width: 24px;
+  height: 120px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.pb-vol-vertical:focus-visible {
+  outline: 2px solid var(--orange-2);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+.pb-vol-vtrack {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  transform: translateX(-50%);
   background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
 }
-.pb-vol-fill {
-  height: 100%; border-radius: 2px;
-  background: linear-gradient(90deg, var(--cyan), var(--amber)); transition: width 0.1s;
-  box-shadow: 0 0 12px rgba(71, 217, 255, 0.25);
+.pb-vol-vfill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(0deg, var(--amber), var(--orange-2));
+  border-radius: 2px;
+  transition: height 0.08s linear;
+  box-shadow: 0 0 8px rgba(255, 157, 69, 0.4);
 }
-.pb-vol-input {
-  position: absolute; left: 0; right: 0; width: 100%; height: 16px;
-  opacity: 0; cursor: pointer; margin: 0;
+.pb-vol-vthumb {
+  position: absolute;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fff, var(--orange-2));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 12px rgba(255, 157, 69, 0.55);
+  transform: translate(-50%, 50%);
+  pointer-events: none;
 }
 
 @media (max-width: 980px) {

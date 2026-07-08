@@ -9,7 +9,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #04050a;
+  background: transparent;              /* 透明，让 .immersive__bg-img 当底 */
   animation: immersive-in 0.5s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
   color: #fff;
   font-family: var(--font-body, system-ui);
@@ -19,31 +19,100 @@
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* ===== 背景：封面大图 + blur 60px + 暗色叠层 ===== */
+/* ===== 背景：封面大图 + blur 30px + opacity 65% ===== */
 .immersive__bg {
   position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  background: #04050a;                  /* 封面加载失败时的兜底黑 */
 }
 .immersive__bg-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(60px) saturate(1.2) brightness(0.55);
-  transform: scale(1.15);  /* 避免 blur 后边缘露白 */
-  animation: immersive-bg-drift 30s ease-in-out infinite alternate;
+  filter: blur(30px) saturate(1.25);           /* 30px 模糊 + 提饱和 */
+  transform: scale(1.15);                       /* 避免 blur 后边缘露白 */
+  opacity: 0.65;                                /* 壁纸更明显 */
+  animation: immersive-bg-drift 16s ease-in-out infinite alternate;
 }
 @keyframes immersive-bg-drift {
   from { transform: scale(1.15) translate(0, 0); }
-  to   { transform: scale(1.2) translate(-2%, -1.5%); }
+  to   { transform: scale(1.2) translate(-2.5%, -2%); }
 }
+/* 弱化遮罩：仅左上角标题区稍暗保证可读，主体保持壁纸透出 */
 .immersive__bg-mask {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 60% at 50% 30%, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.55) 80%),
-    linear-gradient(180deg, rgba(4, 5, 10, 0.4), rgba(4, 5, 10, 0.8));
+    radial-gradient(ellipse 40% 30% at 0% 0%, rgba(4, 5, 10, 0.25), transparent 70%),
+    linear-gradient(180deg, rgba(4, 5, 10, 0.03), rgba(4, 5, 10, 0.12));
+  pointer-events: none;
+}
+
+/* ===== 节拍呼吸：isPlaying 时整屏暖橙光缓慢呼吸 ===== */
+.immersive__breath {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 45% at 50% 50%, rgba(255, 157, 69, 0.18), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+  animation: immersive-breath 2.4s ease-in-out infinite;
+  animation-play-state: paused;
+}
+.immersive.is-playing .immersive__breath { animation-play-state: running; }
+.immersive.is-paused  .immersive__breath { animation-play-state: paused; }
+@keyframes immersive-breath {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 1; }
+}
+
+/* ===== 飘浮音符粒子：整屏散布，3 个速度组错开 ===== */
+.immersive__particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+.immersive__particle {
+  position: absolute;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 196, 107, 0.6);
+  text-shadow: 0 0 8px rgba(255, 196, 107, 0.5), 0 0 16px rgba(255, 157, 69, 0.3);
+  user-select: none;
+  will-change: transform, opacity;
+  animation: immersive-particle-float-1 12s linear infinite;
+  animation-play-state: paused;
+}
+.immersive.is-playing .immersive__particle { animation-play-state: running; }
+.immersive.is-paused  .immersive__particle { animation-play-state: paused; }
+.immersive__particle--2 { animation-name: immersive-particle-float-2; animation-duration: 18s; }
+.immersive__particle--3 { animation-name: immersive-particle-float-3; animation-duration: 9s; }
+
+@keyframes immersive-particle-float-1 {
+  0%   { transform: translate(0, 30px)   rotate(0deg);   opacity: 0; }
+  10%  { opacity: 0.5; }
+  50%  { transform: translate(15px, -30px) rotate(180deg); opacity: 0.45; }
+  90%  { opacity: 0.3; }
+  100% { transform: translate(-10px, -90px) rotate(360deg); opacity: 0; }
+}
+@keyframes immersive-particle-float-2 {
+  0%   { transform: translate(0, 40px)   rotate(0deg);    opacity: 0; }
+  10%  { opacity: 0.4; }
+  50%  { transform: translate(-20px, -50px) rotate(-180deg); opacity: 0.35; }
+  90%  { opacity: 0.2; }
+  100% { transform: translate(10px, -120px) rotate(-360deg); opacity: 0; }
+}
+@keyframes immersive-particle-float-3 {
+  0%   { transform: translate(0, 20px)   rotate(0deg);  opacity: 0; }
+  10%  { opacity: 0.55; }
+  50%  { transform: translate(8px, -20px) rotate(90deg);  opacity: 0.5; }
+  90%  { opacity: 0.25; }
+  100% { transform: translate(-6px, -60px) rotate(180deg); opacity: 0; }
 }
 
 /* ===== 顶部信息条（cover 小圆 + 标题 + 退出按钮）===== */
@@ -74,6 +143,7 @@
 }
 @keyframes immersive-cover-spin {
   to { transform: rotate(360deg); }
+}
 .immersive__cover-fallback {
   width: 100%;
   height: 100%;
@@ -157,7 +227,7 @@
   gap: 20px;
   max-width: 920px;
   width: 100%;
-  padding: 50vh 0;            /* 上下留出屏幕一半的"空气"，让首尾行可滚动到中心 */
+  padding: 35vh 0;            /* 上下留出 35% 屏高的"空气"，让首尾行可滚动到中心 */
 }
 
 .immersive__hint {
@@ -199,6 +269,67 @@
     0 0 64px rgba(255, 107, 26, 0.2);
   transform: scale(1);
   letter-spacing: 0.04em;
+  position: relative;       /* 音符 / 扫描光定位锚 */
+  filter: drop-shadow(0 0 24px rgba(255, 196, 107, 0.32))
+          drop-shadow(0 4px 18px rgba(0, 0, 0, 0.5));
+}
+/* 当前行文字氛围：暖橙多层光晕（加强版） */
+.immersive__line.is-active .immersive__line-text {
+  text-shadow:
+    0 0 22px rgba(255, 196, 107, 0.55),
+    0 0 48px rgba(255, 157, 69, 0.32),
+    0 0 90px rgba(255, 107, 26, 0.18);
+}
+/* 扫描光：1px 暖橙渐变线，从左扫到右，无限循环 */
+.immersive__line.is-active::before {
+  content: "";
+  position: absolute;
+  left: -10%;
+  bottom: -4px;
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 196, 107, 0.85) 30%,
+    rgba(255, 157, 69, 1)     50%,
+    rgba(255, 196, 107, 0.85) 70%,
+    transparent);
+  filter: drop-shadow(0 0 6px rgba(255, 196, 107, 0.8));
+  pointer-events: none;
+  animation: immersive-line-scan 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes immersive-line-scan {
+  0%   { transform: translateX(0);     opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(220%);  opacity: 0; }
+}
+/* 音符跳动：4 个音符从 active 行顶部飘上消失，错开 delay */
+.immersive__note {
+  position: absolute;
+  bottom: 100%;
+  color: rgba(255, 196, 107, 0.92);
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 0 14px rgba(255, 196, 107, 0.7), 0 0 28px rgba(255, 157, 69, 0.4);
+  opacity: 0;
+  animation: immersive-note-float 4.5s ease-out infinite;
+  will-change: transform, opacity;
+}
+.immersive__note--1 { left: 6%;  animation-delay: 0s;    }
+.immersive__note--2 { left: 38%; animation-delay: 1.1s;  }
+.immersive__note--3 { left: 68%; animation-delay: 2.3s;  }
+.immersive__note--4 { left: 88%; animation-delay: 3.4s;  }
+
+@keyframes immersive-note-float {
+  0%   { transform: translate(0, 12px) scale(0.55) rotate(-10deg); opacity: 0; }
+  12%  { opacity: 0.95; }
+  35%  { transform: translate(6px, -28px) scale(1) rotate(6deg);    opacity: 0.92; }
+  70%  { transform: translate(-4px, -64px) scale(0.95) rotate(-4deg); opacity: 0.6; }
+  100% { transform: translate(2px, -110px) scale(0.6) rotate(12deg);  opacity: 0; }
 }
 .immersive__line.is-active .immersive__line-time {
   color: var(--orange-2, #ff9d45);
@@ -249,22 +380,22 @@
   display: inline-block;
 }
 
-/* 上下淡出蒙层：让歌词边缘自然 fade 到背景 */
+/* 上下淡出蒙层：让歌词边缘自然 fade 到背景，弱化避免"硬切"感 */
 .immersive__fade {
   position: absolute;
   left: 0;
   right: 0;
-  height: 25vh;
+  height: 18vh;
   pointer-events: none;
   z-index: 2;
 }
 .immersive__fade--top {
   top: 0;
-  background: linear-gradient(180deg, #04050a 0%, rgba(4, 5, 10, 0.7) 60%, transparent 100%);
+  background: linear-gradient(180deg, rgba(4, 5, 10, 0.55) 0%, rgba(4, 5, 10, 0.18) 60%, transparent 100%);
 }
 .immersive__fade--bottom {
   bottom: 0;
-  background: linear-gradient(0deg, #04050a 0%, rgba(4, 5, 10, 0.7) 60%, transparent 100%);
+  background: linear-gradient(0deg, rgba(4, 5, 10, 0.55) 0%, rgba(4, 5, 10, 0.18) 60%, transparent 100%);
 }
 
 /* 进入动画：歌词行错列上浮（stagger via animation-delay） */
