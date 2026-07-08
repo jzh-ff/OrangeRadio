@@ -6,6 +6,7 @@ import { WallpaperBackground } from "./visual/WallpaperBackground";
 import { WallpaperLayer } from "./visual/WallpaperLayer";
 import { HotkeysModal } from "./components/HotkeysModal";
 import { WindowControls } from "./components/WindowControls";
+import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
 import { ProfilePanel } from "./components/ProfilePanel";
 import { PlaylistShelf } from "./visual/PlaylistShelf";
 import { startHotkeyListener, registerGlobalHotkeys, unregisterAllGlobalHotkeys } from "./lib/hotkeys";
@@ -85,6 +86,8 @@ export default function App() {
   const wallpaperActive = useWallpaperStore((s) => !!s.activeId);
   // 3D 歌单架（右键唤起，对标 MineRadio 右键 shelf）
   const [shelfOpen, setShelfOpen] = useState(false);
+  // 关闭确认弹窗：点 X 时弹，让用户选"最小化到托盘 / 退出 / 取消"
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   useEffect(() => {
     const onCtx = (e: MouseEvent) => {
       // 右键唤起 3D 歌单架（排除输入框/歌词区等已处理右键的场景）
@@ -361,7 +364,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <WindowControls />
+      {/* 主窗口可拖拽顶条：decorations:false 时给整个窗口提供 drag 区域（高度 10px，见 global.css） */}
+      <div className="app-drag-strip" data-tauri-drag-region aria-hidden="true" />
+      <WindowControls onRequestClose={() => setCloseConfirmOpen(true)} />
       {wallpaperActive ? <WallpaperLayer /> : <WallpaperBackground />}
       <div className="app__layout">
         <Sidebar />
@@ -381,6 +386,11 @@ export default function App() {
       <SettingsModal />
       {/* 热键设置弹窗（VisualConsole 热键按钮触发） */}
       <HotkeysModal />
+      {/* 关闭确认弹窗：点 X 触发，让用户选"最小化到托盘 / 退出 / 取消" */}
+      <CloseConfirmDialog
+        open={closeConfirmOpen}
+        onClose={() => setCloseConfirmOpen(false)}
+      />
       {/* 听歌画像面板（首页 profile 卡点击触发） */}
       <ProfilePanel />
       {/* 3D 歌单架（右键唤起） */}
