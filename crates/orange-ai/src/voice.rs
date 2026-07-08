@@ -42,6 +42,7 @@ pub enum VoiceCommand {
 
 /// 语音助手
 pub struct VoiceAssistant {
+    #[allow(dead_code)]
     llm: Arc<dyn LlmProvider>,
 }
 

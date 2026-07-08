@@ -66,7 +66,11 @@ impl AiRecommendationEngine {
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let bpm = t.meta.bpm.map(|b| format!("{b:.0}")).unwrap_or_else(|| "-".into());
+                let bpm = t
+                    .meta
+                    .bpm
+                    .map(|b| format!("{b:.0}"))
+                    .unwrap_or_else(|| "-".into());
                 let genre = t.meta.genre.first().cloned().unwrap_or_default();
                 format!(
                     "[{}] {} - {} | 流派:{} BPM:{}",
@@ -88,7 +92,12 @@ impl AiRecommendationEngine {
     }
 
     /// 用 LLM 从候选里选一首（解析返回的序号）；失败返回 None，由调用方回退本地 top1
-    async fn llm_pick(&self, profile: &UserProfile, ctx: &RecommendContext, candidates: &[Track]) -> Option<usize> {
+    async fn llm_pick(
+        &self,
+        profile: &UserProfile,
+        ctx: &RecommendContext,
+        candidates: &[Track],
+    ) -> Option<usize> {
         let llm = self.llm.as_ref()?;
         if candidates.is_empty() {
             return None;
@@ -103,18 +112,15 @@ impl AiRecommendationEngine {
         let resp = llm.chat(&req).await.ok()?;
         // 解析序号（LLM 可能返回 "3" 或 "第3首" 或 "序号3"）
         let text = resp.text.trim();
-        let num: usize = text
-            .parse()
-            .ok()
-            .or_else(|| {
-                // 提取第一个连续数字
-                text.chars()
-                    .skip_while(|c| !c.is_ascii_digit())
-                    .take_while(|c| c.is_ascii_digit())
-                    .collect::<String>()
-                    .parse()
-                    .ok()
-            })?;
+        let num: usize = text.parse().ok().or_else(|| {
+            // 提取第一个连续数字
+            text.chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .ok()
+        })?;
         if num < candidates.len() {
             Some(num)
         } else {
@@ -180,7 +186,11 @@ impl RecommendationEngine for AiRecommendationEngine {
             let top_candidates: Vec<Track> =
                 scored.iter().take(20).map(|(_, t)| t.clone()).collect();
             if let Some(idx) = self.llm_pick(profile, ctx, &top_candidates).await {
-                tracing::info!("LLM 重排选中第 {} 首: {}", idx, top_candidates[idx].meta.title);
+                tracing::info!(
+                    "LLM 重排选中第 {} 首: {}",
+                    idx,
+                    top_candidates[idx].meta.title
+                );
                 return Ok(top_candidates[idx].clone());
             }
             tracing::debug!("LLM 重排失败，回退本地打分 top1");
@@ -200,7 +210,7 @@ fn score(
     let id = track.id.0.to_string();
     let artist = track.meta.artist.trim();
     let genres: Vec<&str> = track.meta.genre.iter().map(|g| g.trim()).collect();
-    let genre_hit = |p: &str| genres.iter().any(|g| *g == p);
+    let genre_hit = |p: &str| genres.contains(&p);
 
     // 艺人匹配（top_artists 是 (name, weight) 已归一化到 [0,1]）
     for (name, w) in &profile.top_artists {

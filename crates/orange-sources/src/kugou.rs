@@ -63,7 +63,7 @@ impl KugouSource {
                     .find(|s| s.trim().starts_with("kg_mid="))
                     .map(|s| s.trim()[7..].to_string())
             })
-            .unwrap_or_else(|| generate_mid());
+            .unwrap_or_else(generate_mid);
 
         Self {
             id: SourceId(uuid::Uuid::new_v4()),
@@ -109,7 +109,7 @@ impl KugouSource {
             .to_string();
         let keyword = query.keyword.clone();
         let page = query.page.max(1).to_string();
-        let pagesize = query.page_size.min(30).max(1).to_string();
+        let pagesize = query.page_size.clamp(1, 30).to_string();
 
         let mut params: BTreeMap<&str, String> = BTreeMap::new();
         params.insert("srcappid", "2919".into());
