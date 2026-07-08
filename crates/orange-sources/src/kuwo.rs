@@ -277,7 +277,17 @@ impl AudioSource for KuwoSource {
     }
 
     async fn recommendations(&self, limit: u32) -> Result<Vec<Track>> {
-        // 酷我飙升榜/热歌榜（newkwf_alad 风格）
+        // 优先拉取酷我飙升榜；失败则退回热度搜索
+        match self.chart_detail("93", limit).await {
+            Ok(tracks) if !tracks.is_empty() => Ok(tracks),
+            _ => self.hot_search_recommendations(limit).await,
+        }
+    }
+}
+
+impl KuwoSource {
+    /// 热度搜索兜底（原 recommendations 实现）
+    async fn hot_search_recommendations(&self, limit: u32) -> Result<Vec<Track>> {
         let url = format!(
             "{}/r.s?all=&ft=music&itemset=newkwf_alad&issubtitle=1&pn=1&rn={}&encoding=utf8&rformat=json&ver=mbox&plat=h5&orderBy=hot",
             self.search_base.trim_end_matches('/'),
@@ -336,6 +346,133 @@ impl AudioSource for KuwoSource {
             tracks.push(track);
         }
         Ok(tracks)
+    }
+
+    /// 获取榜单歌曲（bangId 如 93=飙升榜，17=热歌榜，16=新歌榜）
+    pub async fn chart_detail(&self, bang_id: &str, limit: u32) -> Result<Vec<Track>> {
+        let url = format!(
+            "http://www.kuwo.cn/api/www/bang/bang/musicList?bangId={}&pn=1&rn={}",
+            bang_id,
+            limit.clamp(30, 50)
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .header("Referer", "http://www.kuwo.cn/")
+            .header("csrf", "0")
+            .header("Cookie", "kw_token=0")
+            .send()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| orange_core::CoreError::Network(format!("酷我榜单解析失败: {}", e)))?;
+
+        let data = parsed
+            .get("data")
+            .and_then(|v| v.get("musicList"))
+            .and_then(|v| v.as_array());
+        let empty: Vec<serde_json::Value> = vec![];
+        let list = data.unwrap_or(&empty);
+
+        let mut tracks = Vec::with_capacity(list.len().min(limit as usize));
+        for item in list.iter().take(limit as usize) {
+            let rid = item["rid"]
+                .as_i64()
+                .or_else(|| item["id"].as_i64())
+                .map(|i| i.to_string())
+                .unwrap_or_default();
+            if rid.is_empty() {
+                continue;
+            }
+            let title = item["name"]
+                .as_str()
+                .map(Self::unescape)
+                .unwrap_or_default();
+            let artist = item["artist"]
+                .as_str()
+                .map(Self::unescape)
+                .unwrap_or_else(|| "未知".into());
+            let album = item["album"]
+                .as_str()
+                .map(Self::unescape)
+                .filter(|s| !s.is_empty());
+            let duration_secs = item["duration"]
+                .as_str()
+                .and_then(|s| s.parse::<f64>().ok())
+                .or_else(|| item["duration"].as_f64());
+            let artwork = item["pic"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(|url| Artwork {
+                    source: ArtworkSource::Url {
+                        url: url.to_string(),
+                    },
+                    dominant_color: None,
+                    palette: vec![],
+                });
+
+            let mut track = Track::new(
+                self.id,
+                rid,
+                TrackMeta {
+                    title,
+                    artist,
+                    album,
+                    duration_secs,
+                    artwork,
+                    ..Default::default()
+                },
+            );
+            track.source_kind = SourceKind::Kuwo;
+            track.format = AudioFormat::Mp3;
+            track.quality = Quality::High;
+            tracks.push(track);
+        }
+        Ok(tracks)
+    }
+
+    /// 获取歌曲歌词（移动端 songinfoandlrc 接口）
+    pub async fn song_lyric(&self, rid: &str) -> Result<Option<String>> {
+        let url = format!(
+            "http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={}",
+            rid
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .header("Referer", "http://m.kuwo.cn/")
+            .send()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| orange_core::CoreError::Network(format!("酷我歌词解析失败: {}", e)))?;
+
+        // 响应：data.lrclist[] { lineLyric, time }
+        let lrc = parsed
+            .get("data")
+            .and_then(|d| d.get("lrclist"))
+            .and_then(|l| l.as_array())
+            .map(|lines| {
+                lines
+                    .iter()
+                    .filter_map(|line| {
+                        let text = line["lineLyric"].as_str()?;
+                        let time = line["time"].as_str().and_then(|s| s.parse::<f64>().ok())?;
+                        let min = (time / 60.0) as i64;
+                        let sec = time % 60.0;
+                        Some(format!("[{:02}:{:05.2}]{}\n", min, sec, text))
+                    })
+                    .collect::<String>()
+            });
+        Ok(lrc)
     }
 }
 
