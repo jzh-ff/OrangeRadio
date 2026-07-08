@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "builtin-aurora",
+    "name": "极光之夜",
+    "type": "image",
+    "src": "aurora.jpg",
+    "thumbnail": "aurora-thumb.jpg",
+    "addedAt": 0
+  },
+  {
+    "id": "builtin-galaxy-webm",
+    "name": "银河",
+    "type": "video",
+    "src": "galaxy.webm",
+    "addedAt": 0
+  }
+]
