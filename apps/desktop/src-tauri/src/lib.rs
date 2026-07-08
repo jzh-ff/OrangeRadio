@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tauri::http::{Request, Response};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Emitter, Manager, WindowEvent};
+use tauri::{Emitter, Manager};
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
@@ -90,21 +90,22 @@ pub fn run() {
     let builder = orange_tauri::commands::register_all(builder);
 
     builder
-        .setup(setup_tray_and_close_to_tray)
+        .setup(setup_tray)
         .run(tauri::generate_context!())
         .expect("OrangeRadio 启动失败");
 }
 
-/// 系统托盘 + 关闭按钮拦截到托盘
+/// 系统托盘初始化
 ///
 /// 行为：
 /// - 启动时创建系统托盘图标（应用默认图标）+ 右键菜单（显示 / 退出）
 /// - 左键单击托盘：显示主窗口并聚焦
 /// - 菜单「显示」：同左键
-/// - 菜单「退出」：真正退出进程（绕过 hide 拦截）
-/// - 窗口 CloseRequested 事件被拦截：prevent_close + 隐藏窗口
-///   → 用户点关闭按钮时应用继续在后台运行（保持播放）
-fn setup_tray_and_close_to_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+/// - 菜单「退出」：直接 `app.exit(0)`，不走前端（独立退出路径）
+///
+/// 主窗口的「关闭按钮」由前端拦截：点 X → 弹出 CloseConfirmDialog
+/// 让用户选「最小化到托盘 / 退出应用 / 取消」。Rust 侧不再做无脑 hide 拦截。
+fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // ---- 托盘菜单 ----
     let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
@@ -142,22 +143,8 @@ fn setup_tray_and_close_to_tray(app: &mut tauri::App) -> Result<(), Box<dyn std:
         .build(app)?;
     tracing::info!("系统托盘已创建");
 
-    // ---- 主窗口关闭按钮拦截：隐藏到托盘 ----
-    if let Some(win) = app.get_webview_window("main") {
-        let win_clone = win.clone();
-        win.on_window_event(move |event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                // 阻止默认关闭 → 隐藏窗口（应用继续在后台运行）
-                api.prevent_close();
-                if let Err(e) = win_clone.hide() {
-                    tracing::warn!("隐藏主窗口到托盘失败: {}", e);
-                }
-                tracing::info!("窗口已隐藏到托盘（用户可从托盘恢复）");
-            }
-        });
-    } else {
-        tracing::warn!("未找到 main 窗口，跳过关闭拦截");
-    }
+    // 主窗口关闭按钮由前端 CloseConfirmDialog 拦截处理（最小化到托盘 / 退出 / 取消），
+    // Rust 侧不再拦截 WindowEvent::CloseRequested，避免无脑 hide 把用户退出意图吞掉。
 
     Ok(())
 }

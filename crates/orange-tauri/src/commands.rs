@@ -2253,6 +2253,15 @@ pub async fn builtin_stream(app: AppHandle) -> Result<String, String> {
     Ok(p.to_string_lossy().into_owned())
 }
 
+/// 真正退出应用（不经过窗口关闭拦截）。
+/// 由前端"关闭确认 Modal"的"退出应用"按钮调用——
+/// 托盘菜单的"退出 OrangeRadio"走原 `on_menu_event` → `app.exit(0)`，不经过这里。
+#[tauri::command]
+pub fn app_exit(app: AppHandle) {
+    tracing::info!("[app_exit] 用户主动选择退出应用");
+    app.exit(0);
+}
+
 /// 注册所有命令到 Tauri Builder
 pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     let state = AppState::default();
@@ -2362,6 +2371,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             studio_project_load,
             builtin_track_meta,
             builtin_stream,
+            app_exit,
         ])
         .setup(move |app| {
             // ⚠️ Tauri 2 的 setup 闭包本身是**同步上下文**——`tokio::spawn` 会 panic。

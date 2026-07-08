@@ -56,7 +56,17 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
-  const { lyricColor, lyricColorAuto } = usePlayerStore((s) => s.visualParams);
+  const { lyricColor, lyricColorAuto, preset } = usePlayerStore((s) => s.visualParams);
+  const setVisualParams = usePlayerStore((s) => s.setVisualParams);
+
+  // 切到"粒子律动"时默认用 BeatParticles（preset=1），避免和律动专辑同款 CoverParticles
+  // 仅在用户没主动选过非 0 时生效——已经选过 1/2/3 就不覆盖
+  useEffect(() => {
+    if (fullLayout === "rhythmic-particles" && preset === 0) {
+      setVisualParams({ preset: 1 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullLayout]);
   const dominantColor = usePlayerStore((s) => s.dominantColor);
   const effectiveLyricColor = lyricColorAuto
     ? (dominantColor ? `rgb(${dominantColor.join(",")})` : "rgba(255,255,255,0.85)")
@@ -326,20 +336,20 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           <CoverParticles />
         </div>
       )}
-      {/* 粒子律动：跟视觉控制台 preset 切换（BeatParticles / StarRiver / VinylRecord / CoverParticles） */}
+      {/* 粒子律动：默认 BeatParticles（球面律动），可在右侧抽屉"预设"tab 切换其他视觉 */}
       {fullLayout === "rhythmic-particles" && (
         <div className="fp-particles-bg">
           <PresetStage />
         </div>
       )}
       {/* 顶部：品牌 + 工具区（布局选择移到 popover，不再占行） */}
-      <header className="fp-header">
+      <header className="fp-header" data-tauri-drag-region>
         <div className="fp-header__brand">
           <span className="fp-header__eyebrow">NOW PLAYING</span>
           <span className="fp-header__mode">{activeLayout.name}</span>
           <span className="fp-header__hint">{activeLayout.hint}</span>
         </div>
-        <div className="fp-header__tools">
+        <div className="fp-header__tools" data-tauri-drag-region={false}>
           {/* 译注按钮 / 布局下拉均已迁移到右侧工具抽屉（FullPlayerRightDrawer） */}
           <button type="button" className="fp-close" onClick={() => setFullPlayer(false)} title="关闭 (Esc)" aria-label="关闭">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-label="true">
