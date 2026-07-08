@@ -13,8 +13,11 @@ on:
 
 jobs:
   build:
-    permissions:
-      contents: write
+    # 显式提权：tauri-action 创建 GitHub Release draft 需要
+    # contents + packages + id-token 等多 scope，默认 `contents: write` 在
+    # tag 触发的 workflow 上权限被收紧，会报 403 "Resource not accessible by integration"
+    # 这里直接 write-all 让 release 资源创建走通。
+    permissions: write-all
     strategy:
       fail-fast: false
       matrix:
