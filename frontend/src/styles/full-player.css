@@ -3340,7 +3340,7 @@
   display: inline-block;
 }
 
-/* ★ 当前行核心：暖白纸 + 极光 4 层光晕 + 单条扫描线 + 350ms 极简入场 */
+/* ★ 当前行核心：暖白纸 + 极光 6 层光晕（强化版） + 350ms 极简入场 */
 .fp-cinema-stage__text {
   position: relative;
   font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -3351,11 +3351,19 @@
   text-align: center;
   white-space: nowrap;
   max-width: 92vw;
-  padding: 8px 0 22px;
+  padding: 8px 0 10px;
   color: var(--or-paper);
   text-shadow:
-    0 0 24px rgba(122, 223, 176, 0.45),
-    0 0 64px rgba(122, 223, 176, 0.20);
+    /* 紧贴：极亮核（描边感） */
+    0 0 1px rgba(255, 255, 255, 0.95),
+    /* 8-12px：明亮极光绿内层 */
+    0 0 10px rgba(122, 223, 176, 0.75),
+    0 0 22px rgba(122, 223, 176, 0.55),
+    /* 50-80px：远场柔光晕（深色背景下大范围光圈） */
+    0 0 60px rgba(122, 223, 176, 0.35),
+    0 0 110px rgba(122, 223, 176, 0.22),
+    /* 160px：环境散射（更大范围，让"光"在律动暗背景上扩散开） */
+    0 0 180px rgba(122, 223, 176, 0.12);
   /* 入场：350ms 极简 fade + 0.5px translateY（不是 3D 旋转） */
   animation: or-fade-up 350ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
@@ -3363,27 +3371,6 @@
 @keyframes or-fade-up {
   0%   { opacity: 0; transform: translateY(0.5px); }
   100% { opacity: 1; transform: translateY(0); }
-}
-
-/* 单条扫描线：1.5px 极光线，节拍呼吸 opacity（不是"扫"，是"心跳"） */
-.fp-cinema-stage__text::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1.5px;
-  background: var(--or-aurora);
-  opacity: 0.35;
-  filter: drop-shadow(0 0 4px rgba(122, 223, 176, 0.6));
-  pointer-events: none;
-  animation: or-scan-beat 0.42s ease-out infinite;
-}
-
-@keyframes or-scan-beat {
-  0%   { opacity: 0.20; transform: scaleX(0.85); }
-  18%  { opacity: 0.95; transform: scaleX(1.0); }   /* 鼓点瞬间拉满 */
-  100% { opacity: 0.20; transform: scaleX(0.85); }   /* 0.42s 回到 0.2 */
 }
 
 /* 翻译：等宽 + 60% 不透明 + 居中 */
@@ -3401,13 +3388,12 @@
   color: rgba(122, 223, 176, 0.6);  /* AI 译注用极光色 */
 }
 
-/* 注解：左侧一道 2px 极光线 + 等宽文字（不画底色块） */
+/* 注解：等宽文字（去掉左侧 2px 极光竖线，纯文字） */
 .fp-cinema-stage__annot {
   display: inline-flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 4px 0 4px 12px;
-  border-left: 2px solid var(--or-aurora);
+  padding: 4px 0;
   background: transparent;
   color: rgba(246, 245, 239, 0.65);
   font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
