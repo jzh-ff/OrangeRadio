@@ -40,6 +40,8 @@ pub struct NeteaseSource {
     auth_store: Arc<AuthStore>,
     /// 鉴权过期事件 sink（cookie 失效时调用，emit 到前端）
     event_sink: Option<Arc<dyn orange_core::AuthEventSink>>,
+    /// 当前播放音质偏好（映射到网易云 player/url/v1 的 level 参数）
+    quality_level: Arc<RwLock<String>>,
 }
 
 impl NeteaseSource {
@@ -80,12 +82,32 @@ impl NeteaseSource {
             logged_in: Arc::new(AtomicBool::new(already_logged_in)),
             auth_store,
             event_sink,
+            quality_level: Arc::new(RwLock::new("standard".into())),
         }
     }
 
     /// 构造时不带 event_sink（用于测试 / 默认 fallback）
     pub fn without_event_sink(auth_store: Arc<AuthStore>) -> Self {
         Self::new(auth_store, None)
+    }
+
+    /// 设置播放音质（对应网易云 /weapi/song/enhance/player/url/v1 的 level 参数）
+    pub async fn set_quality(&self, level: &str) {
+        let valid = matches!(
+            level,
+            "standard" | "higher" | "exhigh" | "lossless" | "hires" | "jyeffect" | "jymaster" | "sky" | "dolby"
+        );
+        if valid {
+            *self.quality_level.write().await = level.to_string();
+            tracing::info!("网易云音质设置为: {}", level);
+        } else {
+            tracing::warn!("网易云收到无效音质级别: {}，保持原设置", level);
+        }
+    }
+
+    /// 当前播放音质
+    pub async fn quality(&self) -> String {
+        self.quality_level.read().await.clone()
     }
 
     /// 后台健康检查循环：每 6 小时调一次 `/weapi/w/nuser/account/get` 验证 cookie
@@ -725,11 +747,12 @@ impl AudioSource for NeteaseSource {
 
         // 补充 weapi 必需的 cookie 参数（网易云服务端要求 os=pc 等）
         let cookie = format!("{}; os=pc; appver=2.10.14", user_cookie);
+        let level = self.quality().await;
 
         // weapi 加密 POST 获取播放地址
         let payload = format!(
-            r#"{{"ids":"[{}]","level":"standard","encodeType":"aac","csrf_token":""}}"#,
-            track.source_track_id
+            r#"{{"ids":"[{}]","level":"{}","encodeType":"aac","csrf_token":""}}"#,
+            track.source_track_id, level
         );
         let (params, enc_sec_key) = crate::weapi::encrypt(&payload);
 
@@ -963,17 +986,50 @@ impl AuthSource for NeteaseSource {
     }
 
     async fn current_user(&self) -> Result<Option<UserInfo>> {
-        let cookie = self.cookie_str().await;
-        if cookie.is_none() {
+        if self.cookie_str().await.is_none() {
             return Ok(None);
         }
-        // 简化：从 cookie 提取 uid（MUSIC_U 解码复杂，暂返回占位）
-        Ok(Some(UserInfo {
-            uid: "已登录".into(),
-            nickname: "网易云用户".into(),
-            avatar_url: None,
-            vip: false,
-        }))
+
+        // 调网易云账号信息接口获取真实昵称/头像/VIP 状态
+        match self
+            .weapi_post("/weapi/w/nuser/account/get", r#"{"csrf_token":""}"#)
+            .await
+        {
+            Ok(v) if v["code"].as_i64() == Some(200) => {
+                let account = &v["account"];
+                let profile = &v["profile"];
+                let uid = account["id"]
+                    .as_i64()
+                    .map(|id| id.to_string())
+                    .or_else(|| profile["userId"].as_i64().map(|id| id.to_string()))
+                    .unwrap_or_default();
+                let nickname = profile["nickname"]
+                    .as_str()
+                    .unwrap_or("网易云用户")
+                    .to_string();
+                let avatar_url = profile["avatarUrl"].as_str().map(String::from);
+                // vipType: 0=普通, 1=黑胶 VIP(月), 2=黑胶 VIP(年), 4=黑胶 SVIP, 11=Musician?
+                let vip_type = profile["vipType"]
+                    .as_i64()
+                    .or_else(|| account["vipType"].as_i64())
+                    .unwrap_or(0);
+                let vip = vip_type > 0;
+                Ok(Some(UserInfo {
+                    uid,
+                    nickname,
+                    avatar_url,
+                    vip,
+                }))
+            }
+            Ok(v) => {
+                tracing::warn!("网易云获取账号信息失败: code={:?}", v["code"]);
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::warn!("网易云获取账号信息请求失败: {}", e);
+                Ok(None)
+            }
+        }
     }
 }
 
