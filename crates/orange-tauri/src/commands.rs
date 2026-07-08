@@ -442,6 +442,35 @@ pub async fn netease_status(state: tauri::State<'_, AppState>) -> Result<bool, S
     Ok(state.netease.is_ready())
 }
 
+/// 网易云当前登录用户信息
+#[tauri::command]
+pub async fn netease_current_user(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<orange_core::source::UserInfo>, String> {
+    use orange_core::AuthSource;
+    state
+        .netease
+        .current_user()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 网易云当前播放音质
+#[tauri::command]
+pub async fn netease_get_quality(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    Ok(state.netease.quality().await)
+}
+
+/// 网易云设置播放音质
+#[tauri::command]
+pub async fn netease_set_quality(
+    state: tauri::State<'_, AppState>,
+    level: String,
+) -> Result<(), String> {
+    state.netease.set_quality(&level).await;
+    Ok(())
+}
+
 /// 网易云搜索（支持分页，page 默认 1）
 #[tauri::command]
 pub async fn netease_search(
@@ -2122,6 +2151,9 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_login_with_webview,
             netease_logout,
             netease_status,
+            netease_current_user,
+            netease_get_quality,
+            netease_set_quality,
             netease_search,
             netease_stream,
             netease_playlists,
