@@ -277,6 +277,35 @@ pub async fn kuwo_popular(
         .map_err(|e| e.to_string())
 }
 
+/// 酷我音乐榜单详情
+#[tauri::command]
+pub async fn kuwo_chart_detail(
+    state: tauri::State<'_, AppState>,
+    bang_id: String,
+    limit: Option<u32>,
+) -> Result<Vec<Track>, String> {
+    state
+        .kuwo
+        .chart_detail(&bang_id, limit.unwrap_or(30))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 酷我音乐歌词
+#[tauri::command]
+pub async fn kuwo_lyric(
+    state: tauri::State<'_, AppState>,
+    rid: String,
+) -> Result<serde_json::Value, String> {
+    let raw = state
+        .kuwo
+        .song_lyric(&rid)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    Ok(serde_json::json!({ "raw_lrc": raw, "translated_lrc": null }))
+}
+
 // ===== 网易云音乐命令 =====
 
 /// 网易云 Cookie 登录
@@ -368,7 +397,8 @@ pub async fn netease_login_with_webview(
     let state_poll = state.netease.clone();
     let tx_poll = tx.clone();
     let poll_handle = tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(CHECK_INTERVAL_MS));
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_millis(CHECK_INTERVAL_MS));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
@@ -417,7 +447,10 @@ pub async fn netease_login_with_webview(
     // 用户手动关闭窗口时兜底：如果还没拿到有效 cookie，返回取消错误
     let window_close = window.clone();
     window.on_window_event(move |event| {
-        if matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed) {
+        if matches!(
+            event,
+            WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+        ) {
             poll_handle.abort();
             let _ = window_close.close();
             if let Some(tx) = tx_close.lock().unwrap().take() {
@@ -1061,6 +1094,58 @@ pub async fn kugou_logout(state: tauri::State<'_, AppState>) -> Result<(), Strin
 #[tauri::command]
 pub async fn kugou_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     Ok(state.kugou.is_ready())
+}
+
+#[tauri::command]
+pub async fn kugou_current_user(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<orange_core::UserInfo>, String> {
+    use orange_core::AuthSource;
+    state.kugou.current_user().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn kugou_playlists(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<orange_core::PlaylistRef>, String> {
+    use orange_core::AudioSource;
+    state
+        .kugou
+        .user_playlists()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn kugou_playlist_detail(
+    state: tauri::State<'_, AppState>,
+    playlist_id: String,
+) -> Result<Vec<Track>, String> {
+    state
+        .kugou
+        .playlist_detail(&playlist_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn kugou_lyric(
+    state: tauri::State<'_, AppState>,
+    song_id: String,
+) -> Result<serde_json::Value, String> {
+    let parts: Vec<&str> = song_id.split('|').collect();
+    let hash = parts.first().copied().unwrap_or("").trim();
+    let album_id = parts.get(1).copied();
+    if hash.is_empty() {
+        return Err("酷狗歌曲缺少 hash".into());
+    }
+    let raw = state
+        .kugou
+        .song_lyric(hash, album_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    Ok(serde_json::json!({ "raw_lrc": raw, "translated_lrc": null }))
 }
 
 // ===== 汽水音乐命令 =====
@@ -2147,6 +2232,8 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             kuwo_search,
             kuwo_stream,
             kuwo_popular,
+            kuwo_chart_detail,
+            kuwo_lyric,
             netease_login,
             netease_login_with_webview,
             netease_logout,
@@ -2170,6 +2257,10 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             kugou_login,
             kugou_logout,
             kugou_status,
+            kugou_current_user,
+            kugou_playlists,
+            kugou_playlist_detail,
+            kugou_lyric,
             qishui_search,
             qishui_stream,
             qishui_status,

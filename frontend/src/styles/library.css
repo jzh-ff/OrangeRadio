@@ -1249,3 +1249,205 @@
     gap: 16px 14px;
   }
 }
+
+/* ===== 酷狗音乐视图（KugouView）===== */
+.kugou-login {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.kugou-login__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.kugou-login__input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  resize: vertical;
+  outline: none;
+}
+
+.kugou-login__input:focus {
+  border-color: rgba(255, 157, 69, 0.5);
+}
+
+.kugou-login__btn {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, var(--orange), var(--amber));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.kugou-login__btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 26, 0.35);
+}
+
+.kugou-login__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.kugou-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.kugou-user__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.kugou-user__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kugou-user__avatar span {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.kugou-user__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kugou-user__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.kugou-user__vip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #d4af37, #f4d28a);
+  color: #000;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.kugou-user__logout {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.kugou-user__logout:hover {
+  background: rgba(255, 80, 80, 0.12);
+  border-color: rgba(255, 80, 80, 0.35);
+  color: #ff9a9a;
+}
+
+.kugou-playlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.kugou-playlist-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: #fff;
+}
+
+.kugou-playlist-card__cover {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.kugou-playlist-card:hover .kugou-playlist-card__cover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.kugou-playlist-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kugou-playlist-card__fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 36px;
+  color: rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, #1a1a1f, #0a0a0f);
+}
+
+.kugou-playlist-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kugou-playlist-card__count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+@media (max-width: 640px) {
+  .kugou-playlist-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+  }
+}
