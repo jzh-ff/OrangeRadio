@@ -53,7 +53,7 @@
   cursor: move;
 }
 
-/* 拖拽手柄 + 锁定状态指示（hover 才显，平时几乎不可见） */
+/* 拖拽手柄：MineRadio 风格（color-mix 极光边框 + 半透 0.44 极紧凑） */
 .lyric-overlay__drag-handle {
   position: absolute;
   top: 4px;
@@ -61,27 +61,34 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 12px;
+  gap: 6px;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(8, 10, 14, 0.42);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.78);
+  /* 浅色半透（不是黑色），让歌词"飘在"桌面上 */
+  background: color-mix(in srgb, rgba(4, 6, 10, 0.44) 60%, transparent);
+  /* MineRadio 风格 color-mix 极光边框 */
+  border: 1px solid color-mix(in srgb, var(--lyric-glow) 58%, rgba(255, 255, 255, 0.36));
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--lyric-glow) 30%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  color: rgba(255, 255, 255, 0.84);
   font-family: var(--font-mono, monospace);
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease;
   pointer-events: none;
   z-index: 5;
 }
 .lyric-overlay:hover .lyric-overlay__drag-handle,
 .lyric-overlay:focus-within .lyric-overlay__drag-handle {
   opacity: 0.92;
+  transform: translateX(-50%) translateY(0);
 }
 .lyric-overlay__drag-dots {
   display: inline-flex;
@@ -245,24 +252,27 @@
   animation: none;
 }
 
-/* ====== 控件条（hover 浮现） ====== */
+/* ====== 控件条（hover 浮现）MineRadio 风格：color-mix 极光边 + 半透 ====== */
 .lyric-overlay__controls {
   position: absolute;
   bottom: 6px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(4px);
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(8, 10, 14, 0.42);
+  background: color-mix(in srgb, rgba(4, 6, 10, 0.44) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lyric-glow) 45%, rgba(255, 255, 255, 0.18));
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.32),
+    0 0 24px color-mix(in srgb, var(--lyric-glow) 20%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   opacity: 0;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease;
   pointer-events: none;
   z-index: 6;
   -webkit-app-region: no-drag;
@@ -277,9 +287,9 @@
 .lyric-btn {
   width: 26px;
   height: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid color-mix(in srgb, var(--lyric-glow) 30%, rgba(255, 255, 255, 0.18));
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
   color: #fff;
   cursor: pointer;
   display: flex;
@@ -289,8 +299,8 @@
   -webkit-app-region: no-drag;
 }
 .lyric-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: color-mix(in srgb, var(--lyric-glow) 22%, transparent);
+  border-color: color-mix(in srgb, var(--lyric-glow) 65%, rgba(255, 255, 255, 0.32));
   transform: scale(1.06);
 }
 .lyric-btn:active {
@@ -316,19 +326,22 @@
   margin: 0 4px;
 }
 
-/* ====== 设置面板（齿轮触发） ====== */
+/* ====== 设置面板（齿轮触发）MineRadio 风格：color-mix 极光边 + 半透 ====== */
 .lyric-overlay__settings {
   position: absolute;
   bottom: 48px;
   right: 18px;
   width: 280px;
   padding: 14px 16px;
-  background: rgba(14, 16, 22, 0.78);
+  background: color-mix(in srgb, rgba(4, 6, 10, 0.62) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lyric-glow) 45%, rgba(255, 255, 255, 0.16));
+  border-radius: 14px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 32px color-mix(in srgb, var(--lyric-glow) 16%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
   gap: 11px;

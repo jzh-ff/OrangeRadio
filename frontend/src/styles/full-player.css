@@ -176,6 +176,8 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  padding: 88px 0 140px;
+  gap: 0;
 }
 .fp-cinema > * { pointer-events: auto; }
 
@@ -616,7 +618,7 @@
 /* 当前行未设 --lyric-p 时：普通白色字（不影响无歌词/加载态） */
 .fp-lyric-line--active .fp-lyric-text,
 .fp-cinema-lyric-line .fp-lyric-content {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--lyric-color, rgba(255, 255, 255, 0.85));
 }
 
 /* 当前行设了 --lyric-p：5 段渐变扫光（沉浸/三栏/歌词流共用） */
@@ -627,8 +629,8 @@
     var(--fp-lyric-highlight) 0%,
     var(--fp-lyric-highlight) max(0%, calc(var(--lyric-p, 0%) - var(--fp-lyric-feather))),
     var(--fp-lyric-glow) calc(var(--lyric-p, 0%) + 1%),
-    rgba(255, 255, 255, 0.78) calc(var(--lyric-p, 0%) + var(--fp-lyric-feather)),
-    rgba(255, 255, 255, 0.78) 100%
+    var(--lyric-color, rgba(255, 255, 255, 0.78)) calc(var(--lyric-p, 0%) + var(--fp-lyric-feather)),
+    var(--lyric-color, rgba(255, 255, 255, 0.78)) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
@@ -643,11 +645,11 @@
 .fp-cinema-lyric-line .fp-lyric-content[style*="--lyric-p"] {
   background: linear-gradient(
     90deg,
-    #fff 0%,
+    var(--lyric-color, #fff) 0%,
     var(--fp-lyric-highlight) max(0%, calc(var(--lyric-p, 0%) - var(--fp-lyric-feather))),
     var(--fp-lyric-glow) calc(var(--lyric-p, 0%) + 1%),
-    rgba(255, 255, 255, 0.92) calc(var(--lyric-p, 0%) + var(--fp-lyric-feather)),
-    rgba(255, 255, 255, 0.92) 100%
+    var(--lyric-color, rgba(255, 255, 255, 0.92)) calc(var(--lyric-p, 0%) + var(--fp-lyric-feather)),
+    var(--lyric-color, rgba(255, 255, 255, 0.92)) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
@@ -1925,6 +1927,76 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* ===== P11.3 歌词颜色选择器 ===== */
+.vc-color-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vc-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+
+.vc-toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--orange-2, #ff9d45);
+  cursor: pointer;
+}
+
+.vc-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vc-color-picker input[type="color"] {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.vc-color-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.vc-color-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.vc-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.vc-color-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* ===== P12 壁纸选择器（legacy，已由 wallpaper-picker.css 替代） ===== */
 .vc-wallpaper-grid {
   display: grid;
@@ -3005,3 +3077,380 @@
   .fp-overlay--editorial .fp-cover-big--live .fp-cover-img { animation: none !important; }
 }
 
+
+/* ===== P11.4 黑胶唱片预设（VinylRecord）===== */
+.vinyl-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 107, 26, 0.08), transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(106, 27, 154, 0.08), transparent 50%),
+    #050608;
+}
+
+.vinyl-disc {
+  position: relative;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #1a1a1f 0%, #0a0a0f 40%, #050508 100%),
+    repeating-radial-gradient(circle at 50% 50%, #0d0d10 0px, #0d0d10 2px, #121216 3px, #121216 4px);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.04),
+    0 24px 60px rgba(0, 0, 0, 0.7),
+    inset 0 0 40px rgba(0, 0, 0, 0.8);
+  animation-play-state: paused;
+}
+
+.vinyl-disc--spin {
+  animation: vinyl-spin 3.6s linear infinite;
+  animation-play-state: running;
+}
+
+@keyframes vinyl-spin {
+  to { transform: rotate(360deg); }
+}
+
+.vinyl-grooves {
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.vinyl-groove {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vinyl-groove:nth-child(1) { inset: 12px; }
+.vinyl-groove:nth-child(2) { inset: 36px; }
+.vinyl-groove:nth-child(3) { inset: 60px; }
+.vinyl-groove:nth-child(4) { inset: 84px; }
+
+.vinyl-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 120px;
+  height: 120px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.4);
+}
+
+.vinyl-label img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vinyl-label__fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 32px;
+  color: rgba(255, 255, 255, 0.4);
+  background: linear-gradient(135deg, #1a1a1f, #0a0a0f);
+}
+
+.vinyl-hole {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #050608;
+  box-shadow: inset 0 0 2px rgba(255, 255, 255, 0.2);
+}
+
+.vinyl-arm {
+  position: absolute;
+  top: 18%;
+  right: 18%;
+  width: 80px;
+  height: 120px;
+  pointer-events: none;
+}
+
+.vinyl-arm__base {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d4af37, #8a6e1c);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.vinyl-arm__stick {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 110px;
+  background: linear-gradient(90deg, #a0a0a0, #e0e0e0);
+  border-radius: 3px;
+  transform-origin: top center;
+  transform: rotate(28deg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.is-playing .vinyl-arm__stick {
+  transform: rotate(34deg);
+  transition: transform 0.6s ease;
+}
+
+@media (max-width: 820px) {
+  .vinyl-disc { width: 260px !important; height: 260px !important; }
+  .vinyl-label { width: 90px !important; height: 90px !important; }
+}
+
+/* ===== P12.2 律动布局新版：顶部信息条 + 中央歌词舞台 ===== */
+/* 顶部信息条：纯文字"歌名 - 歌手"居中横排，完全透明背景（透出粒子） */
+.fp-cinema-top {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 92vw;
+  padding: 6px 0 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  margin-bottom: 14px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fp-cinema-top__title,
+.fp-cinema-top__artist {
+  display: inline-block;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-weight: 500;
+  font-size: clamp(15px, 1.6vw, 18px);
+  letter-spacing: 0;
+  color: rgba(246, 245, 239, 0.78);
+  text-shadow: 0 1px 8px rgba(4, 6, 12, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fp-cinema-top__sep {
+  display: inline-block;
+  color: rgba(122, 223, 176, 0.55);
+  font-weight: 300;
+  font-size: clamp(15px, 1.6vw, 18px);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.fp-cinema-top__artist {
+  color: rgba(246, 245, 239, 0.55);
+}
+
+/* ===== 中央歌词舞台（核心：当前行超大 + MineRadio 扫描光 + 暖光晕） ===== */
+.fp-cinema-stage {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  width: min(92%, 980px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 0;
+  padding: 32px 0;
+}
+
+/* ============================================================
+   OrangeRadio 歌词舞台 v4 —— 极简单一冷暖轴
+   ============================================================
+   配色（明确定义，不用模板）：
+     --paper #f6f5ef   暖白纸（当前行字色）
+     --ink   #16141a   几乎黑的紫（背景是粒子）
+     --mist  #b9c7c4   薄雾（未唱部分）
+     --ember #ff8a4c   暖橙（已唱高亮）
+     --aurora #7adfb0  极光（光晕 + 时间戳）
+   字体：
+     中文 main: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei"
+     等宽: ui-monospace, "JetBrains Mono", Consolas, monospace
+   装饰（只有 1 个）：
+     扫描线（1.5px 极光线 + 节拍呼吸 opacity）
+   入场（极简，350ms）：
+     opacity 0→1 + translateY 0.5px 上升（不是 3D 旋转）
+   ============================================================ */
+
+:root {
+  --or-paper:  #f6f5ef;
+  --or-ink:    #16141a;
+  --or-mist:   #b9c7c4;
+  --or-ember:  #ff8a4c;
+  --or-aurora: #7adfb0;
+}
+
+.fp-cinema-stage__hint {
+  color: rgba(246, 245, 239, 0.4);
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.fp-cinema-stage__main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: 100%;
+  position: relative;
+}
+
+/* 时间戳：等宽 + 极光 + 极细（不是"标签"感） */
+.fp-cinema-stage__time {
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+  color: var(--or-aurora);
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+.fp-cinema-stage__text-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+/* ★ 当前行核心：暖白纸 + 极光 4 层光晕 + 单条扫描线 + 350ms 极简入场 */
+.fp-cinema-stage__text {
+  position: relative;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+  max-width: 92vw;
+  padding: 8px 0 22px;
+  color: var(--or-paper);
+  text-shadow:
+    0 0 24px rgba(122, 223, 176, 0.45),
+    0 0 64px rgba(122, 223, 176, 0.20);
+  /* 入场：350ms 极简 fade + 0.5px translateY（不是 3D 旋转） */
+  animation: or-fade-up 350ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes or-fade-up {
+  0%   { opacity: 0; transform: translateY(0.5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* 单条扫描线：1.5px 极光线，节拍呼吸 opacity（不是"扫"，是"心跳"） */
+.fp-cinema-stage__text::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  background: var(--or-aurora);
+  opacity: 0.35;
+  filter: drop-shadow(0 0 4px rgba(122, 223, 176, 0.6));
+  pointer-events: none;
+  animation: or-scan-beat 0.42s ease-out infinite;
+}
+
+@keyframes or-scan-beat {
+  0%   { opacity: 0.20; transform: scaleX(0.85); }
+  18%  { opacity: 0.95; transform: scaleX(1.0); }   /* 鼓点瞬间拉满 */
+  100% { opacity: 0.20; transform: scaleX(0.85); }   /* 0.42s 回到 0.2 */
+}
+
+/* 翻译：等宽 + 60% 不透明 + 居中 */
+.fp-cinema-stage__trans {
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: clamp(13px, 1.4vw, 16px);
+  font-style: normal;       /* 不是 italic（italic 是模板） */
+  color: rgba(246, 245, 239, 0.55);
+  letter-spacing: 0;
+  text-align: center;
+  margin-top: -4px;
+}
+
+.fp-cinema-stage__trans--ai {
+  color: rgba(122, 223, 176, 0.6);  /* AI 译注用极光色 */
+}
+
+/* 注解：左侧一道 2px 极光线 + 等宽文字（不画底色块） */
+.fp-cinema-stage__annot {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0 4px 12px;
+  border-left: 2px solid var(--or-aurora);
+  background: transparent;
+  color: rgba(246, 245, 239, 0.65);
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: 0.02em;
+  max-width: 80%;
+  text-align: left;
+  margin-top: 4px;
+}
+
+/* 上一行 / 下一行：弱灰（0.35）+ 等宽小号 */
+.fp-cinema-stage__next,
+.fp-cinema-stage__prev {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(246, 245, 239, 0.30);
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.fp-cinema-stage__next-text,
+.fp-cinema-stage__prev-text {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fp-cinema-stage__time--next,
+.fp-cinema-stage__time--prev {
+  color: rgba(122, 223, 176, 0.4);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  flex-shrink: 0;
+}
+
+@media (max-width: 820px) {
+  .fp-cinema-top { width: 92%; }
+  .fp-cinema-top__cover { width: 44px; height: 44px; }
+  .fp-cinema-top__title { font-size: 15px; }
+  .fp-cinema-stage__text { font-size: clamp(28px, 8vw, 48px); }
+  .fp-cinema-stage__trans { font-size: 12px; }
+}
