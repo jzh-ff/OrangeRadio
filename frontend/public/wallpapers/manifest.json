@@ -4,6 +4,7 @@
     "name": "小悟空·筋斗云",
     "type": "video",
     "src": "PREVIEW-Kid-Goku-Flying-Nimbus.mp4",
+    "thumbnail": "PREVIEW-Kid-Goku-Flying-Nimbus-thumb.jpg",
     "addedAt": 0
   },
   {
@@ -11,6 +12,7 @@
     "name": "伏黑惠",
     "type": "video",
     "src": "PREVIEW-Megumi-Fushiguro-1.mp4",
+    "thumbnail": "PREVIEW-Megumi-Fushiguro-1-thumb.jpg",
     "addedAt": 0
   },
   {
@@ -18,6 +20,7 @@
     "name": "夜刃",
     "type": "video",
     "src": "PREVIEW-Night-Blade.mp4",
+    "thumbnail": "PREVIEW-Night-Blade-thumb.jpg",
     "addedAt": 0
   },
   {
@@ -25,6 +28,7 @@
     "name": "忍者·满月",
     "type": "video",
     "src": "PREVIEW-Ninja-Full-Moon.mp4",
+    "thumbnail": "PREVIEW-Ninja-Full-Moon-thumb.jpg",
     "addedAt": 0
   },
   {
@@ -32,6 +36,7 @@
     "name": "卡比兽·夜眠",
     "type": "video",
     "src": "PREVIEW-Snorlax-Night-Sleep.mp4",
+    "thumbnail": "PREVIEW-Snorlax-Night-Sleep-thumb.jpg",
     "addedAt": 0
   },
   {
@@ -39,6 +44,7 @@
     "name": "暗影与骑士",
     "type": "video",
     "src": "PREVIEW-The-Shade-and-the-Knight.mp4",
+    "thumbnail": "PREVIEW-The-Shade-and-the-Knight-thumb.jpg",
     "addedAt": 0
   }
 ]
