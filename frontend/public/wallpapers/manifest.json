@@ -46,5 +46,13 @@
     "src": "PREVIEW-The-Shade-and-the-Knight.mp4",
     "thumbnail": "PREVIEW-The-Shade-and-the-Knight-thumb.jpg",
     "addedAt": 0
+  },
+  {
+    "id": "builtin-monogatari-series",
+    "name": "化物语系列",
+    "type": "video",
+    "src": "Monogatari-Series.mp4",
+    "thumbnail": "Monogatari-Series-thumb.jpg",
+    "addedAt": 0
   }
 ]
