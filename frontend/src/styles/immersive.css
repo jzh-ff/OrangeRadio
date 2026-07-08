@@ -319,30 +319,12 @@
   100% { transform: translateX(220%);  opacity: 0; }
 }
 
-/* 当前行左缘暖橙竖线（持续呼吸，提示"这里"） */
-.immersive__line.is-active::after {
-  content: "";
-  position: absolute;
-  left: -18px;
-  top: 12%;
-  bottom: 12%;
-  width: 2px;
-  border-radius: 1px;
-  background: linear-gradient(180deg, transparent, var(--orange-2, #ff9d45), transparent);
-  box-shadow: 0 0 10px rgba(255, 157, 69, 0.7);
-  pointer-events: none;
-  animation: immersive-line-rail 1.6s ease-in-out infinite;
-}
+/* 当前行左缘暖橙竖线已去除（去掉激光线，只保留光晕 + 字号层次） */
 
-@keyframes immersive-line-rail {
-  0%, 100% { opacity: 0.6; }
-  50%      { opacity: 1; }
-}
-
-.immersive__lyrics--sm .immersive__line.is-active { font-size: 26px; font-weight: 600; }
-.immersive__lyrics--md .immersive__line.is-active { font-size: 36px; font-weight: 600; }
-.immersive__lyrics--lg .immersive__line.is-active { font-size: 50px; font-weight: 600; }
-.immersive__lyrics--xl .immersive__line.is-active { font-size: 64px; font-weight: 600; }
+.immersive__lyrics--sm .immersive__line.is-active { font-size: 32px; font-weight: 700; }
+.immersive__lyrics--md .immersive__line.is-active { font-size: 44px; font-weight: 700; }
+.immersive__lyrics--lg .immersive__line.is-active { font-size: 60px; font-weight: 800; }
+.immersive__lyrics--xl .immersive__line.is-active { font-size: 76px; font-weight: 800; }
 
 .immersive__line.is-active .immersive__line-translation {
   color: rgba(255, 255, 255, 0.55);
@@ -745,11 +727,19 @@
   font-weight: 800;
   line-height: 1.05;
   letter-spacing: 0;
-  padding: 8px 0 22px;
+  padding: 8px 0 10px;
   color: var(--or-paper, #f6f5ef);
   text-shadow:
-    0 0 24px rgba(122, 223, 176, 0.45),
-    0 0 64px rgba(122, 223, 176, 0.20);
+    /* 紧贴：极亮核（描边感） */
+    0 0 1px rgba(255, 255, 255, 0.95),
+    /* 8-12px：明亮极光绿内层 */
+    0 0 10px rgba(122, 223, 176, 0.75),
+    0 0 22px rgba(122, 223, 176, 0.55),
+    /* 50-80px：远场柔光晕（深色背景下大范围光圈） */
+    0 0 60px rgba(122, 223, 176, 0.35),
+    0 0 110px rgba(122, 223, 176, 0.22),
+    /* 160px：环境散射（更大范围，让"光"在律动暗背景上扩散开） */
+    0 0 180px rgba(122, 223, 176, 0.12);
   /* 入场：350ms 极简 fade + 0.5px translateY（不是 3D 旋转） */
   animation: or-fade-up 350ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
@@ -758,27 +748,6 @@
 @keyframes or-fade-up {
   0%   { opacity: 0; transform: translateY(0.5px); }
   100% { opacity: 1; transform: translateY(0); }
-}
-
-/* 单条扫描线：1.5px 极光线，节拍呼吸 opacity */
-.immersive__current-text::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1.5px;
-  background: var(--or-aurora, #7adfb0);
-  opacity: 0.35;
-  filter: drop-shadow(0 0 4px rgba(122, 223, 176, 0.6));
-  pointer-events: none;
-  animation: immersive-current-beat 0.42s ease-out infinite;
-}
-
-@keyframes immersive-current-beat {
-  0%   { opacity: 0.20; transform: scaleX(0.85); }
-  18%  { opacity: 0.95; transform: scaleX(1.0); }
-  100% { opacity: 0.20; transform: scaleX(0.85); }
 }
 
 .immersive__current-trans {
