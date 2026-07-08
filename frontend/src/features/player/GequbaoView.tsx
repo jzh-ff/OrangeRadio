@@ -84,22 +84,16 @@ export function GequbaoView() {
 
   return (
     <div className="library">
-      <div className="library__toolbar">
-        <div className="library__search">
-          <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-            <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          <input
-            className="library__search-input"
-            placeholder="搜索歌曲（周杰伦 / 晴天…）"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && doSearch()}
-          />
-        </div>
-        <button className="btn-scan" onClick={loadPopular} disabled={loading}> {loading ? "加载中…" : "热门推荐"}
-        </button>
+      <div style={{ marginBottom: 16 }}>
+        <ConsoleSearch
+          value={keyword}
+          onChange={setKeyword}
+          onSubmit={doSearch}
+          onSecondary={loadPopular}
+          secondaryLabel="热门推荐"
+          loading={loading}
+          placeholder="搜索歌曲（周杰伦 / 晴天…）"
+        />
       </div>
 
       {error && (

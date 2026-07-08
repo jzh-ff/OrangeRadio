@@ -89,8 +89,8 @@ export function SpotifyView() {
               2. 创建 App，获取 Client ID 和 Secret<br/>
               3. 填入下方
             </p>
-            <input className="library__search-input" style={{ marginBottom: 8 }} placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
-            <input className="library__search-input" placeholder="Client Secret" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+            <input className="or-input" style={{ marginBottom: 8, width: "100%" }} placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+            <input className="or-input" style={{ width: "100%" }} placeholder="Client Secret" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn-scan" onClick={doConfig} disabled={loading}>{loading ? "配置中…" : "确认"}</button>
               <button className="btn-scan" style={{ background: "#333" }} onClick={() => setShowConfig(false)}>取消</button>
@@ -104,15 +104,14 @@ export function SpotifyView() {
 
   return (
     <div className="library">
-      <div className="library__toolbar">
-        <div className="library__search">
-          <svg className="library__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-            <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          <input className="library__search-input" placeholder="搜索 Spotify（试听30秒）…" value={keyword}
-            onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} />
-        </div>
+      <div style={{ marginBottom: 16 }}>
+        <ConsoleSearch
+          value={keyword}
+          onChange={setKeyword}
+          onSubmit={doSearch}
+          loading={loading}
+          placeholder="搜索 Spotify（试听 30 秒）…"
+        />
       </div>
       {error && <div style={{ padding: 12, color: "#ff6b6b", fontSize: 13, background: "rgba(255,80,80,0.08)", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
       {tracks.length === 0 ? (

@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useSearchStore } from "../../stores/searchStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
@@ -22,7 +23,21 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   podcast: { label: "POD", cls: "q-std" },
 };
 
-/** 聚合搜索结果视图（混合列表 + 来源标签） */
+/** tab 顺序：按主流 → 长尾排（"全部" 永远在最左） */
+const TAB_ORDER = [
+  "local",
+  "netease_cloud_music",
+  "qq_music",
+  "kugou",
+  "kuwo",
+  "qishui",
+  "spotify",
+  "web_radio",
+  "podcast",
+] as const;
+type SourceKindKey = (typeof TAB_ORDER)[number];
+
+/** 聚合搜索结果视图（tab 切换 = 按源过滤；"全部" = 混合列表） */
 export function SearchView() {
   const keyword = useSearchStore((s) => s.keyword);
   const results = useSearchStore((s) => s.results);
@@ -34,25 +49,53 @@ export function SearchView() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
 
+  // "all" 或具体的 source_kind —— 决定列表显示哪个源的结果
+  // 类型用 string 兜底：TAB_ORDER 里的 key 是合法的 SourceKind 子集但比全局 SourceKind 多一个 kuwo
+  const [sourceFilter, setSourceFilter] = useState<"all" | string>("all");
+
   const handlePlay = (track: Track, index: number) => {
     engineRef.playTrack(track, index);
   };
 
-  const onItemsRendered = useVirtualInfiniteScroll({ hasMore, loading, onLoadMore: loadMore });
-
   // 统计各源结果数
-  const sourceCounts = results.reduce((acc, t) => {
-    const k = (t.source_kind || "local") as SourceKind;
-    acc[k] = (acc[k] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const sourceCounts = useMemo(() => {
+    return results.reduce((acc, t) => {
+      const k = (t.source_kind || "local") as SourceKind;
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [results]);
+
+  // 根据当前 tab 过滤可见结果
+  const visibleResults = useMemo(() => {
+    if (sourceFilter === "all") return results;
+    return results.filter((t) => (t.source_kind || "local") === sourceFilter);
+  }, [results, sourceFilter]);
+
+  // 切 tab 时重置虚拟滚动 / loadMore 状态：如果该源结果数 < 30，
+  // 就别触发 loadMore（按"全 30 条才认为有更多"的保守规则在 store 里）
+  const visibleHasMore = sourceFilter === "all" ? hasMore : visibleResults.length >= 30;
+  const onItemsRendered = useVirtualInfiniteScroll({
+    hasMore: visibleHasMore,
+    loading,
+    onLoadMore: loadMore,
+  });
+
+  // 列出实际有结果的 tab（只展示有命中的源，不浪费横向空间）
+  const availableTabs = useMemo(() => {
+    return TAB_ORDER.filter((k) => sourceCounts[k] && sourceCounts[k] > 0);
+  }, [sourceCounts]);
 
   return (
     <div className="library">
       <div className="section-title">
         <h3>全网搜索</h3>
         <span className="section-title__sub">
-          {results.length > 0 ? `${results.length} 条结果` : ""}
+          {results.length > 0
+            ? sourceFilter === "all"
+              ? `${results.length} 条结果`
+              : `${visibleResults.length} 条来自 ${SOURCE_BADGE[sourceFilter]?.label || sourceFilter}`
+            : ""}
         </span>
       </div>
 
@@ -67,22 +110,42 @@ export function SearchView() {
         />
       </div>
 
-      {/* 各源结果统计 */}
+      {/* 来源 tab：「全部」+ 各命中源；点击切换列表过滤 */}
       {results.length > 0 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          {Object.entries(sourceCounts).map(([kind, count]) => {
+        <div className="search-tabs" role="tablist" aria-label="按来源筛选结果">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceFilter === "all"}
+            className={`search-tabs__tab ${sourceFilter === "all" ? "search-tabs__tab--active" : ""}`}
+            onClick={() => setSourceFilter("all")}
+          >
+            全部
+            <span className="search-tabs__count">{results.length}</span>
+          </button>
+          {availableTabs.map((kind) => {
             const badge = SOURCE_BADGE[kind] || { label: kind, cls: "q-std" };
             return (
-              <span key={kind} className={`q-badge ${badge.cls}`} style={{ fontSize: 11, padding: "4px 10px" }}>
-                {badge.label} · {count}
-              </span>
+              <button
+                key={kind}
+                type="button"
+                role="tab"
+                aria-selected={sourceFilter === kind}
+                className={`search-tabs__tab ${sourceFilter === kind ? "search-tabs__tab--active" : ""}`}
+                onClick={() => setSourceFilter(kind)}
+              >
+                {badge.label}
+                <span className={`search-tabs__count search-tabs__count--${badge.cls.replace("q-", "")}`}>
+                  {sourceCounts[kind]}
+                </span>
+              </button>
             );
           })}
         </div>
       )}
 
       {/* 结果列表 */}
-      {results.length > 0 ? (
+      {visibleResults.length > 0 ? (
         <div className="library__list">
           <div className="lib-header">
             <span className="col-i">#</span>
@@ -93,7 +156,7 @@ export function SearchView() {
           </div>
           <div className="lib-rows">
             <VirtualTrackList
-              tracks={results}
+              tracks={visibleResults}
               activeId={currentTrack?.id}
               isPlaying={isPlaying}
               onPlay={handlePlay}
@@ -125,6 +188,12 @@ export function SearchView() {
       ) : loading ? (
         <div className="library__empty">
           <div className="library__empty-title">正在搜索全网音乐…</div>
+        </div>
+      ) : keyword && results.length > 0 ? (
+        // 已搜出结果但当前 tab 下没有（极少出现 —— 比如切到一个空源 tab）
+        <div className="library__empty">
+          <div className="library__empty-title">该来源暂无结果</div>
+          <div className="library__empty-desc">切到其他来源试试</div>
         </div>
       ) : keyword ? (
         <div className="library__empty">

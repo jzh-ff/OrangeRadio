@@ -1,15 +1,22 @@
-/* ===== Sidebar · 载波脊柱（Carrier Wave Rail） ===== */
+/* ===== Sidebar · 载波脊柱（Carrier Wave Rail） =====
+   position: fixed —— 不参与 flex 布局，让主区用 padding-left 占位，
+   隐藏态直接 transform: translateX(-100%) 整条滑出去。 */
 .sidebar {
   --sb-w: 264px;
   width: var(--sb-w);
   height: 100%;
   flex-shrink: 0;
-  position: relative;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
   z-index: 5;
   display: flex;
   flex-direction: column;
   padding: 22px 0 14px;
   overflow: hidden;
+  transform: translateX(0);
+  transition: transform 0.36s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
   background:
     radial-gradient(circle at 0% 0%, rgba(255, 107, 26, 0.06), transparent 40%),
     linear-gradient(168deg, rgba(14, 16, 28, var(--ui-opacity, 0.8)) 0%, rgba(4, 5, 10, var(--ui-opacity, 0.8)) 100%);
@@ -17,6 +24,7 @@
   box-shadow:
     18px 0 64px rgba(0, 0, 0, 0.32),
     inset -1px 0 0 rgba(255, 255, 255, 0.03);
+  will-change: transform;
 }
 /* 顶部杂志感 hairline */
 .sidebar::before {
@@ -209,14 +217,87 @@
 }
 .sidebar__live-label { color: var(--text-2); }
 .sidebar--live .sidebar__live-label { color: var(--orange-2); }
-.sidebar__live-freq {
-  font-family: var(--font-num);
-  font-style: italic;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--champagne);
-  letter-spacing: -0.02em;
+
+/* ===== 当前曲目码质标签（替代旧的 sidebar__live-freq）=====
+   结构：[4格 tier 柱] [格式 · 码率/品质]
+   tier 颜色等级：master/hires（古金/暖橙）> lossless（冷蓝）> high（冰青）> std（灰）> none
+   master/hires 播放时有微脉动，强化"顶级"感。 */
+.sidebar__quality {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 9px 2px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: color 0.4s var(--ease), border-color 0.4s var(--ease), background 0.4s var(--ease);
+  /* 默认背景：淡淡底色，hover/有音轨时再亮 */
+  background: rgba(255, 255, 255, 0.025);
 }
+.sidebar__quality-label { text-transform: uppercase; }
+.sidebar__quality-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 9px;
+  flex-shrink: 0;
+}
+.sidebar__quality-bars i {
+  display: block;
+  width: 1.5px;
+  height: 100%;
+  background: currentColor;
+  opacity: 0.18;
+  border-radius: 1px;
+  transition: opacity 0.3s var(--ease);
+}
+.sidebar__quality-bars i.is-on { opacity: 1; }
+
+/* tier 配色 —— 暖金 → 冷蓝 → 冰青 → 灰 */
+.sidebar__quality--master {
+  color: var(--gold);
+  border-color: rgba(214, 165, 96, 0.55);
+  background: linear-gradient(180deg, rgba(214, 165, 96, 0.14), rgba(214, 165, 96, 0.04));
+  text-shadow: 0 0 6px rgba(214, 165, 96, 0.35);
+}
+.sidebar--live .sidebar__quality--master {
+  animation: quality-master-pulse 2.4s ease-in-out infinite;
+}
+@keyframes quality-master-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(214, 165, 96, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(214, 165, 96, 0.10); }
+}
+.sidebar__quality--hires {
+  color: var(--champagne);
+  border-color: rgba(244, 210, 138, 0.5);
+  background: linear-gradient(180deg, rgba(244, 210, 138, 0.12), rgba(244, 210, 138, 0.03));
+}
+.sidebar__quality--lossless {
+  color: var(--chill-blue);
+  border-color: rgba(115, 167, 255, 0.42);
+  background: linear-gradient(180deg, rgba(115, 167, 255, 0.10), rgba(115, 167, 255, 0.02));
+}
+.sidebar__quality--high {
+  color: var(--chill-cyan);
+  border-color: rgba(143, 233, 255, 0.4);
+  background: linear-gradient(180deg, rgba(143, 233, 255, 0.08), rgba(143, 233, 255, 0.02));
+}
+.sidebar__quality--std {
+  color: var(--text-3);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.025);
+}
+.sidebar__quality--none {
+  color: var(--text-4);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: transparent;
+}
+.sidebar__quality--none .sidebar__quality-bars { display: none; }
 
 .sidebar__primary {
   display: grid;
@@ -272,12 +353,22 @@
   min-height: 0;
   overflow-y: auto;
   padding: 0 10px;
+  /* Firefox: 几乎不可见，hover 时稍亮 */
   scrollbar-width: thin;
+  scrollbar-color: rgba(244, 210, 138, 0.18) transparent;
 }
-.sidebar__scroll::-webkit-scrollbar { width: 4px; }
+.sidebar__scroll::-webkit-scrollbar { width: 3px; }
+.sidebar__scroll::-webkit-scrollbar-track { background: transparent; }
 .sidebar__scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: rgba(244, 210, 138, 0.14);
+  border-radius: 3px;
+  transition: background 0.2s var(--ease);
+}
+.sidebar__scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(244, 210, 138, 0.32);
+}
+.sidebar__scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 157, 69, 0.55);
 }
 
 .sidebar__section { margin-bottom: 14px; }
@@ -586,6 +677,90 @@
   border-color: rgba(255, 157, 69, 0.55);
   box-shadow: 0 0 0 3px rgba(255, 107, 26, 0.12), 0 0 22px rgba(255, 107, 26, 0.14);
 }
+
+/* ===== 隐藏态 · 用户主动隐藏（持久化到 localStorage）=====
+   整条 sidebar 沿 X 轴滑出屏幕到左侧外，主区 padding-left 在 app.css 同步收 0。
+   视觉上：sidebar 滑出 + 左下角恢复按钮淡入。 */
+.sidebar--hidden {
+  transform: translateX(-100%);
+  pointer-events: none;
+  box-shadow: none;
+}
+
+/* ===== 恢复按钮 · 左下角浮窗（hidden 时显示）=====
+   跟 .window-ctrl 同一套"圆形玻璃"设计语言：32-36px 圆，黑底+暖边，
+   hover 时变橙 + 放大。带一个"导航"文字徽章（默认折叠、hover 展开）。 */
+.sidebar-restore {
+  position: fixed;
+  bottom: 22px;
+  left: 18px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--champagne-soft);
+  background: linear-gradient(180deg, rgba(20, 22, 32, 0.92), rgba(10, 12, 20, 0.92));
+  color: var(--text-2);
+  cursor: pointer;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: sidebar-restore-in 0.42s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)) both;
+  transition:
+    border-color 0.2s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+    color 0.2s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+    background 0.2s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+    box-shadow 0.2s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+    transform 0.2s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+}
+@keyframes sidebar-restore-in {
+  0%   { opacity: 0; transform: translateX(-12px) scale(0.85); }
+  60%  { opacity: 1; transform: translateX(2px) scale(1.04); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+.sidebar-restore:hover {
+  border-color: rgba(255, 157, 69, 0.55);
+  color: var(--orange-2);
+  background: linear-gradient(180deg, rgba(255, 107, 26, 0.14), rgba(255, 107, 26, 0.04));
+  transform: translateY(-1px);
+  box-shadow:
+    0 10px 30px rgba(255, 107, 26, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.sidebar-restore:active { transform: translateY(0) scale(0.96); }
+.sidebar-restore svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0 12px;
+  transition: transform 0.2s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+}
+.sidebar-restore:hover svg { transform: translateX(2px); }
+.sidebar-restore__tip {
+  display: inline-block;
+  max-width: 0;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  font-family: var(--font-zh-serif);
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: max-width 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)), padding 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+}
+.sidebar-restore:hover .sidebar-restore__tip {
+  max-width: 40px;
+  padding-right: 12px;
+}
+
+/* sidebar 隐藏时主区用 padding-left: 0（响应 body[data-sidebar-hidden]） */
 
 @media (max-width: 980px) {
   .sidebar { width: 72px; }

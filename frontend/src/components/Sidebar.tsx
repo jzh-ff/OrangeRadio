@@ -74,6 +74,7 @@ export function Sidebar() {
   const currentPlaylistId = usePlayerStore((s) => s.currentPlaylistId);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const position = usePlayerStore((s) => s.position);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const sidebarOpacity = usePlayerStore((s) => s.visualParams.sidebarOpacity);
   const [playlists, setPlaylists] = useState<UserPlaylist[]>([]);
@@ -150,9 +151,58 @@ export function Sidebar() {
 
   const cover = getCoverUrl(currentTrack);
 
+  // 当前曲目码质标签（高级感：按 quality 等级上色 + 格式大写 + 已知码率展开）
+  // 对应 Rust 端：format = AudioFormat (flac/mp3/aac/dsd/wav/alac/ape/ogg/opus/aiff)
+  //               quality = Quality (standard/high/lossless/hires/master)
+  type QualityTier = "master" | "hires" | "lossless" | "high" | "std" | "none";
+  const trackQuality = currentTrack
+    ? (() => {
+        const f = (currentTrack.format || "").toLowerCase();
+        const q = (currentTrack.quality || "standard").toLowerCase();
+        // 顶级：Master / Hi-Res
+        if (q === "master") return { label: `${f.toUpperCase()} · MASTER`, tier: "master" as QualityTier };
+        if (q === "hires") return { label: `${f.toUpperCase()} · HI-RES`, tier: "hires" as QualityTier };
+        // 无损（不论 quality 字段，FLAC/WAV/ALAC/APE/DSD 都按无损处理）
+        if (q === "lossless" || f === "flac" || f === "wav" || f === "alac" || f === "ape" || f === "dsd")
+          return { label: f.toUpperCase() || "LOSSLESS", tier: "lossless" as QualityTier };
+        // 有损高品质：320k / 256k 等
+        if (q === "high") {
+          const hint = f === "mp3" ? "320k" : f === "aac" ? "256k" : f === "ogg" ? "320k" : f === "opus" ? "256k" : "HQ";
+          return { label: `${f.toUpperCase() || "HQ"} · ${hint}`, tier: "high" as QualityTier };
+        }
+        // 标准
+        const std = f === "mp3" ? "128k" : f === "aac" ? "128k" : f === "ogg" ? "128k" : f === "opus" ? "96k" : "STD";
+        return { label: `${f.toUpperCase() || "—"} · ${std}`, tier: "std" as QualityTier };
+      })()
+    : { label: "—", tier: "none" as QualityTier };
+
+  // 隐藏态（持久化到 localStorage，跨刷新记住）
+  // 跟旧版 collapsed 的区别：旧版是"折叠到 60px 只剩图标列"，
+  // 现在是"整条侧边栏滑出屏幕 + 左下角淡入一个恢复按钮"，主内容区同步扩展到全宽。
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem("orangeradio:sidebar-hidden") === "1"; }
+    catch { return false; }
+  });
+  const toggleHidden = () => {
+    setHidden((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("orangeradio:sidebar-hidden", next ? "1" : "0"); }
+      catch { /* 隐私模式可能写不进去，忽略 */ }
+      return next;
+    });
+  };
+
+  // 同步给 .app__main —— 通过 body 属性触发，主内容区 padding-left 同步收/放
+  useEffect(() => {
+    if (hidden) document.body.setAttribute("data-sidebar-hidden", "true");
+    else document.body.removeAttribute("data-sidebar-hidden");
+    return () => { document.body.removeAttribute("data-sidebar-hidden"); };
+  }, [hidden]);
+
   return (
+    <>
     <aside
-      className={`sidebar ${isPlaying ? "sidebar--live" : ""}`}
+      className={`sidebar ${isPlaying ? "sidebar--live" : ""} ${hidden ? "sidebar--hidden" : ""}`}
       style={{ "--ui-opacity": sidebarOpacity } as React.CSSProperties}
     >
       <SpectrumPulse />
@@ -175,7 +225,16 @@ export function Sidebar() {
       <div className="sidebar__live">
         <span className={`sidebar__live-dot ${isPlaying ? "is-on" : ""}`} />
         <span className="sidebar__live-label">{isPlaying ? "ON AIR" : "STANDBY"}</span>
-        <span className="sidebar__live-freq">92.6</span>
+        <span className={`sidebar__quality sidebar__quality--${trackQuality.tier}`}>
+          {/* 4 格 tier 指示：master 全亮 → hires 3 → lossless 2 → high 1 → std/std/none 全暗 */}
+          <span className="sidebar__quality-bars" aria-hidden>
+            <i className={["master", "hires", "lossless", "high"].includes(trackQuality.tier) ? "is-on" : ""} />
+            <i className={["master", "hires", "lossless"].includes(trackQuality.tier) ? "is-on" : ""} />
+            <i className={["master", "hires"].includes(trackQuality.tier) ? "is-on" : ""} />
+            <i className={trackQuality.tier === "master" ? "is-on" : ""} />
+          </span>
+          <span className="sidebar__quality-label">{trackQuality.label}</span>
+        </span>
       </div>
 
       <nav className="sidebar__primary" aria-label="主模块">
@@ -265,8 +324,39 @@ export function Sidebar() {
           <span className="sb-item__icon">SET</span>
           <span className="sb-item__label">设置</span>
         </button>
+        <button
+          type="button"
+          className="sb-item sb-item--hide"
+          onClick={toggleHidden}
+          title="隐藏侧边栏"
+          aria-label="隐藏侧边栏"
+        >
+          <span className="sb-item__icon" aria-hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </span>
+          <span className="sb-item__label">隐藏</span>
+        </button>
         <div className="sidebar__version">v0.4 · 沉浸视觉</div>
       </div>
     </aside>
+
+    {/* 隐藏态：左下角恢复按钮（fixed 定位，浮在 .app 之上，跟 .sidebar 同 z-index 区） */}
+    {hidden && (
+      <button
+        type="button"
+        className="sidebar-restore"
+        onClick={toggleHidden}
+        title="展开侧边栏"
+        aria-label="展开侧边栏"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+        <span className="sidebar-restore__tip">导航</span>
+      </button>
+    )}
+    </>
   );
 }

@@ -53,23 +53,34 @@
   overflow: hidden;
   position: relative;
   z-index: 3;
-  padding-top: 38px; /* P14 自定义 titlebar 让位 */
 }
 
 .app__main {
   flex: 1;
   overflow-y: auto;
-  padding: 30px 38px 118px;
+  /* 4 段 padding：top / right / bottom / left。
+     left 跟 .sidebar 同步（默认 264 / 隐藏态 0 / 小屏 72），用 body 属性驱动过渡。 */
+  padding: 30px 38px 118px 264px;
   scroll-behavior: smooth;
   background: rgba(var(--glass-rgb), var(--ui-opacity, 0.8));
   /* 让子视图(player-view)的 height: 100% 有意义,否则 flex chain 塌缩 */
   display: flex;
   flex-direction: column;
   min-height: 0;
+  transition: padding-left 0.36s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+}
+
+/* 侧边栏隐藏态：主区 padding-left 改等于 padding-right，
+   让内容在视觉上居中（左右等距），而不是"左边紧贴窗口左边框"。 */
+body[data-sidebar-hidden="true"] .app__main {
+  padding-left: 38px;
 }
 
 @media (max-width: 980px) {
   .app__main {
-    padding: 22px 20px 128px;
+    padding: 22px 20px 128px 72px;
+  }
+  body[data-sidebar-hidden="true"] .app__main {
+    padding-left: 20px;
   }
 }

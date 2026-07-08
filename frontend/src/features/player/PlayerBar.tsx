@@ -3,6 +3,23 @@ import { engineRef } from "../../App";
 import { getCoverUrl, DEFAULT_COVER } from "./useCover";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+
+/** PlayerBar 折叠：只显示进度条，隐藏封面/元数据/按钮/音量等 */
+function usePlayerBarCollapsed() {
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("orangeradio:playerbar-collapsed") === "1"; }
+    catch { return false; }
+  });
+  return {
+    collapsed,
+    toggle: () => setCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("orangeradio:playerbar-collapsed", next ? "1" : "0"); }
+      catch {}
+      return next;
+    }),
+  };
+}
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toggleLyricOverlay, setLyricLock } from "../../lib/lyricWindow";
 import { joinRoom, leaveRoom } from "../../lib/listenTogether";
@@ -168,23 +185,6 @@ export function PlayerBar() {
 
   // "添加到歌单" 弹窗（v0.4：分区版 支持本地/网易云/QQ）
   const [showAddDialog, setShowAddDialog] = useState(false);
-
-  /**
-   * PlayerBar 折叠态：隐藏封面/元数据/操作台，只保留横向进度条。
-   * 持久化到 localStorage 跨刷新保持（key 用 `:playerbar-collapsed` 与 store 字段隔离）。
-   */
-  const PB_COLLAPSED_KEY = "orangeradio:playerbar-collapsed";
-  const [pbCollapsed, setPbCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem(PB_COLLAPSED_KEY) === "1"; }
-    catch { return false; }
-  });
-  const togglePbCollapsed = () => {
-    setPbCollapsed((v) => {
-      const next = !v;
-      try { localStorage.setItem(PB_COLLAPSED_KEY, next ? "1" : "0"); } catch { /* ignore */ }
-      return next;
-    });
-  };
   const handleJoinRoom = () => {
     if (inRoom) {
       leaveRoom();
@@ -213,26 +213,14 @@ export function PlayerBar() {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  // PlayerBar 折叠（持久化到 localStorage）
+  const { collapsed: pbCollapsed, toggle: togglePbCollapsed } = usePlayerBarCollapsed();
+
   return (
     <div
       className={`playerbar ${currentTrack ? "playerbar--visible" : ""} ${pbCollapsed ? "playerbar--collapsed" : ""}`}
       style={{ "--ui-opacity": playerBarOpacity } as React.CSSProperties}
     >
-      {/* 折叠按钮：贴 playerbar 顶缘中央，48×22 玻璃胶囊，跨刷新保持 */}
-      {currentTrack && (
-        <button
-          type="button"
-          className="pb-toggle"
-          onClick={togglePbCollapsed}
-          title={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
-          aria-label={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
-          aria-expanded={!pbCollapsed}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-      )}
       {/* 左：曲目信息 */}
       <div className="pb-left">
         <div
@@ -367,6 +355,22 @@ export function PlayerBar() {
         >
           {MODE_ICONS[mode]}
         </button>
+        {/* 沉浸模式：隐藏所有 chrome，只剩壁纸 + 歌词 */}
+        <button
+          type="button"
+          className="pb-btn"
+          onClick={() => usePlayerStore.getState().setImmersiveMode(true)}
+          title="沉浸模式（Esc 退出）"
+          aria-label="进入沉浸模式"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+            <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+            <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+            <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+            <path d="M9 10h6v4H9z" />
+          </svg>
+        </button>
         <div className="pb-vol">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" />
@@ -390,6 +394,19 @@ export function PlayerBar() {
           </div>
         </div>
       </div>
+
+      {/* 折叠按钮：固定在 bar 顶缘中央，▼ 切 ▲ 旋转 180°（同 FullPlayer footer 风格） */}
+      <button
+        type="button"
+        className="pb-toggle"
+        onClick={togglePbCollapsed}
+        title={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
+        aria-label={pbCollapsed ? "展开播放栏" : "折叠播放栏"}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
 
       {/* "添加到歌单" 弹窗（v0.4 分区版） */}
       {showAddDialog && currentTrack && (

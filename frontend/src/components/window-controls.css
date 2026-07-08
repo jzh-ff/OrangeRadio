@@ -1,0 +1,59 @@
+/* ===== WindowControls · 裸的窗口控制按钮 =====
+   紧贴窗口右上角，无容器背景，跟暗色沉浸感统一。
+   macOS 风：默认半透明圆点，hover 时亮起，关闭按钮 hover 变红。 */
+
+.window-controls {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.window-controls__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease), transform 0.12s var(--ease);
+  padding: 0;
+  opacity: 0.5;
+}
+
+.window-controls__btn:hover {
+  opacity: 1;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.window-controls__btn:active {
+  transform: scale(0.88);
+}
+
+.window-controls__btn--close:hover {
+  color: #fff;
+  background: #e23a3a;
+}
+
+/* 鼠标悬停在整组上时，所有按钮可见度提升 */
+.window-controls:hover .window-controls__btn {
+  opacity: 0.95;
+}
+
+@media (max-width: 540px) {
+  .window-controls {
+    top: 4px;
+    right: 4px;
+  }
+}

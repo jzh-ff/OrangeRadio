@@ -3,14 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore, type FullLayout } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { CoverParticles } from "../../visual/CoverParticles";
-import { StarRiver } from "../../visual/StarRiver";
+import { BeatParticles } from "../../visual/BeatParticles";
 import { LyricStage3D } from "../../visual/LyricStage3D";
-import { VisualConsole } from "./VisualConsole";
+import { FullPlayerRightDrawer } from "./FullPlayerRightDrawer";
 import { useLyrics } from "./useLyrics";
 import { getCoverUrl } from "./useCover";
 import { CommentList } from "./CommentList";
 import { OrangeRadioLogo } from "../../components/OrangeRadioLogo";
 import { useDominantColor } from "./useDominantColor";
+import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 import type { ToastKind } from "../../components/Toast";
 import "../../styles/full-player.css";
 
@@ -29,12 +30,12 @@ const fmtLyricTime = (s: number) => {
   return `${m}:${sec.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
 };
 
-const LAYOUT_OPTIONS: { id: FullLayout; short: string; name: string; hint: string }[] = [
-  { id: "cinema", short: "电影", name: "电影粒子", hint: "全屏粒子与舞台歌词" },
-  { id: "immersive", short: "沉浸", name: "沉浸双栏", hint: "封面与歌词并排" },
-  { id: "lyric-stream", short: "歌词", name: "歌词流", hint: "歌词主导的阅读视图" },
-  { id: "triple", short: "三栏", name: "三栏详情", hint: "歌词 + 评论并列" },
-];
+/** LAYOUT_OPTIONS 已抽到 ./layoutOptions.ts 复用（FullPlayer 头部展示 + 抽屉切换面板） */
+import { LAYOUT_OPTIONS } from "./layoutOptions";
+/** 播放模式 SVG/标签/顺序 抽到 ./playbackModes.tsx（footer 也要用模式按钮） */
+import { MODE_SVG, MODE_LABELS, MODE_ORDER } from "./playbackModes";
+
+/** 播放模式常量、标签、SVG 已抽到 ./playbackModes.tsx，供 FullPlayer / FullPlayerRightDrawer / PlayerBar 共享 */
 
 /** 歌词数据（从网易云拉取） */
 interface LyricData { raw_lrc: string; translated_lrc: string | null }
@@ -53,6 +54,41 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
+  const mode = usePlayerStore((s) => s.mode);
+  const setMode = usePlayerStore((s) => s.setMode);
+  const volume = usePlayerStore((s) => s.volume);
+  const queueOpen = usePlayerStore((s) => s.queueOpen);
+  // store 没有 setVol action——直接调 engineRef.setVol（0..1）
+  const setVol = (v: number) => engineRef.setVol(Math.max(0, Math.min(1, v)));
+  // store 没有 setQueueOpen action——直接 setState
+  const toggleQueue = () => usePlayerStore.setState({ queueOpen: !usePlayerStore.getState().queueOpen });
+
+  // 布局选择 popover 状态已迁出（移到右侧工具抽屉 FullPlayerRightDrawer 的"播放布局"section）
+
+  // ===== 播放模式循环（footer 左 + 抽屉都共用） =====
+  const cycleMode = () => {
+    const idx = MODE_ORDER.indexOf(mode);
+    const next = MODE_ORDER[(idx + 1) % MODE_ORDER.length];
+    setMode(next);
+  };
+
+  // ===== 一起听（简化：点击 toggle，不做房间弹窗，避免覆盖 fullPlayer 体验） =====
+  const [inRoom, setInRoom] = useState(false);
+  const toggleListenTogether = async () => {
+    if (inRoom) {
+      try {
+        const { leaveRoom } = await import("../../lib/listenTogether");
+        leaveRoom();
+      } catch {}
+      setInRoom(false);
+    } else {
+      // 提示去底部 bar 走房间流程
+      pushToast?.("请在主控制台输入房间号加入", "info", 3000);
+    }
+  };
+
+  // ===== 添加到歌单弹窗 =====
+  const [showAddDialog, setShowAddDialog] = useState(false);
 
   // 切歌时提取封面主色 → 写入 store（驱动 cinema 模式 CoverParticles / BeatParticles auto 主题）
   useDominantColor(currentTrack);
@@ -61,6 +97,16 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const [loading, setLoading] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [annotateLoading, setAnnotateLoading] = useState(false);
+  /** 进度条 hover scrub 预览（0~1 百分比；null = 未 hover） */
+  const [scrubPos, setScrubPos] = useState<number | null>(null);
+  const onProgressMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    setScrubPos(x);
+  };
+
+  /** Footer 折叠：只显示进度条，隐藏 3 列按钮行（▼ 切 ▲） */
+  const [footerCollapsed, setFooterCollapsed] = useState(false);
   /** AI 译注结果：按原文行文本索引 → {translation, annotation} */
   const [annotatedMap, setAnnotatedMap] = useState<Map<string, { translation?: string; annotation?: string }>>(new Map());
   /** AI 歌曲整体背景（顶部卡片展示） */
@@ -188,10 +234,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
     };
 
     // ★ 切行瞬间锁定字号/颜色过渡，避免"先滚到目标 → 字号增大 → 视觉偏位"的串扰
-    // 原因：active 行字号 22→26（普通）或 22→30（editorial），CSS transition 0.4s。
+    // 原因：editorial 模式 active 行字号 22→30（普通模式 22→26），CSS transition 0.4s。
     //        useLayoutEffect 同步测量时浏览器 layout 已用最终计算样式，scrollTo 目标正确；
     //        但 transition 启动后行高渐变，active 行"视觉中心"在动画期间漂移，
-    //        lyric-stream 容器高度只有 ~400px，8px 字号漂移感知度比 triple/immersive(~700px) 强 2 倍。
+    //        lyric-stream 容器高度只有 ~400px，8px 字号变化感知度比 triple/immersive(~700px) 强 2 倍。
     // 解法：挂 .fp-no-lyric-fade 把 .fp-lyric-line 的 transition 全部禁用，瞬时测量 → scrollTo → 下一帧解锁，
     //        让"切行"这种离散跳转瞬时到位，"字号渐变"留给用户拖动/网络抖动的被动重渲染。
     const root = document.documentElement;
@@ -228,58 +274,43 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
 
   return (
     <div
-      className={`fp-overlay fp-overlay--editorial fp-overlay--${fullLayout}`}
+      className={`fp-overlay fp-overlay--editorial fp-overlay--${fullLayout} ${
+        fullLayout === "rhythmic-album" || fullLayout === "rhythmic-particles" ? "fp-overlay--solid" : ""
+      }`}
       style={{ "--ui-opacity": fullPlayerOpacity } as React.CSSProperties}
     >
-      {/* cinema 模式：全屏粒子背景（CoverParticles 内部按封面有无/CORS 自动回退 BeatParticles）
-          + StarRiver 冷色星河叠层（对标 MineRadio stageLyrics.starRiver） */}
-      {fullLayout === "cinema" && (
+      {/* 律动专辑：纯封面粒子方阵（不透明背景 · 随节奏律动 · 对标 MineRadio coverParticleGrid） */}
+      {fullLayout === "rhythmic-album" && (
         <div className="fp-particles-bg">
           <CoverParticles />
-          <div className="fp-starriver-bg"><StarRiver /></div>
         </div>
       )}
-      {/* 顶部：模式导航 + 工具 */}
+      {/* 粒子律动：球面漂浮粒子 + BeatCam 电影运镜（不透明背景 · 对标 MineRadio BeatParticles） */}
+      {fullLayout === "rhythmic-particles" && (
+        <div className="fp-particles-bg">
+          <BeatParticles />
+        </div>
+      )}
+      {/* 顶部：品牌 + 工具区（布局选择移到 popover，不再占行） */}
       <header className="fp-header">
         <div className="fp-header__brand">
           <span className="fp-header__eyebrow">NOW PLAYING</span>
           <span className="fp-header__mode">{activeLayout.name}</span>
           <span className="fp-header__hint">{activeLayout.hint}</span>
         </div>
-        <nav className="fp-mode-nav" aria-label="播放布局">
-          {LAYOUT_OPTIONS.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              className={`fp-mode-btn ${fullLayout === o.id ? "fp-mode-btn--active" : ""}`}
-              onClick={() => setFullLayout(o.id)}
-              title={o.name}
-            >
-              {o.short}
-            </button>
-          ))}
-        </nav>
         <div className="fp-header__tools">
-          <button
-            type="button"
-            className="fp-tool-btn"
-            onClick={handleAnnotate}
-            title="AI 歌词译注"
-            disabled={annotateLoading}
-          >
-            {annotateLoading ? "…" : annotatedMap.size > 0 ? "译注" : "译注"}
-          </button>
+          {/* 译注按钮 / 布局下拉均已迁移到右侧工具抽屉（FullPlayerRightDrawer） */}
           <button type="button" className="fp-close" onClick={() => setFullPlayer(false)} title="关闭 (Esc)" aria-label="关闭">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-label="true">
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
         </div>
       </header>
 
-      {/* ===== cinema 模式：粒子 + 中央歌词 ===== */}
-      {fullLayout === "cinema" && (
-        <div className="fp-cinema">
+      {/* ===== 律动专辑 / 粒子律动：粒子背景 + 中央歌词舞台（共用同一套中心内容） ===== */}
+      {(fullLayout === "rhythmic-album" || fullLayout === "rhythmic-particles") && (
+        <div className={`fp-cinema fp-cinema--${fullLayout}`}>
           {/* 中央歌曲信息 */}
           <div className="fp-cinema-info">
             <div className="fp-cinema-title">{title}</div>
@@ -356,8 +387,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
               </div>
             )}
           </div>
-          {/* 视觉控制台（右上角，鼠标移开隐藏） */}
-          <VisualConsole />
+          {/* 视觉控制台已迁移到右侧工具抽屉（FullPlayerRightDrawer） */}
           {/* 评论抽屉按钮（零 emoji SVG icon） */}
           <button
             className="fp-comment-toggle"
@@ -387,16 +417,23 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
       )}
 
       {/* ===== 其他三种模式：歌词区（共用） ===== */}
-      {fullLayout !== "cinema" && (
+      {fullLayout !== "rhythmic-album" && fullLayout !== "rhythmic-particles" && (
         <div className={`fp-content fp-content--${fullLayout}`}>
           {/* 左/中：封面 + 信息 */}
           <section className={`fp-cover-section ${isPlaying ? "is-playing" : "is-paused"}`}>
             <div className="fp-cover-frame">
               <div className={`fp-cover-big ${isPlaying ? "fp-cover-big--live" : ""}`}>
                 {coverUrl ? (
-                  <img className="fp-cover-img" src={coverUrl} alt={title} />
+                  <img
+                    key={currentTrack?.id ?? "empty"}
+                    className="fp-cover-img"
+                    src={coverUrl}
+                    alt={title}
+                  />
                 ) : (
-                  <div className="fp-cover-disc"><OrangeRadioLogo size={96} animated /></div>
+                  <div className="fp-cover-disc" key={currentTrack?.id ?? "empty"}>
+                    <OrangeRadioLogo size={96} animated />
+                  </div>
                 )}
               </div>
             </div>
@@ -493,48 +530,259 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
         </div>
       )}
 
-      {/* 底部播控：载波进度条 */}
-      <footer className="fp-controls">
-        <div className="fp-controls__times">
-          <span className="fp-time">{fmt(position)}</span>
-          <span className="fp-time fp-time--dur">{fmt(duration)}</span>
-        </div>
-        <div className="fp-progress">
-          <div className="fp-progress-track" />
-          <div className="fp-progress-fill" style={{ width: `${progress}%` }} />
-          <div className="fp-progress-glow" style={{ left: `${progress}%` }} />
-          <input
-            type="range" min={0} max={duration || 0} step={0.1} value={position}
-            onChange={(e) => engineRef.seek(parseFloat(e.target.value))}
-            className="fp-progress-input"
-            aria-label="播放进度"
-          />
-        </div>
-        <div className="fp-ctrl-btns">
-          <button type="button" className="fp-ctrl-btn" onClick={() => engineRef.prev()} title="上一首" aria-label="上一首">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
-            </svg>
-          </button>
-          <button type="button" className="fp-ctrl-btn fp-ctrl-btn--play" onClick={() => engineRef.toggle()} title={isPlaying ? "暂停" : "播放"} aria-label={isPlaying ? "暂停" : "播放"}>
-            {isPlaying ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <rect x="6" y="5" width="4" height="14" rx="1" />
-                <rect x="14" y="5" width="4" height="14" rx="1" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M8 5v14l11-7z" />
-              </svg>
+      {/* ===== 底部播控：2 行结构 =====
+         Row 1 · 雾化进度条（独占一行，左右时间码）
+         Row 2 · 3 列：左 模式/收藏/歌单 ｜ 中 上一首/播放/下一首 ｜ 右 队列/一起听/音量 */}
+      <footer className={`fp-controls ${footerCollapsed ? "fp-controls--collapsed" : ""}`}>
+        {/* 折叠按钮：固定在 footer 顶缘中央，▼ 切 ▲ 旋转 180° */}
+        <button
+          type="button"
+          className="fp-controls__toggle"
+          onClick={() => setFooterCollapsed((v) => !v)}
+          title={footerCollapsed ? "展开控制台" : "折叠控制台"}
+          aria-label={footerCollapsed ? "展开控制台" : "折叠控制台"}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {/* ===== Row 1 · 进度条（独占一行） ===== */}
+        <div className="fp-progress-row">
+          <span className="fp-time fp-time--cur">
+            <span className="fp-time__pulse" aria-hidden />
+            {fmt(position)}
+          </span>
+          <div
+            className="fp-progress"
+            style={{ "--fp-thumb-x": scrubPos != null ? `${scrubPos * 100}%` : `${progress}%` } as React.CSSProperties}
+            onMouseMove={onProgressMove}
+            onMouseLeave={() => setScrubPos(null)}
+          >
+            <div className="fp-progress__mist" aria-hidden />
+            <div className="fp-progress__ticks" aria-hidden />
+            <div className="fp-progress-track" />
+            <div className="fp-progress-fill" style={{ width: `${progress}%` }}>
+              <span className="fp-progress-shimmer" aria-hidden />
+              <span className="fp-progress-edge" aria-hidden />
+            </div>
+            <div className="fp-progress-glow" style={{ left: `${progress}%` }} aria-hidden />
+            {/* Scrub 预览：hover 时显示鼠标位置的时间码浮窗（位置由 --fp-thumb-x 驱动） */}
+            {scrubPos != null && duration > 0 && (
+              <div className="fp-progress-tooltip">{fmt(scrubPos * duration)}</div>
             )}
-          </button>
-          <button type="button" className="fp-ctrl-btn" onClick={() => engineRef.next()} title="下一首" aria-label="下一首">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M16 6h2v12h-2zM6 18l8.5-6L6 6v12z" />
-            </svg>
-          </button>
+            <input
+              type="range" min={0} max={duration || 0} step={0.1} value={position}
+              onChange={(e) => engineRef.seek(parseFloat(e.target.value))}
+              className="fp-progress-input"
+              aria-label="播放进度"
+            />
+          </div>
+          <span className="fp-time fp-time--rem">
+            <span className="fp-time__minus">−</span>
+            {fmt(Math.max(0, duration - position))}
+          </span>
+        </div>
+
+        {/* ===== Row 2 · 3 列控制台 ===== */}
+        <div className="fp-buttons-row">
+          {/* ===== 左：模式 / 收藏 / 歌单 ===== */}
+          <div className="fp-group fp-group--left">
+            {/* 播放模式（5 态循环） */}
+            <button
+              type="button"
+              className={`fp-ctrl-btn ${mode === "understand_you" ? "fp-ctrl-btn--active" : ""}`}
+              onClick={cycleMode}
+              title={`播放模式：${MODE_LABELS[mode]}（点击切换）`}
+              aria-label={`播放模式：${MODE_LABELS[mode]}`}
+              style={{ "--i": 1 } as React.CSSProperties}
+            >
+              {MODE_SVG[mode]}
+            </button>
+            {/* 收藏（心） */}
+            {currentTrack && (
+              <button
+                type="button"
+                className={`fp-ctrl-btn ${currentTrack.liked ? "fp-ctrl-btn--active" : ""}`}
+                onClick={async () => {
+                  const track = currentTrack;
+                  const isNetease = (track as any).source_kind === "netease_cloud_music";
+                  try {
+                    if (isNetease) {
+                      await invoke("netease_like_track", { songId: track.source_track_id });
+                      usePlayerStore.setState({ currentTrack: { ...track, liked: true } });
+                    } else {
+                      const next = !track.liked;
+                      usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
+                      await invoke("toggle_liked", { trackId: track.id, liked: next });
+                    }
+                  } catch {}
+                }}
+                title={currentTrack.liked ? "取消收藏" : "收藏"}
+                aria-label={currentTrack.liked ? "取消收藏" : "收藏"}
+                style={{ "--i": 2 } as React.CSSProperties}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill={currentTrack.liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z" />
+                </svg>
+              </button>
+            )}
+            {/* 添加到歌单 */}
+            {currentTrack && (
+              <button
+                type="button"
+                className="fp-ctrl-btn"
+                onClick={() => setShowAddDialog(true)}
+                title="添加到歌单"
+                aria-label="添加到歌单"
+                style={{ "--i": 3 } as React.CSSProperties}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M11 12H3" />
+                  <path d="M16 6H3" />
+                  <path d="M11 18H3" />
+                  <path d="M19 9v6" />
+                  <path d="M22 12h-6" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* ===== 中：上一首 / 播放 / 下一首 ===== */}
+          <div className="fp-transport">
+            <button
+              type="button"
+              className="fp-ctrl-btn fp-ctrl-btn--side"
+              onClick={() => engineRef.prev()}
+              title="上一首"
+              aria-label="上一首"
+              style={{ "--i": 4 } as React.CSSProperties}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className={`fp-ctrl-btn fp-ctrl-btn--play ${isPlaying ? "is-playing" : ""}`}
+              onClick={() => engineRef.toggle()}
+              title={isPlaying ? "暂停" : "播放"}
+              aria-label={isPlaying ? "暂停" : "播放"}
+              style={{ "--i": 5 } as React.CSSProperties}
+            >
+              <span className="fp-play__shape" aria-hidden>
+                {isPlaying ? (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <rect x="6" y="5" width="4" height="14" rx="1.2" />
+                    <rect x="14" y="5" width="4" height="14" rx="1.2" />
+                  </svg>
+                ) : (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="fp-ctrl-btn fp-ctrl-btn--side"
+              onClick={() => engineRef.next()}
+              title="下一首"
+              aria-label="下一首"
+              style={{ "--i": 6 } as React.CSSProperties}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M16 6h2v12h-2zM6 18l8.5-6L6 6v12z" />
+              </svg>
+            </button>
+          </div>
+
+          {/* ===== 右：队列 / 一起听 / 音量 ===== */}
+          <div className="fp-group fp-group--right">
+            {/* 播放队列 */}
+            <button
+              type="button"
+              className={`fp-ctrl-btn ${queueOpen ? "fp-ctrl-btn--active" : ""}`}
+              onClick={toggleQueue}
+              title="播放列表"
+              aria-label="播放列表"
+              style={{ "--i": 7 } as React.CSSProperties}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15V6" />
+                <path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                <path d="M12 12H3" />
+                <path d="M16 6H3" />
+                <path d="M12 18H3" />
+              </svg>
+            </button>
+            {/* 一起听 */}
+            <button
+              type="button"
+              className={`fp-ctrl-btn ${inRoom ? "fp-ctrl-btn--active" : ""}`}
+              onClick={toggleListenTogether}
+              title={inRoom ? "已在房间中" : "一起听（请在主控制台输入房间号）"}
+              aria-label="一起听"
+              style={{ "--i": 8 } as React.CSSProperties}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </button>
+            {/* 音量控制（图标 + 滑块） */}
+            <div className="fp-vol" style={{ "--i": 9 } as React.CSSProperties}>
+              <button
+                type="button"
+                className="fp-vol__btn"
+                onClick={() => setVol(volume > 0 ? 0 : 0.8)}
+                title={volume > 0 ? "静音" : "取消静音"}
+                aria-label={volume > 0 ? "静音" : "取消静音"}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" />
+                  {volume > 0.05 && <path d="M15.5 8.5a5 5 0 0 1 0 7" />}
+                  {volume > 0.45 && <path d="M18.5 5.5a9 9 0 0 1 0 13" />}
+                </svg>
+              </button>
+              <div className="fp-vol__slider">
+                <div className="fp-vol__track">
+                  <div className="fp-vol__fill" style={{ width: `${Math.round(volume * 100)}%` }} />
+                </div>
+                <div className="fp-vol__thumb" style={{ left: `${Math.round(volume * 100)}%` }} aria-hidden />
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={volume}
+                  onChange={(e) => setVol(parseFloat(e.target.value))}
+                  className="fp-vol__input"
+                  aria-label="音量"
+                />
+              </div>
+              <span className="fp-vol__pct">{Math.round(volume * 100)}</span>
+            </div>
+          </div>
         </div>
       </footer>
+
+      {/* 右侧工具抽屉（hover 显示：播放模式 / AI 译注 / 视觉控制台） */}
+      <FullPlayerRightDrawer
+        onAnnotate={handleAnnotate}
+        annotateLoading={annotateLoading}
+        fullLayout={fullLayout}
+        setFullLayout={setFullLayout}
+      />
+
+      {/* "添加到歌单" 弹窗（与 PlayerBar 共用 AddToPlaylistDialog 组件） */}
+      {showAddDialog && currentTrack && (
+        <AddToPlaylistDialog
+          track={currentTrack}
+          onClose={() => setShowAddDialog(false)}
+        />
+      )}
     </div>
   );
 }

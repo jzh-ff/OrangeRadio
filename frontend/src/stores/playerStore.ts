@@ -164,7 +164,7 @@ export interface VisualParams {
 }
 
 /** 全屏播放页布局模式 */
-export type FullLayout = "immersive" | "lyric-stream" | "triple" | "cinema";
+export type FullLayout = "immersive" | "lyric-stream" | "triple" | "rhythmic-album" | "rhythmic-particles";
 
 /** 从 localStorage 读取视觉参数，合并默认值（对标 MineRadio fxDefaults） */
 function loadVisualParams(): VisualParams {
@@ -262,6 +262,10 @@ interface PlayerState {
   pendingLoginSource: ReloginSource;
   /** 设置弹窗是否打开 */
   settingsOpen: boolean;
+  /** 听歌画像面板是否打开（首页 profile 卡点击触发） */
+  profileOpen: boolean;
+  /** 主页沉浸模式：仅展示壁纸 + 歌词（隐藏侧栏/顶栏/底栏/导航） */
+  immersiveMode: boolean;
   /** 热键设置弹窗是否打开 */
   hotkeysModalOpen: boolean;
   /** 侧栏智能动作激活态（"AI 推荐" / "懂你模式" 等动作项的高亮标记,与 subView 解耦) */
@@ -298,6 +302,8 @@ interface PlayerState {
   setFullPlayer: (b: boolean) => void;
   setFullLayout: (l: FullLayout) => void;
   setSettingsOpen: (open: boolean) => void;
+  setProfileOpen: (open: boolean) => void;
+  setImmersiveMode: (b: boolean) => void;
   setHotkeysModalOpen: (open: boolean) => void;
   setSmartAction: (a: "recommend" | "understand_you" | null) => void;
   /** 请求某个 source 触发重新登录（toast / settings 用） */
@@ -328,7 +334,7 @@ export const usePlayerStore = create<PlayerState>()(
   visualParams: loadVisualParams(),
   dominantColor: null,
   fullPlayerOpen: false,
-  fullLayout: "cinema",
+  fullLayout: "rhythmic-album",
   queueOpen: false,
   tracks: [],
   currentIndex: -1,
@@ -338,6 +344,8 @@ export const usePlayerStore = create<PlayerState>()(
   pendingLoginSource: null,
   settingsOpen: false,
   hotkeysModalOpen: false,
+  profileOpen: false,
+  immersiveMode: false,
   smartAction: null,
 
   setView: (view) => set({ view }),
@@ -390,6 +398,8 @@ export const usePlayerStore = create<PlayerState>()(
   setFullPlayer: (fullPlayerOpen: boolean) => set({ fullPlayerOpen }),
   setFullLayout: (fullLayout: FullLayout) => set({ fullLayout }),
   setSettingsOpen: (open: boolean) => set({ settingsOpen: open }),
+  setProfileOpen: (profileOpen: boolean) => set({ profileOpen }),
+  setImmersiveMode: (immersiveMode: boolean) => set({ immersiveMode }),
   setHotkeysModalOpen: (hotkeysModalOpen: boolean) => set({ hotkeysModalOpen }),
   setSmartAction: (smartAction) => set({ smartAction }),
   requestRelogin: (source) => set({ pendingLoginSource: source }),

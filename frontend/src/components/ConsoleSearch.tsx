@@ -19,6 +19,7 @@ interface ConsoleSearchProps {
   onSecondary?: () => void;          // 「扫描」按钮：调热门/刷新/扫描本地等
   secondaryLabel?: string;            // 默认 "扫描"
   secondaryDisabled?: boolean;
+  submitLabel?: string;               // 主按钮文案，默认 "调谐"（搜索类语义）
   placeholder?: string;
   /** 输入框右侧内嵌装饰（如快捷键提示/计数器） */
   adornment?: ReactNode;
@@ -32,6 +33,7 @@ export function ConsoleSearch({
   onSecondary,
   secondaryLabel = "扫描",
   secondaryDisabled = false,
+  submitLabel = "调谐",
   placeholder = "搜索关键词、艺人、专辑…",
   adornment,
   loading = false,
@@ -86,7 +88,7 @@ export function ConsoleSearch({
           onClick={onSubmit}
           disabled={loading}
         >
-          {loading ? "调谐中…" : "调谐"}
+          {loading ? "调谐中…" : submitLabel}
         </button>
       </div>
     </div>
