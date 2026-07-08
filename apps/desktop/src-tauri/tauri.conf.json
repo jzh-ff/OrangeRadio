@@ -39,6 +39,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "resources/demo/track.mp3": "resources/demo/track.mp3",
+      "resources/demo/track.lrc": "resources/demo/track.lrc",
+      "resources/demo/cover.jpg": "resources/demo/cover.jpg"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
