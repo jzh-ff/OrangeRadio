@@ -3,9 +3,10 @@ import { engineRef } from "../../App";
 import { getCoverUrl, DEFAULT_COVER } from "./useCover";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { toggleLyricOverlay, setLyricLock } from "../../lib/lyricWindow";
+import { toggleLyricOverlay } from "../../lib/lyricWindow";
 import { joinRoom, leaveRoom } from "../../lib/listenTogether";
 import { ProgressParticles } from "./ProgressParticles";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
@@ -141,7 +142,8 @@ export function PlayerBar() {
   const progress = duration > 0 ? (position / duration) * 100 : 0;
   const volPct = Math.round(volume * 100);
 
-  // 桌面歌词悬浮窗锁定态（来自 lyric-overlay 窗口的 lock-change 事件）
+  // 桌面歌词悬浮窗锁定态(来自 lyric-overlay 窗口的 lock-change 事件)——
+  // 仅作为"主窗口词按钮是否变橙"的视觉指示,锁定/解锁入口已改为悬浮窗中键单击。
   const [lyricLocked, setLyricLocked] = useState(false);
   useEffect(() => {
     let un: UnlistenFn | null = null;
@@ -156,12 +158,8 @@ export function PlayerBar() {
   }, []);
 
   const onLyricBtn = async () => {
-    if (lyricLocked) {
-      await setLyricLock(false);
-      setLyricLocked(false);
-    } else {
-      await toggleLyricOverlay();
-    }
+    // 主窗口"词"按钮只负责"打开/关闭悬浮窗",不再处理解锁(锁定态下悬浮窗中键单击可解锁)。
+    await toggleLyricOverlay();
   };
 
   // 一起听（Listen Together）：加入/离开房间
@@ -200,6 +198,29 @@ export function PlayerBar() {
   // 音量弹出层：单击钮切换 + 点击外部关闭
   const [volOpen, setVolOpen] = useState(false);
   const volWrapRef = useRef<HTMLDivElement>(null);
+  // 音量弹层用 React Portal 挂到 body,绕开 .playerbar { overflow: hidden; border-radius: 50px }
+  // 把弹层右上/右/下三边裁切的问题。位置基于 volWrapRef.getBoundingClientRect() 实时计算。
+  const [volPopoverPos, setVolPopoverPos] = useState<{ right: number; bottom: number } | null>(null);
+  useEffect(() => {
+    if (!volOpen) return;
+    const recalc = () => {
+      const r = volWrapRef.current?.getBoundingClientRect();
+      if (!r) return;
+      // right = 视口宽 - 锚点右 + 10 (offset 让 popover 右沿越过按钮 10px,贴近锚点)
+      // bottom = 视口高 - 锚点顶 + 14 (锚点上方 14px,与原 absolute 偏移一致)
+      setVolPopoverPos({
+        right: Math.max(8, window.innerWidth - r.right + 10),
+        bottom: Math.max(8, window.innerHeight - r.top + 14),
+      });
+    };
+    recalc();
+    window.addEventListener("resize", recalc);
+    window.addEventListener("scroll", recalc, true);
+    return () => {
+      window.removeEventListener("resize", recalc);
+      window.removeEventListener("scroll", recalc, true);
+    };
+  }, [volOpen]);
   useEffect(() => {
     if (!volOpen) return;
     const onDown = (e: PointerEvent) => {
@@ -441,11 +462,12 @@ export function PlayerBar() {
               {volume === 0 && <path d="M22 9l-4 4m0-4l-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
             </svg>
           </button>
-          {volOpen && (
+          {volOpen && volPopoverPos && createPortal(
             <div
               className="pb-vol-popover"
               role="dialog"
               aria-label="音量调节"
+              style={{ right: volPopoverPos.right, bottom: volPopoverPos.bottom }}
               onPointerDown={(e) => e.stopPropagation()}
             >
               <div className="pb-vol-popover__pct">{volPct}</div>
@@ -465,7 +487,8 @@ export function PlayerBar() {
                 </div>
                 <div className="pb-vol-vthumb" style={{ bottom: `calc(${volPct}% - 7px)` }} />
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       </div>

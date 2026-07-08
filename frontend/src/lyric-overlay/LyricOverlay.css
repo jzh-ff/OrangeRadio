@@ -20,23 +20,22 @@
   --lyric-progress: 0%;
   --lyric-beat-scale: 1;
   --lyric-scale: 1;
-  --lyric-opacity: 0.95;
   /* 当前行字号基线（乘 --lyric-scale） */
   --lyric-cur-size: 36px;
-  --lyric-cur-trans-size: 15px;
+  --lyric-cur-trans-size: 22px;
   --lyric-ctx-size: 17px;
 }
 
 .lyric-overlay {
   position: fixed;
   inset: 0;
-  /* 背景完全透明 —— 透出桌面 */
+  /* 完全透明 —— 对标 MineRadio desktop-lyrics.html：歌词裸飘在桌面上,
+     不加任何矩形背景板 / 毛玻璃。视觉对比由歌词文字的 text-shadow + drop-shadow 撑住。 */
   background: transparent;
   color: var(--lyric-primary);
   font-family: "Inter", "Noto Sans SC", -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   user-select: none;
   overflow: visible;
-  opacity: var(--lyric-opacity);
   transform-style: preserve-3d;
 }
 
@@ -53,47 +52,8 @@
   cursor: move;
 }
 
-/* 拖拽手柄：MineRadio 风格（color-mix 极光边框 + 半透 0.44 极紧凑） */
-.lyric-overlay__drag-handle {
-  position: absolute;
-  top: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  /* 浅色半透（不是黑色），让歌词"飘在"桌面上 */
-  background: color-mix(in srgb, rgba(4, 6, 10, 0.44) 60%, transparent);
-  /* MineRadio 风格 color-mix 极光边框 */
-  border: 1px solid color-mix(in srgb, var(--lyric-glow) 58%, rgba(255, 255, 255, 0.36));
-  box-shadow:
-    0 0 20px color-mix(in srgb, var(--lyric-glow) 30%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  color: rgba(255, 255, 255, 0.84);
-  font-family: var(--font-mono, monospace);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
-  opacity: 0;
-  transition: opacity 0.25s ease, transform 0.25s ease;
-  pointer-events: none;
-  z-index: 5;
-}
-.lyric-overlay:hover .lyric-overlay__drag-handle,
-.lyric-overlay:focus-within .lyric-overlay__drag-handle {
-  opacity: 0.92;
-  transform: translateX(-50%) translateY(0);
-}
-.lyric-overlay__drag-dots {
-  display: inline-flex;
-  color: rgba(255, 255, 255, 0.55);
-}
+/* 顶部 "LOCKED · 鼠标穿透" 玻璃卡片已移除——其规则随组件一起清掉。
+   锁定态视觉提示完全交给主窗口 PlayerBar 的"词"按钮（颜色变橙 + 标题提示）。 */
 
 /* ====== 5 行歌词容器 ====== */
 .lyric-overlay__lines {
@@ -129,20 +89,28 @@
   align-items: center;
   line-height: 1.25;
   white-space: nowrap;
+  /* 歌词文字接收鼠标:让 .lyric-overlay__stage 上 data-tauri-drag-region 能被触发
+     (否则歌词行上拖不动悬浮窗)。Tauri 的 drag-region 走后端机制,不会拦截 DOM 中键事件,
+     所以歌词文字上点中键仍能冒泡到根 .lyric-overlay 的 onAuxClick 触发锁定切换。 */
+  pointer-events: auto;
 }
 
-/* ====== 当前行：超大 + 5 段扫光 ====== */
+/* ====== 当前行：超大 + 5 段扫光 ======
+ * drop-shadow / text-shadow 借鉴 MineRadio "克制 glow" 原则:
+ *  1) drop-shadow 1px + 4.8px (MineRadio) 比 2px + 6px (旧值) 跟文字更紧,不晕
+ *  2) text-shadow 1px + 6px + 14px (MineRadio) 比 1px + 8px + 18px (旧值) 强度收敛
+ *     避免 "gray fog covering the text" (DESKTOP_LYRICS_VISUAL.md 明确禁止) */
 .lyric-line--cur {
   font-size: calc(var(--lyric-cur-size) * var(--lyric-scale));
   font-weight: 900;
   letter-spacing: 0.5px;
   -webkit-text-stroke: 0.22px rgba(255, 255, 255, 0.82);
   paint-order: stroke fill;
-  filter: drop-shadow(0 2px 4px rgba(4, 6, 12, 0.62))
-    drop-shadow(0 0 6px rgba(4, 6, 12, 0.36));
-  text-shadow: 0 0 1px rgba(255, 255, 255, 0.42),
-    0 0 8px rgba(255, 217, 168, 0.36),
-    0 0 18px rgba(156, 255, 223, 0.22);
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.58))
+    drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.30));
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.36),
+    0 0 8px rgba(255, 217, 168, 0.34),
+    0 0 14px rgba(156, 255, 223, 0.22);
   transform: scale(var(--lyric-beat-scale, 1));
   transition: transform 0.12s ease-out;
 }
@@ -153,13 +121,21 @@
   position: relative;
   background-clip: text;
   -webkit-background-clip: text;
+  /* 对标 MineRadio desktop-lyrics.html line 103: paint-order stroke fill
+     描边先画,填充覆盖在描边上,字内空间不被描边吃掉,glyph interior 干净 */
+  paint-order: stroke fill;
 }
 
 .lyric-line__bg {
-  color: var(--lyric-secondary);
+  /* 对标 MineRadio:未唱字保持 primary 同色,只降 alpha,避免与已唱字形成"灰黄分带"污染。
+     0.55 是个柔和的对比档,既不抢主行焦点,也不让未唱字"消失"。
+     color-mix 跟随主题的 --lyric-primary 动态降 alpha。 */
+  color: color-mix(in srgb, var(--lyric-primary) 55%, transparent);
 }
 
-/* 已唱字：5 段 CSS 渐变扫光（覆盖在 bg 上层，-webkit-text-fill-color: transparent 让渐变透出） */
+/* 已唱字:5 段 CSS 渐变扫光(覆盖在 bg 上层,-webkit-text-fill-color: transparent 让渐变透出)
+ * 对标 MineRadio body.highlight .line:highlight → highlight → glow → primary → primary,
+ * 锚点 progress+1.2% / progress+feather,5.5% 羽化带。 */
 .lyric-line__fill {
   position: absolute;
   inset: 0;
@@ -177,18 +153,43 @@
   background-repeat: no-repeat;
   text-shadow: 0 0 22px rgba(244, 210, 138, 0.5),
     0 0 36px rgba(0, 245, 212, 0.25);
+  /* 0.08s linear 跟手,跟 MineRadio canvas 60fps 接近;短一些让扫光更紧贴节拍 */
   transition: background-position 0.08s linear;
 }
 
-/* 当前行翻译 */
+/* 当前行翻译
+ * —— 字号从 15px 提升到 22px(约主行 0.6 倍),字重 600→700,与主行视觉密度对齐
+ * —— 用 ::after pseudo-element 做 5 段扫光 fill(冷色: secondary 灰 → primary 白),
+ *   与主行暖色 highlight/glow 区分,视觉不抢戏 */
 .lyric-line__trans--cur {
-  margin-top: calc(6px * var(--lyric-scale));
+  position: relative;
+  margin-top: calc(8px * var(--lyric-scale));
   font-size: calc(var(--lyric-cur-trans-size) * var(--lyric-scale));
-  font-weight: 600;
-  color: var(--lyric-primary);
-  opacity: 0.78;
+  font-weight: 700;
+  color: var(--lyric-secondary);
+  letter-spacing: 0.3px;
   -webkit-text-stroke: 0.10px rgba(0, 0, 0, 0.4);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  overflow: visible;
+}
+.lyric-line__trans--cur::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    90deg,
+    var(--lyric-secondary) 0%,
+    var(--lyric-secondary) max(0%, calc(var(--lyric-progress) - var(--lyric-feather))),
+    var(--lyric-primary) calc(var(--lyric-progress) + var(--lyric-feather)),
+    var(--lyric-primary) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--lyric-primary) 26%, transparent);
+  pointer-events: none;
+  transition: background-position 0.08s linear;
 }
 
 /* 行切换重播入场动画（对标 MineRadio lyr-in 820ms cubic-bezier） */
@@ -213,11 +214,12 @@
   }
 }
 
-/* ====== 上下文行（小字淡灰，按 offset 字号递变 + 透明度递变） ====== */
+/* ====== 上下文行（小字淡灰，按 offset 字号递变 + 透明度递变） ======
+ * 上下文行用 primary 同色 + 低 alpha(0.4),与已唱字无缝过渡,glyph interior 干净。 */
 .lyric-line--ctx {
   font-size: calc(var(--lyric-ctx-size) * var(--lyric-scale));
   font-weight: 600;
-  color: rgba(246, 253, 255, 0.4);
+  color: color-mix(in srgb, var(--lyric-primary) 40%, transparent);
   -webkit-text-stroke: 0.10px rgba(0, 0, 0, 0.4);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
   letter-spacing: 0.3px;
@@ -237,9 +239,10 @@
 }
 .lyric-line__trans {
   margin-top: 3px;
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.32);
-  opacity: 0.72;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.2px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
@@ -453,17 +456,10 @@
   display: inline-block;
 }
 
-/* ====== 锁定态 ====== */
-.lyric-overlay--locked .lyric-overlay__stage {
-  cursor: default;
-}
-.lyric-overlay--locked:hover .lyric-overlay__controls {
-  opacity: 0;
-  pointer-events: none;
-}
-.lyric-overlay--locked .lyric-overlay__drag-handle {
-  opacity: 0.7;
-}
+/* ====== 锁定态 ======
+ * 锁定仅作为视觉/记忆状态,不再走 setIgnoreCursorEvents(那会拦截中键导致无法解锁)。
+ * 歌词文字已经 pointer-events: none 自动透出到下层应用,控件条仍可 hover/click。
+ * 中键点击悬浮窗任意位置即可切换锁定/解锁(由 .lyric-overlay 根 onAuxClick 监听)。 */
 
 /* ====== 暂停态 ====== */
 .lyric-overlay--paused .lyric-line--cur {

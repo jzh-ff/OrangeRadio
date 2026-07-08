@@ -350,9 +350,10 @@
   background: rgba(255, 107, 26, 0.14);
 }
 .pb-vol-popover {
-  position: absolute;
-  bottom: calc(100% + 14px);
-  right: -10px;
+  /* 用 position: fixed + JS 算的 right/bottom 锚定到音量按钮正上方 14px、右偏 10px,
+     由 React Portal 挂到 document.body 绕开 .playerbar { overflow: hidden; border-radius: 50px }
+     的胶囊形裁剪。right/bottom 由 PlayerBar.tsx 动态注入。 */
+  position: fixed;
   width: 60px;
   padding: 14px 6px 12px;
   display: flex;

@@ -626,3 +626,21 @@ textarea:focus-visible {
   pointer-events: auto; /* 必须能接收 mousedown 才能拖 */
   background: transparent; /* 视觉上不显示，仅作为命中区 */
 }
+
+/* ============================================================
+ * lyric-overlay 窗口：去掉 #root 的"卡片化"实心背景/圆角/阴影,
+ * 让歌词完全裸飘在桌面上(对标 MineRadio desktop-lyrics.html)。
+ * 由 main.tsx 在 label === "lyric-overlay" 时给 body 加 .window-lyric-overlay 触发。
+ * 包含:重置 #root 卡片样式 + 抹掉 body 上来自主窗口主题的 --bg-* 背景 + 去掉任何残留 border。 */
+body.window-lyric-overlay,
+body.window-lyric-overlay html,
+body.window-lyric-overlay #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  clip-path: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
