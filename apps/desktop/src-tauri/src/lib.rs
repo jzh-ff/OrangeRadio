@@ -195,7 +195,7 @@ async fn handle_orangeradio_protocol(
 ) -> Response<Cow<'static, [u8]>> {
     let uri = request.uri();
     let path = uri.path().to_string();
-    let query: HashMap<String, String> = uri.query().map(|q| parse_query(q)).unwrap_or_default();
+    let query: HashMap<String, String> = uri.query().map(parse_query).unwrap_or_default();
 
     match path.as_str() {
         "/qqstream" => handle_qq_stream(&request, &query).await,

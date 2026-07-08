@@ -84,18 +84,9 @@ impl Default for LoudnessNormalizer {
 }
 
 /// DSP 处理链（顺序应用各效果器）
+#[derive(Default)]
 pub struct DspChain {
     pub eq: Equalizer,
     pub spatial: SpatialAudio,
     pub loudness: LoudnessNormalizer,
-}
-
-impl Default for DspChain {
-    fn default() -> Self {
-        Self {
-            eq: Equalizer::default(),
-            spatial: SpatialAudio::default(),
-            loudness: LoudnessNormalizer::default(),
-        }
-    }
 }

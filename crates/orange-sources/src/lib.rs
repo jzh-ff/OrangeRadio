@@ -49,7 +49,9 @@ pub struct SourceRegistry {
 
 impl SourceRegistry {
     pub fn new() -> Self {
-        Self { sources: Vec::new() }
+        Self {
+            sources: Vec::new(),
+        }
     }
 
     /// 注册一个音源

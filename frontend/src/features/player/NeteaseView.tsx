@@ -3,7 +3,6 @@ import { EmptyStateIcon } from "../../components/EmptyState";
 import { ConsoleSearch } from "../../components/ConsoleSearch";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
-import QRCode from "qrcode";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { getCoverUrl } from "./useCover";
@@ -14,7 +13,7 @@ import type { Track } from "../../stores/libraryStore";
 import "../../styles/library.css";
 
 type View = "search" | "playlists" | "playlist" | "daily" | "toplists" | "toplist";
-type LoginMode = "cookie" | "qrcode" | null;
+type LoginMode = "cookie" | "browser" | null;
 
 /** 各 tab 的根 view（点击 tab 即跳到此 view，栈被重置为单元素） */
 const TAB_ROOTS = {
@@ -51,11 +50,7 @@ export function NeteaseView() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [cookieInput, setCookieInput] = useState("");
   const [loginMode, setLoginMode] = useState<LoginMode>(null);
-  // 扫码登录状态
-  const [qrKey, setQrKey] = useState("");
-  const [qrDataUrl, setQrDataUrl] = useState("");
-  const [qrStatus, setQrStatus] = useState("");
-  const pollRef = useRef<number>(0);
+  const [browserLoading, setBrowserLoading] = useState(false);
   // 导航：栈式历史，tab 切换 = 重置栈为根，点详情 = 压栈，返回 = 弹栈
   const [viewStack, setViewStack] = useState<View[]>(["playlists"]);
   const view = viewStack[viewStack.length - 1];
@@ -109,60 +104,23 @@ export function NeteaseView() {
   const pendingLogin = usePlayerStore((s) => s.pendingLoginSource);
   useEffect(() => {
     if (pendingLogin === "netease") {
-      setLoginMode("qrcode");
-      startQrLogin();
+      setLoginMode("browser");
+      startBrowserLogin();
       usePlayerStore.getState().clearRelogin();
     }
   }, [pendingLogin]);
 
-  useEffect(() => () => window.clearInterval(pollRef.current), []);
-
-  // 扫码登录：调用后端拿 unikey → 用 QRCode 渲染 → 轮询状态
-  const startQrLogin = async () => {
-    setError(""); setQrDataUrl(""); setQrStatus("生成二维码中…");
+  // 浏览器内嵌登录
+  const startBrowserLogin = async () => {
+    setBrowserLoading(true); setError("");
     try {
-      const info = await invoke<{ key: string; qr_url: string }>("netease_qrcode_create");
-      setQrKey(info.key);
-      // 后端返回的是文本 URL（如 https://music.163.com/login?codekey=xxx），
-      // 前端用 qrcode 包生成 base64 图片再喂给 <img>
-      const dataUrl = await QRCode.toDataURL(info.qr_url, {
-        width: 220,
-        margin: 1,
-        color: { dark: "#000000", light: "#ffffff" },
-      });
-      setQrDataUrl(dataUrl);
-      setQrStatus("请用网易云 APP 扫码");
-      pollQrStatus(info.key);
-    } catch (e: any) {
-      setError(e?.message || "获取二维码失败");
-      setQrStatus("");
-    }
-  };
-
-  const pollQrStatus = (key: string) => {
-    window.clearInterval(pollRef.current);
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const status = await invoke<{ code: number; message: string }>("netease_qrcode_check", { key });
-        setQrStatus(status.message);
-        if (status.code === 803) {
-          window.clearInterval(pollRef.current);
-          setLoggedIn(true);
-          setLoginMode(null);
-          goToTab(TAB_ROOTS.myPlaylists);
-        } else if (status.code === 800) {
-          window.clearInterval(pollRef.current);
-          setQrStatus("二维码已过期，请重新生成");
-        } else if (status.code === 8821) {
-          // 网易云安全风控：非官方客户端被识别。直接切到 Cookie 登录界面引导用户
-          window.clearInterval(pollRef.current);
-          setError(status.message || "网易云风控拦截，请改用 Cookie 登录");
-          setLoginMode("cookie");
-        }
-      } catch {
-        // 忽略单次轮询错误
-      }
-    }, 2000);
+      await invoke("netease_login_with_webview");
+      setLoggedIn(true); setLoginMode(null);
+      goToTab(TAB_ROOTS.myPlaylists);
+      // 强制刷新当前 tab 数据：登录态切换后 viewStack 可能没变，需要 bump refreshKey 触发 useEffect 加载
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setBrowserLoading(false); }
   };
 
   const doLogin = async () => {
@@ -172,6 +130,8 @@ export function NeteaseView() {
       await invoke("netease_login", { cookie: cookieInput });
       setLoggedIn(true); setCookieInput(""); setLoginMode(null);
       goToTab(TAB_ROOTS.myPlaylists);
+      // 强制刷新当前 tab 数据
+      setRefreshKey((k) => k + 1);
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setLoading(false); }
   };
@@ -276,25 +236,21 @@ export function NeteaseView() {
       <div className="library__empty">
         <div className="library__empty-icon"><EmptyStateIcon kind="music" /></div>
         <div className="library__empty-title">登录网易云音乐</div>
-        <div className="library__empty-desc" style={{ marginBottom: 16 }}>扫码登录最方便，登录态会自动加密保存，下次启动不用重新登录</div>
+        <div className="library__empty-desc" style={{ marginBottom: 16 }}>用内嵌浏览器登录最方便，登录态会自动加密保存，下次启动不用重新登录</div>
         {!loginMode && (
           <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="btn-scan" onClick={() => { setLoginMode("qrcode"); startQrLogin(); }}>扫码登录</button>
+            <button className="btn-scan" onClick={() => { setLoginMode("browser"); startBrowserLogin(); }}>浏览器登录</button>
             <button className="btn-scan" style={{ background: "#333" }} onClick={() => setLoginMode("cookie")}>Cookie 登录</button>
           </div>
         )}
-        {/* 扫码登录 */}
-        {loginMode === "qrcode" && (
+        {/* 浏览器登录等待中 */}
+        {loginMode === "browser" && (
           <div style={{ marginTop: 20, textAlign: "center" }}>
-            {qrDataUrl && (
-              <div style={{ display: "inline-block", padding: 12, background: "#fff", borderRadius: 12, marginBottom: 12 }}>
-                <img src={qrDataUrl} alt="网易云登录二维码" style={{ width: 220, height: 220 }} />
-              </div>
-            )}
-            <div style={{ fontSize: 13, color: qrStatus.includes("过期") ? "#ff6b6b" : "#aaa7b8" }}>{qrStatus}</div>
+            <div style={{ fontSize: 13, color: "#aaa7b8" }}>
+              {browserLoading ? "已弹出登录窗口，请在窗口中完成登录…" : "正在启动登录窗口…"}
+            </div>
             <div style={{ marginTop: 12 }}>
-              <button className="btn-scan" style={{ background: "#333" }} onClick={startQrLogin}>刷新二维码</button>
-              <button className="btn-scan" style={{ background: "#333", marginLeft: 8 }} onClick={() => { window.clearInterval(pollRef.current); setLoginMode(null); }}>返回</button>
+              <button className="btn-scan" style={{ background: "#333" }} onClick={() => { setLoginMode(null); setBrowserLoading(false); }}>取消</button>
             </div>
           </div>
         )}

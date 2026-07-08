@@ -15,10 +15,11 @@ use uuid::Uuid;
 pub struct SourceId(pub Uuid);
 
 /// 音源类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     /// 本地音乐库
+    #[default]
     Local,
     /// 网易云音乐
     NeteaseCloudMusic,
@@ -42,12 +43,6 @@ pub enum SourceKind {
     Qishui,
     /// 自定义 / 插件音源
     Plugin,
-}
-
-impl Default for SourceKind {
-    fn default() -> Self {
-        SourceKind::Local
-    }
 }
 
 /// 搜索查询

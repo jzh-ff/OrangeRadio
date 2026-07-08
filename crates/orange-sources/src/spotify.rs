@@ -240,6 +240,7 @@ struct TrackPage {
 }
 #[derive(Debug, Deserialize)]
 struct SpTrack {
+    #[allow(dead_code)]
     id: String,
     name: String,
     artists: Vec<SpArtist>,

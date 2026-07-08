@@ -73,6 +73,7 @@ impl QqMusicSource {
     }
 
     /// 从 Set-Cookie 提取 QQ 音乐登录态（uin + qqmusic_key 等）
+    #[allow(dead_code)]
     async fn extract_qq_cookie(
         &self,
         set_cookies: Vec<String>,
@@ -524,7 +525,7 @@ impl QqMusicSource {
             &location[..location.len().min(80)]
         );
         let oauth_code = extract_param(&location, "code=", "&").ok_or_else(|| {
-            orange_core::CoreError::AuthFailed(format!("oauth authorize 未返回 code"))
+            orange_core::CoreError::AuthFailed("oauth authorize 未返回 code".to_string())
         })?;
         tracing::info!(
             "QQ扫码 oauth code={}",
@@ -760,22 +761,27 @@ fn url_encode(s: &str) -> String {
 
 /// QQ 音乐搜索响应（简化）
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct QqSearchResp {
     data: Option<QqSearchData>,
 }
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct QqSearchData {
     body: Option<QqSearchBody>,
 }
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct QqSearchBody {
     song: Option<QqSongList>,
 }
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct QqSongList {
     list: Vec<QqSong>,
 }
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct QqSong {
     songmid: String,
     songname: String,
@@ -784,10 +790,12 @@ struct QqSong {
     interval: i32, // 秒
 }
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct QqSinger {
     name: String,
 }
 
+#[allow(dead_code)]
 fn qq_song_to_track(s: &QqSong, source_id: SourceId) -> Track {
     let artist = s
         .singer
@@ -1003,7 +1011,7 @@ impl AudioSource for QqMusicSource {
             // CDN 域名从 sip 字段取
             let sip = resp["req"]["data"]["sip"]
                 .as_array()
-                .and_then(|a| a.get(0))
+                .and_then(|a| a.first())
                 .and_then(|v| v.as_str())
                 .unwrap_or("https://dl.stream.qqmusic.qq.com/");
             let play_url = format!("{}{}", sip, purl);
