@@ -44,6 +44,7 @@ const PRESETS: { id: number; name: string; desc: string; icon: string }[] = [
 export function VisualConsole() {
   const visualParams = usePlayerStore((s) => s.visualParams);
   const setVisualParams = usePlayerStore((s) => s.setVisualParams);
+  const dominantColor = usePlayerStore((s) => s.dominantColor);
   const setSubView = usePlayerStore((s) => s.setSubView);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const [tab, setTab] = useState<Tab>("motion");
@@ -270,7 +271,38 @@ export function VisualConsole() {
               <Toggle label="鼓点溢光" on={visualParams.lyricGlowBeat} onClick={() => setVisualParams({ lyricGlowBeat: !visualParams.lyricGlowBeat })} />
             </div>
             <div className="vc-section__title vc-section__title--sub">文字颜色</div>
-            <div className="vc-archive-empty">颜色选择器 + AUTO 封面取色开发中（v0.4+）</div>
+            <div className="vc-color-row">
+              <label className="vc-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={visualParams.lyricColorAuto}
+                  onChange={(e) => setVisualParams({ lyricColorAuto: e.target.checked })}
+                />
+                <span>AUTO 封面取色</span>
+              </label>
+              {!visualParams.lyricColorAuto && (
+                <div className="vc-color-picker">
+                  <input
+                    type="color"
+                    value={visualParams.lyricColor}
+                    onChange={(e) => setVisualParams({ lyricColor: e.target.value })}
+                    title="歌词颜色"
+                  />
+                  <span className="vc-color-value">{visualParams.lyricColor}</span>
+                </div>
+              )}
+            </div>
+            {visualParams.lyricColorAuto && (
+              <div className="vc-color-preview">
+                <span
+                  className="vc-color-dot"
+                  style={{ background: dominantColor ? `rgb(${dominantColor.join(",")})` : "#fff7e0" }}
+                />
+                <span className="vc-color-hint">
+                  {dominantColor ? "已跟随当前封面主色" : "等待封面主色提取…"}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
