@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WallpaperBackground } from "./visual/WallpaperBackground";
 import { WallpaperLayer } from "./visual/WallpaperLayer";
@@ -19,6 +20,7 @@ import { ImmersiveView } from "./features/player/ImmersiveView";
 import { ToastStack, useToasts } from "./components/Toast";
 import { SettingsModal } from "./components/SettingsModal";
 import { usePlayerStore, type BeatHit } from "./stores/playerStore";
+import { useLibraryStore } from "./stores/libraryStore";
 import { useAudioEngine } from "./features/player/useAudioEngine";
 import { useBeatDetector } from "./features/player/useBeatDetector";
 import { useLyricBridge } from "./features/player/useLyricBridge";
@@ -232,7 +234,8 @@ export default function App() {
       // 立即更新 UI（歌曲信息、高亮）
       usePlayerStore.getState().setCurrent(t as any, index);
       // 节拍图谱预计算（本地文件 → 电影运镜；云曲无图谱 → 退化实时检测）
-      if ((track.source_kind || "local") === "local") {
+      const sk = track.source_kind || "local";
+      if (sk === "local") {
         void invoke<{ hits: BeatHit[] | null }>("analyze_beatmap", {
           trackPath: track.source_track_id,
         })
@@ -259,6 +262,8 @@ export default function App() {
           playUrl = await invoke<string>("kuwo_stream", { rid: track.source_track_id });
         } else if (kind === "qishui") {
           playUrl = await invoke<string>("qishui_stream", { trackId: track.source_track_id });
+        } else if (kind === "builtin") {
+          playUrl = await invoke<string>("builtin_stream");
         } else {
           playUrl = track.source_track_id;
         }
@@ -300,6 +305,58 @@ export default function App() {
 
   useEffect(() => {
     invoke("app_info").catch(() => {});
+  }, []);
+
+  // 首启自动播 demo 曲：当本地库为空且无 currentTrack 时，
+  // 从 Rust 拉取内置 demo 曲元信息塞进队列并播放。
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const libEmpty = useLibraryStore.getState().tracks.length === 0;
+        const noCurrent = !usePlayerStore.getState().currentTrack;
+        if (!libEmpty || !noCurrent) return;
+
+        const meta = await invoke<any>("builtin_track_meta");
+        const stream = await invoke<string>("builtin_stream");
+        if (cancelled) return;
+
+        const coverUrl =
+          meta?.artwork?.source?.kind === "local" && meta.artwork.source.path
+            ? convertFileSrc(meta.artwork.source.path)
+            : undefined;
+
+        const demoTrack = {
+          id: "builtin-demo",
+          source_track_id: stream,
+          source_kind: "builtin",
+          format: "mp3",
+          quality: "standard",
+          liked: false,
+          play_count: 0,
+          meta: {
+            title: meta?.title ?? "OrangeRadio Demo",
+            artist: meta?.artist ?? "OrangeStudio",
+            album: meta?.album ?? "Built-in",
+            duration_secs: meta?.duration_secs ?? 30,
+            artwork: meta?.artwork ?? null,
+          },
+          // 便利字段：供 PlayerBar / FullPlayer 直接渲染封面
+          cover_url: coverUrl,
+        } as any;
+
+        // 推入队列（让引擎能 next/prev），并把当前曲目设到第 0 位
+        usePlayerStore.getState().setQueue([demoTrack]);
+        usePlayerStore.getState().setCurrent(demoTrack, 0);
+        engineRef.playTrack(demoTrack, 0);
+      } catch (e) {
+        // 资源未到位 / 编译期未启用时不报错，静默忽略即可
+        console.warn("[首启自动播] 跳过:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
