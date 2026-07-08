@@ -19,7 +19,7 @@ pub fn app_info() -> AppInfo {
     AppInfo {
         name: "OrangeRadio".into(),
         version: orange_core::VERSION.into(),
-        stage: "v0.2 播放器内核".into(),
+        stage: "v0.3 音源生态".into(),
     }
 }
 
@@ -238,11 +238,7 @@ pub async fn kuwo_search(
         page_size: 50,
         ..Default::default()
     };
-    let result = state
-        .kuwo
-        .search(&query)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = state.kuwo.search(&query).await.map_err(|e| e.to_string())?;
     Ok(result.tracks)
 }
 
@@ -250,10 +246,7 @@ pub async fn kuwo_search(
 ///
 /// `rid` 是 Track.source_track_id（酷我歌曲 ID）。
 #[tauri::command]
-pub async fn kuwo_stream(
-    state: tauri::State<'_, AppState>,
-    rid: String,
-) -> Result<String, String> {
+pub async fn kuwo_stream(state: tauri::State<'_, AppState>, rid: String) -> Result<String, String> {
     use orange_core::source::AudioSource;
     let track = Track::new(
         state.kuwo.id(),
@@ -298,6 +291,142 @@ pub async fn netease_login(
         .login_with_cookie(&cookie)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// 网易云内嵌浏览器登录
+///
+/// 打开 music.163.com 登录页，用户扫码/账号密码登录后，后台轮询检测 Cookie 中的 MUSIC_U。
+/// 检测到有效登录态后自动完成授权并关闭窗口；用户手动关闭窗口则返回取消错误。
+#[tauri::command]
+pub async fn netease_login_with_webview(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    use orange_core::AuthSource;
+    use tauri::webview::PageLoadEvent;
+    use tauri::{Manager, WindowEvent};
+
+    const WINDOW_LABEL: &str = "netease-login";
+    const LOGIN_URL: &str = "https://music.163.com/#/login";
+    const CHECK_INTERVAL_MS: u64 = 1200;
+
+    // 如果已经存在旧窗口，先关掉，避免重复
+    if let Some(existing) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = existing.close();
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+
+    let tx_close = tx.clone();
+
+    let window = tauri::WebviewWindowBuilder::new(
+        &app,
+        WINDOW_LABEL,
+        tauri::WebviewUrl::External(LOGIN_URL.parse().unwrap()),
+    )
+    .title("网易云音乐登录")
+    .inner_size(900.0, 700.0)
+    .min_inner_size(800.0, 600.0)
+    .center()
+    .resizable(true)
+    .on_page_load(move |window, payload| {
+        if payload.event() != PageLoadEvent::Finished {
+            return;
+        }
+        let url = payload.url();
+        if url.host_str() != Some("music.163.com") {
+            return;
+        }
+
+        // 页面加载后自动点击"登录"/"立即登录"按钮，触发显示二维码
+        let _ = window.eval(
+            r#"
+            setTimeout(function() {
+                var docs = [document];
+                document.querySelectorAll('iframe').forEach(function(frame) {
+                    try { if (frame.contentDocument) docs.push(frame.contentDocument); } catch (_) {}
+                });
+                for (var i = 0; i < docs.length; i++) {
+                    var nodes = Array.from(docs[i].querySelectorAll('a, button, span, div'));
+                    var loginNode = nodes.find(function(n) {
+                        var text = (n.textContent || '').trim();
+                        return /登录|立即登录/.test(text) && n.getBoundingClientRect().width > 0;
+                    });
+                    if (loginNode) { loginNode.click(); return; }
+                }
+            }, 900);
+            "#,
+        );
+    })
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    // 后台轮询 cookie：Tauri 的 WebviewWindow::cookies() 能读取包括 HttpOnly 在内的全部 cookie
+    // Windows 上必须在独立线程（spawn_blocking）调用，否则可能死锁
+    let window_poll = window.clone();
+    let state_poll = state.netease.clone();
+    let tx_poll = tx.clone();
+    let poll_handle = tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(CHECK_INTERVAL_MS));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        loop {
+            interval.tick().await;
+
+            let window = window_poll.clone();
+            let cookie_header = match tokio::task::spawn_blocking(move || {
+                let cookies = window.cookies().ok()?;
+                let music_u_value = cookies
+                    .iter()
+                    .find(|c| c.name() == "MUSIC_U")
+                    .map(|c| c.value().to_string())?;
+                let mut parts: Vec<String> = cookies
+                    .into_iter()
+                    .filter(|c| !c.name().is_empty() && !c.value().is_empty())
+                    .map(|c| format!("{}={}", c.name(), c.value()))
+                    .collect();
+                // 把 MUSIC_U 放到最前面，方便后续解析
+                parts.retain(|p| !p.starts_with("MUSIC_U="));
+                parts.insert(0, format!("MUSIC_U={}", music_u_value));
+                Some(parts.join("; "))
+            })
+            .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("网易云登录 cookie 读取线程出错: {}", e);
+                    None
+                }
+            };
+
+            if let Some(cookie) = cookie_header {
+                let result = state_poll
+                    .login_with_cookie(&cookie)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = window_poll.close();
+                if let Some(tx) = tx_poll.lock().unwrap().take() {
+                    let _ = tx.send(result);
+                }
+                return;
+            }
+        }
+    });
+
+    // 用户手动关闭窗口时兜底：如果还没拿到有效 cookie，返回取消错误
+    let window_close = window.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed) {
+            poll_handle.abort();
+            let _ = window_close.close();
+            if let Some(tx) = tx_close.lock().unwrap().take() {
+                let _ = tx.send(Err("登录窗口已关闭".into()));
+            }
+        }
+    });
+
+    rx.await.map_err(|e| e.to_string())?
 }
 
 /// 网易云登出
@@ -975,9 +1104,7 @@ pub async fn search_all(
     // 本地库（同步 DB 查询，放 spawn_blocking）
     let lib = state.library.clone();
     let q_local = (*query).clone();
-    let local_task = tokio::task::spawn_blocking(move || {
-        lib.search(&q_local)
-    });
+    let local_task = tokio::task::spawn_blocking(move || lib.search(&q_local));
 
     // 遍历源注册表，为每个就绪音源起一个并发搜索任务
     let sources = state.sources.list();
@@ -1229,17 +1356,19 @@ pub async fn recommend_next(
         _ => Some(Scene::Relax),
     };
     // 情绪字符串 → Mood enum（前端传 "energetic" 等 snake_case）
-    let mood = mood.as_deref().and_then(|s| match s.to_lowercase().as_str() {
-        "happy" => Some(Mood::Happy),
-        "sad" => Some(Mood::Sad),
-        "calm" => Some(Mood::Calm),
-        "energetic" => Some(Mood::Energetic),
-        "focused" => Some(Mood::Focused),
-        "romantic" => Some(Mood::Romantic),
-        "nostalgic" => Some(Mood::Nostalgic),
-        "melancholy" | "melancholic" => Some(Mood::Melancholy),
-        _ => None,
-    });
+    let mood = mood
+        .as_deref()
+        .and_then(|s| match s.to_lowercase().as_str() {
+            "happy" => Some(Mood::Happy),
+            "sad" => Some(Mood::Sad),
+            "calm" => Some(Mood::Calm),
+            "energetic" => Some(Mood::Energetic),
+            "focused" => Some(Mood::Focused),
+            "romantic" => Some(Mood::Romantic),
+            "nostalgic" => Some(Mood::Nostalgic),
+            "melancholy" | "melancholic" => Some(Mood::Melancholy),
+            _ => None,
+        });
 
     let ctx = RecommendContext {
         now,
@@ -1255,12 +1384,9 @@ pub async fn recommend_next(
     let recommender: std::sync::Arc<dyn orange_core::recommendation::RecommendationEngine> =
         if let Some(cfg) = llm_config {
             if !cfg.api_key.is_empty() {
-                let provider: std::sync::Arc<dyn orange_ai::LlmProvider> =
-                    std::sync::Arc::new(orange_ai::CloudLlmProvider::new(
-                        cfg.api_base,
-                        cfg.api_key,
-                        cfg.model,
-                    ));
+                let provider: std::sync::Arc<dyn orange_ai::LlmProvider> = std::sync::Arc::new(
+                    orange_ai::CloudLlmProvider::new(cfg.api_base, cfg.api_key, cfg.model),
+                );
                 std::sync::Arc::new(orange_ai::AiRecommendationEngine::with_llm(provider))
             } else {
                 state.recommender.clone()
@@ -1333,8 +1459,7 @@ pub async fn analyze_beatmap(
         Ok(orange_audio::analyze_beatmap(&audio))
     })
     .await
-    .map_err(|e| format!("分析线程失败: {e}"))?
-    .map_err(|e| e)?;
+    .map_err(|e| format!("分析线程失败: {e}"))??;
 
     let json = serde_json::to_value(&beatmap).map_err(|e| e.to_string())?;
     if let Ok(s) = serde_json::to_string(&beatmap) {
@@ -1994,6 +2119,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             kuwo_stream,
             kuwo_popular,
             netease_login,
+            netease_login_with_webview,
             netease_logout,
             netease_status,
             netease_search,
@@ -2007,8 +2133,6 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             netease_comments,
             netease_like_track,
             netease_add_track_to_playlist,
-            netease_qrcode_create,
-            netease_qrcode_check,
             kugou_search,
             kugou_stream,
             kugou_login,

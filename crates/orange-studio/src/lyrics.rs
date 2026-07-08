@@ -254,7 +254,7 @@ impl LyricsGenerator {
                 // 兼容两种格式：["verse", ["line1","line2"]] 或 {"kind":"verse","lines":[...]}
                 let (kind_str, lines) = if item.is_array() {
                     let arr = item.as_array().unwrap();
-                    let kind = arr.get(0).and_then(|k| k.as_str()).unwrap_or("verse");
+                    let kind = arr.first().and_then(|k| k.as_str()).unwrap_or("verse");
                     let lines = arr
                         .get(1)
                         .and_then(|l| l.as_array())

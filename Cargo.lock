@@ -2797,7 +2797,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orange-ai"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "orange-core",
@@ -2811,7 +2811,7 @@ dependencies = [
 
 [[package]]
 name = "orange-audio"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "orange-core",
@@ -2826,7 +2826,7 @@ dependencies = [
 
 [[package]]
 name = "orange-core"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2841,7 +2841,7 @@ dependencies = [
 
 [[package]]
 name = "orange-hue"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "orange-audio",
@@ -2856,7 +2856,7 @@ dependencies = [
 
 [[package]]
 name = "orange-library"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2875,7 +2875,7 @@ dependencies = [
 
 [[package]]
 name = "orange-sources"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2904,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "orange-studio"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2922,7 +2922,7 @@ dependencies = [
 
 [[package]]
 name = "orange-sync"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "orange-core",
@@ -2935,7 +2935,7 @@ dependencies = [
 
 [[package]]
 name = "orange-tauri"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2960,7 +2960,7 @@ dependencies = [
 
 [[package]]
 name = "orangeradio-desktop"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "orange-core",
@@ -2981,7 +2981,7 @@ dependencies = [
 
 [[package]]
 name = "orangeradio-server"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "chrono",

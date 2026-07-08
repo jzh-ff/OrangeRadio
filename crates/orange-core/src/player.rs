@@ -20,10 +20,11 @@ pub enum PlayerState {
 }
 
 /// 播放模式（参考网易云）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaybackMode {
     /// 顺序播放
+    #[default]
     Sequence,
     /// 列表循环
     ListLoop,
@@ -34,12 +35,6 @@ pub enum PlaybackMode {
     /// ★ 懂你模式（自研）—— AI 行为画像驱动，结合实时情绪、时段、
     /// 跳过/收藏/完整听完等行为动态调整下一首
     UnderstandYou,
-}
-
-impl Default for PlaybackMode {
-    fn default() -> Self {
-        PlaybackMode::Sequence
-    }
 }
 
 /// 重复模式（旧式三态，与 PlaybackMode 互补）

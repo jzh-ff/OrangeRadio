@@ -78,10 +78,7 @@ impl LlmProvider for CloudLlmProvider {
     async fn chat(&self, request: &LlmRequest) -> orange_core::Result<LlmResponse> {
         // OpenAI 兼容协议 POST {base}/chat/completions
         // 覆盖 GLM / OpenAI / DeepSeek / 通义千问 等所有兼容端点
-        let url = format!(
-            "{}/chat/completions",
-            self.api_base.trim_end_matches('/')
-        );
+        let url = format!("{}/chat/completions", self.api_base.trim_end_matches('/'));
         // 组装 messages（system 可选 + user 必须）
         let mut messages = Vec::new();
         if let Some(sys) = &request.system {
@@ -113,9 +110,8 @@ impl LlmProvider for CloudLlmProvider {
                 &text[..text.len().min(300)]
             )));
         }
-        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-            orange_core::CoreError::AiService(format!("LLM 响应非 JSON: {e}"))
-        })?;
+        let v: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| orange_core::CoreError::AiService(format!("LLM 响应非 JSON: {e}")))?;
         // OpenAI 响应：choices[0].message.content
         let content = v
             .get("choices")
@@ -126,17 +122,21 @@ impl LlmProvider for CloudLlmProvider {
             .unwrap_or("")
             .to_string();
         if content.is_empty() {
-            return Err(orange_core::CoreError::AiService(
-                "LLM 返回空内容".into(),
-            ));
+            return Err(orange_core::CoreError::AiService("LLM 返回空内容".into()));
         }
         // 解析 usage（可选）
-        let usage = v.get("usage").and_then(|u| {
+        let usage = v.get("usage").map(|u| {
             let prompt = u.get("prompt_tokens").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
-            let completion = u.get("completion_tokens").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
-            Some(TokenUsage { prompt, completion })
+            let completion = u
+                .get("completion_tokens")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0) as u32;
+            TokenUsage { prompt, completion }
         });
-        Ok(LlmResponse { text: content, usage })
+        Ok(LlmResponse {
+            text: content,
+            usage,
+        })
     }
 }
 

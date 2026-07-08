@@ -171,7 +171,7 @@ impl NeteaseSource {
 
         let resp = self
             .client
-            .post(&format!("{}{}?csrf_token=", BASE, path))
+            .post(format!("{}{}?csrf_token=", BASE, path))
             .header("Cookie", &cookie)
             .header("Referer", BASE)
             .header("Origin", "https://music.163.com")
@@ -300,7 +300,9 @@ impl NeteaseSource {
     /// 必须改用 /weapi/v6/playlist/detail（同 playlist_detail 端点）才能拿到完整歌曲。
     pub async fn toplist_detail(&self, toplist_id: &str) -> Result<Vec<Track>> {
         let payload = format!(r#"{{"id":{},"n":100,"s":0,"csrf_token":""}}"#, toplist_id);
-        let resp = self.weapi_post("/weapi/v6/playlist/detail", &payload).await?;
+        let resp = self
+            .weapi_post("/weapi/v6/playlist/detail", &payload)
+            .await?;
 
         let mut tracks = Vec::new();
         if let Some(list) = resp["playlist"]["tracks"].as_array() {
@@ -532,6 +534,7 @@ struct NeteaseSearchResp {
     result: Option<NeteaseSearchResult>,
 }
 #[derive(Debug, Deserialize, Default)]
+#[allow(non_snake_case)]
 struct NeteaseSearchResult {
     songs: Option<Vec<NeteaseSong>>,
     songCount: Option<u32>,
@@ -560,10 +563,12 @@ struct NeteaseAlbum {
 
 /// 播放 URL 响应
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SongUrlResp {
     data: Vec<SongUrlData>,
 }
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SongUrlData {
     url: Option<String>,
     size: Option<u64>,
@@ -730,7 +735,7 @@ impl AudioSource for NeteaseSource {
 
         let resp = self
             .client
-            .post(&format!(
+            .post(format!(
                 "{}/weapi/song/enhance/player/url/v1?csrf_token=",
                 BASE
             ))
@@ -795,7 +800,7 @@ impl AuthSource for NeteaseSource {
         }
         let resp: UnikeyResp = self
             .qr_client
-            .get(&format!("{}/api/login/qrcode/unikey?type=1", BASE))
+            .get(format!("{}/api/login/qrcode/unikey?type=1", BASE))
             .header("Referer", BASE)
             .header("User-Agent", "Mozilla/5.0")
             .send()
