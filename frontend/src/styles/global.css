@@ -610,3 +610,19 @@ textarea:focus-visible {
   50%      { transform: scaleY(1);    transform-origin: bottom; }
 }
 .eq-mini--mute i { animation: none; height: 25%; background: rgba(255, 255, 255, 0.18); }
+
+/* ============================================================
+ * 窗口可拖拽顶条（decorations: false 时给主窗口一个 drag 区域）
+ * 覆盖整个宽度；WindowControls 自带 no-drag 且浮在右上，不冲突
+ * FullPlayer 打开时由其自带 .fp-header[data-tauri-drag-region] 接管
+ * ============================================================ */
+.app-drag-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 10px;
+  z-index: 8500; /* 高于 Wallpaper/Sidebar/PlayerBar，低于 WindowControls(9000+) */
+  pointer-events: auto; /* 必须能接收 mousedown 才能拖 */
+  background: transparent; /* 视觉上不显示，仅作为命中区 */
+}
