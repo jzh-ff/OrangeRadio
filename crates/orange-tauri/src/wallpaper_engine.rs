@@ -39,7 +39,7 @@ fn matches_ext(lower: &str, exts: &[&str]) -> bool {
 
 /// 解析 Steam `libraryfolders.vdf`,提取所有 library 的 `path`。
 ///
-/// vdf 片段形如:`"path"		"D:\\steam"`。只关心 "path" 行,提取引号内值并把 `\\` 还原为 `\`。
+/// vdf 片段形如:`"path"        "D:\\steam"`。只关心 "path" 行,提取引号内值并把 `\\` 还原为 `\`。
 pub fn parse_libraryfolders(vdf: &str) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     for line in vdf.lines() {

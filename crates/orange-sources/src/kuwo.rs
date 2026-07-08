@@ -83,7 +83,11 @@ impl KuwoSource {
         {
             if resp.status().is_success() {
                 if let Ok(v) = resp.json::<serde_json::Value>().await {
-                    if let Some(url) = v.get("data").and_then(|d| d.get("url")).and_then(|u| u.as_str()) {
+                    if let Some(url) = v
+                        .get("data")
+                        .and_then(|d| d.get("url"))
+                        .and_then(|u| u.as_str())
+                    {
                         if !url.is_empty() {
                             return Ok(url.to_string());
                         }
@@ -209,10 +213,11 @@ impl AudioSource for KuwoSource {
                 .map(Self::unescape);
             let duration_secs = item
                 .get("DURATION")
-                .or_else(|| item.get("duration")
-                )
+                .or_else(|| item.get("duration"))
                 .and_then(|v| {
-                    v.as_str().and_then(|s| s.parse::<f64>().ok()).or_else(|| v.as_f64())
+                    v.as_str()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .or_else(|| v.as_f64())
                 });
             let artwork = item
                 .get("web_albumpic_short")
@@ -276,7 +281,7 @@ impl AudioSource for KuwoSource {
         let url = format!(
             "{}/r.s?all=&ft=music&itemset=newkwf_alad&issubtitle=1&pn=1&rn={}&encoding=utf8&rformat=json&ver=mbox&plat=h5&orderBy=hot",
             self.search_base.trim_end_matches('/'),
-            limit.max(30).min(50)
+            limit.clamp(30, 50)
         );
         let resp = self
             .client

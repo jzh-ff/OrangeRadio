@@ -16,13 +16,16 @@ use serde::Deserialize;
 /// RadioBrowser 单个电台（API 返回）
 #[derive(Debug, Deserialize)]
 struct RadioStation {
+    #[allow(dead_code)]
     stationuuid: String,
     name: String,
     url_resolved: String,
     favicon: String,
     country: String,
+    #[allow(dead_code)]
     countrycode: String,
     tags: String,
+    #[allow(dead_code)]
     votes: i64,
     codec: String,
     bitrate: i32,

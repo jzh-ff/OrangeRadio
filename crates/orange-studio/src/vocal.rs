@@ -29,6 +29,7 @@ pub enum VoiceSource {
 
 /// 演唱合成器
 pub struct VocalSynth {
+    #[allow(dead_code)]
     provider: Box<dyn crate::provider::AudioAIProvider>,
 }
 

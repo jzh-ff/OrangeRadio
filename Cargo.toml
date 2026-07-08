@@ -16,7 +16,7 @@ members = [
 
 # 统一版本管理
 [workspace.package]
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["OrangeRadio Team"]
 license = "MIT"

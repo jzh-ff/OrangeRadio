@@ -41,7 +41,7 @@ pub enum ArtworkSource {
 }
 
 /// 曲目元数据
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TrackMeta {
     pub title: String,
     pub artist: String,
@@ -61,29 +61,6 @@ pub struct TrackMeta {
     pub artwork: Option<Artwork>,
     pub composer: Option<String>,
     pub label: Option<String>,
-}
-
-impl Default for TrackMeta {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            artist: String::new(),
-            album: None,
-            album_artist: None,
-            year: None,
-            genre: vec![],
-            track_number: None,
-            disc_number: None,
-            duration_secs: None,
-            bpm: None,
-            musical_key: None,
-            isrc: None,
-            lyrics: None,
-            artwork: None,
-            composer: None,
-            label: None,
-        }
-    }
 }
 
 /// 一首可播放的曲目

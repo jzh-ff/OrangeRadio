@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "OrangeRadio 默认权限",
-  "windows": ["main", "lyric-overlay"],
+  "windows": ["main", "lyric-overlay", "netease-login"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",

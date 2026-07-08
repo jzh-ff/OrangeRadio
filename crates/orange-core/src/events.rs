@@ -27,6 +27,7 @@ impl EventSubscription {
 pub struct EventBus {
     tx: broadcast::Sender<Event>,
     /// 最近事件缓存（便于新订阅者快速同步状态）
+    #[allow(dead_code)]
     last_events: Arc<RwLock<std::collections::HashMap<String, Event>>>,
 }
 

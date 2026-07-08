@@ -67,7 +67,7 @@ fn parse_rss(xml: &str, source_id: SourceId) -> Result<Vec<Track>> {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                let local = name.split(':').last().unwrap_or(&name).to_string();
+                let local = name.split(':').next_back().unwrap_or(&name).to_string();
 
                 if local == "item" {
                     in_item = true;
@@ -91,7 +91,7 @@ fn parse_rss(xml: &str, source_id: SourceId) -> Result<Vec<Track>> {
             }
             Ok(Event::Empty(e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                let local = name.split(':').last().unwrap_or(&name).to_string();
+                let local = name.split(':').next_back().unwrap_or(&name).to_string();
                 if in_item && local == "enclosure" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"url" {
@@ -117,7 +117,7 @@ fn parse_rss(xml: &str, source_id: SourceId) -> Result<Vec<Track>> {
             }
             Ok(Event::End(e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                let local = name.split(':').last().unwrap_or(&name).to_string();
+                let local = name.split(':').next_back().unwrap_or(&name).to_string();
                 if local == "item" && in_item {
                     // 构造 Track
                     if let Some(url) = item_fields.get("url") {
