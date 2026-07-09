@@ -5,8 +5,8 @@ use orange_core::source::{AudioSource, SearchQuery};
 use orange_core::track::{Track, TrackMeta};
 use orange_library::{LibraryScanner, ScanOptions};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager};
 
 /// 健康检查
 #[tauri::command]
@@ -2222,11 +2222,7 @@ pub async fn builtin_track_meta(app: AppHandle) -> Result<TrackMeta, String> {
         .ok();
 
     // 封面缓存目录：app_data_dir/covers/（dev 模式走 cwd/.orangeradio/covers）
-    let covers_dir = app
-        .path()
-        .app_data_dir()
-        .ok()
-        .map(|d| d.join("covers"));
+    let covers_dir = app.path().app_data_dir().ok().map(|d| d.join("covers"));
 
     let mut meta = orange_library::metadata::read_track_meta(&mp3_path, covers_dir.as_deref());
 

@@ -95,7 +95,15 @@ impl NeteaseSource {
     pub async fn set_quality(&self, level: &str) {
         let valid = matches!(
             level,
-            "standard" | "higher" | "exhigh" | "lossless" | "hires" | "jyeffect" | "jymaster" | "sky" | "dolby"
+            "standard"
+                | "higher"
+                | "exhigh"
+                | "lossless"
+                | "hires"
+                | "jyeffect"
+                | "jymaster"
+                | "sky"
+                | "dolby"
         );
         if valid {
             *self.quality_level.write().await = level.to_string();

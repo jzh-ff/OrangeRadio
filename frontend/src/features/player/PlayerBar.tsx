@@ -134,6 +134,7 @@ export function PlayerBar() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const mode = usePlayerStore((s) => s.mode);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const playerBarHidden = usePlayerStore((s) => s.playerBarHidden);
   const position = usePlayerStore((s) => s.position);
   const duration = usePlayerStore((s) => s.duration);
   const volume = usePlayerStore((s) => s.volume);
@@ -156,6 +157,13 @@ export function PlayerBar() {
       un?.();
     };
   }, []);
+
+  // 同步底部播放栏隐藏态到 body，供主内容区 padding 调整
+  useEffect(() => {
+    if (playerBarHidden) document.body.setAttribute("data-playerbar-hidden", "true");
+    else document.body.removeAttribute("data-playerbar-hidden");
+    return () => { document.body.removeAttribute("data-playerbar-hidden"); };
+  }, [playerBarHidden]);
 
   const onLyricBtn = async () => {
     // 主窗口"词"按钮只负责"打开/关闭悬浮窗",不再处理解锁(锁定态下悬浮窗中键单击可解锁)。
@@ -292,7 +300,7 @@ export function PlayerBar() {
 
   return (
     <div
-      className={`playerbar ${currentTrack ? "playerbar--visible" : ""}`}
+      className={`playerbar ${currentTrack && !playerBarHidden ? "playerbar--visible" : ""}`}
       style={{ "--ui-opacity": playerBarOpacity } as React.CSSProperties}
     >
       {/* 左：曲目信息 */}
