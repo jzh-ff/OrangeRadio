@@ -11,19 +11,21 @@ import { usePlayerStore } from "../stores/playerStore";
  */
 export function WallpaperLayer() {
   const active = useWallpaperStore((s) => s.list.find((w) => w.id === s.activeId) || null);
-  const vp = usePlayerStore((s) => s.visualParams);
-  // wallpaper 参数（从 visualParams 读取，P12 扩展字段；若未定义用默认）
-  const opacity = vp.wallpaperOpacity;
-  const blur = vp.wallpaperBlur;
-  const scale = vp.wallpaperScale;
-  const dim = vp.wallpaperDim;
+  const { wallpaperOpacity, wallpaperBlur, wallpaperScale, wallpaperDim } = usePlayerStore(
+    (s) => ({
+      wallpaperOpacity: s.visualParams.wallpaperOpacity,
+      wallpaperBlur: s.visualParams.wallpaperBlur,
+      wallpaperScale: s.visualParams.wallpaperScale,
+      wallpaperDim: s.visualParams.wallpaperDim,
+    })
+  );
 
   if (!active) return null;
 
   const style: React.CSSProperties = {
-    opacity,
-    transform: `scale(${scale})`,
-    filter: `blur(${blur}px)`,
+    opacity: wallpaperOpacity,
+    transform: `scale(${wallpaperScale})`,
+    filter: `blur(${wallpaperBlur}px)`,
   };
 
   return (
@@ -42,7 +44,7 @@ export function WallpaperLayer() {
         />
       )}
       {/* 暗角遮罩（让前景内容可读） */}
-      <div className="wallpaper-layer-dim" style={{ opacity: dim }} />
+      <div className="wallpaper-layer-dim" style={{ opacity: wallpaperDim }} />
     </div>
   );
 }

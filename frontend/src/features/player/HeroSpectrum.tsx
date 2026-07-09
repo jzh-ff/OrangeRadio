@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "../../stores/playerStore";
 import { readSpectrum } from "../../stores/spectrumBus";
+import { useVisibleRaf } from "../../hooks/useVisibleRaf";
 
 interface HeroSpectrumProps {
   /** 频谱条数量（默认 64，跟 store spectrum 数组长度对齐） */
@@ -15,7 +16,8 @@ interface HeroSpectrumProps {
  * 用 canvas 2D 画「对数频率分布」的频谱条贴在 hero 顶部。
  *
  * 性能：spectrum 走 bus 不经过 React 状态，本组件不会因频谱每帧变化而重渲染；
- *      内部 draw 循环在 RAF 里直接 readSpectrum() 绘制。
+ *      内部 draw 循环在 RAF 里直接 readSpectrum() 绘制；
+ *      使用 useVisibleRaf：后台/不可见时暂停。
  *
  * 设计要点：
  * - 对数频率映射（Math.pow(f, 1.6)）：低频占更多横向空间，高频收窄（人耳对低频更敏感）
@@ -26,7 +28,6 @@ interface HeroSpectrumProps {
 export function HeroSpectrum({ bars = 64, height = 56 }: HeroSpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
-  const rafRef = useRef<number>(0);
   const peaksRef = useRef<Float32Array>(new Float32Array(bars));
 
   useEffect(() => {
@@ -46,7 +47,17 @@ export function HeroSpectrum({ bars = 64, height = 56 }: HeroSpectrumProps) {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
-    const draw = () => {
+    return () => {
+      ro.disconnect();
+    };
+  }, [bars]);
+
+  useVisibleRaf(
+    () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
       const rect = canvas.getBoundingClientRect();
       const w = rect.width;
       const h = rect.height;
@@ -86,17 +97,9 @@ export function HeroSpectrum({ bars = 64, height = 56 }: HeroSpectrumProps) {
           ctx.fillRect(x, h - peakNext - 2, barW, 2);
         }
       }
-
-      rafRef.current = requestAnimationFrame(draw);
-    };
-
-    rafRef.current = requestAnimationFrame(draw);
-
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      ro.disconnect();
-    };
-  }, [isPlaying, bars]);
+    },
+    { enabled: true, pauseOnHidden: true }
+  );
 
   return (
     <div className="hero-spectrum" aria-hidden style={{ height }}>

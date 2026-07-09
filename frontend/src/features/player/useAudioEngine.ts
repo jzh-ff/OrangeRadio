@@ -10,6 +10,8 @@ import { scheduleBeatCameraFromHit, updateBeatCam, smoothBeatCam } from "../../l
 
 // 模拟频谱复用缓冲（避免每帧 new Array/Uint8Array 造成 GC 压力）
 const SIM_SPECTRUM_BUF = new Uint8Array(64);
+// 真实频谱复用缓冲（analyser.fftSize=128 => frequencyBinCount=64）
+const REAL_SPECTRUM_BUF = new Uint8Array(64);
 
 /**
  * Web Audio 播放引擎（v4：真实频谱）
@@ -27,6 +29,7 @@ export function useAudioEngine(autoNext?: () => void) {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number>(0);
   const graphOkRef = useRef(false);
+  const lastPositionTimeRef = useRef<number>(0);
   // 保存 MediaStreamSource 节点引用，用于卸载时 disconnect（避免 Web Audio 资源泄漏）
   const srcNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
@@ -114,9 +117,8 @@ export function useAudioEngine(autoNext?: () => void) {
       const analyser = analyserRef.current;
       if (analyser && graphOkRef.current) {
         // 真实频谱：复用缓冲区，直接写 bus（不走 store，零分配）
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(data);
-        writeSpectrum(data);
+        analyser.getByteFrequencyData(REAL_SPECTRUM_BUF);
+        writeSpectrum(REAL_SPECTRUM_BUF);
       } else {
         // 回退：模拟频谱（写入复用缓冲，不 setState）
         const audio = audioRef.current;
@@ -295,12 +297,29 @@ export function useAudioEngine(autoNext?: () => void) {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const onTime = () => usePlayerStore.setState({ position: audio.currentTime });
+    const onTime = () => {
+      const now = performance.now();
+      // 将 timeupdate 写入 store 的频率限制到约 5Hz，避免 FullPlayer 等组件每 250ms 重渲染
+      if (now - lastPositionTimeRef.current < 200) return;
+      lastPositionTimeRef.current = now;
+      usePlayerStore.setState({ position: audio.currentTime });
+    };
     const onMeta = () => usePlayerStore.setState({ duration: audio.duration || 0 });
-    const onPlay = () => usePlayerStore.setState({ isPlaying: true });
-    const onPause = () => usePlayerStore.setState({ isPlaying: false });
+    const onPlay = () => {
+      usePlayerStore.setState({ isPlaying: true });
+      // 播放开始时若 RAF 未运行则重启频谱循环
+      if (!rafRef.current) loopSpectrum();
+    };
+    const onPause = () => {
+      usePlayerStore.setState({ isPlaying: false });
+      // 暂停时停止频谱 RAF，避免后台空转
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    };
     const onEnd = () => {
       usePlayerStore.setState({ isPlaying: false });
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
       recordPlayback(true, false); // 自然播完 = 正反馈
       if (autoNext) autoNext();
       else next();
@@ -308,6 +327,8 @@ export function useAudioEngine(autoNext?: () => void) {
     const onError = () => {
       console.error("[audio error]", audio.error);
       usePlayerStore.setState({ isPlaying: false });
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
     };
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onMeta);

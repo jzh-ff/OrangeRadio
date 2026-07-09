@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useVisibleRaf } from "../../hooks/useVisibleRaf";
 
 /**
  * 主题进度条粒子动画（对标 Mineradio 进度条 spark 视觉）。
@@ -16,6 +17,7 @@ import { useEffect, useRef } from "react";
  * 性能与无障碍：
  *   - 单 RAF loop，约 14 粒子 + 1 个 lead head，DPR 缩放，零额外 DOM。
  *   - prefers-reduced-motion: reduce 时只画 lead head（不跑 RAF 漂移）。
+ *   - 使用 useVisibleRaf：后台/不可见时暂停。
  */
 
 interface Props {
@@ -55,7 +57,6 @@ function readCssVar(name: string, fallback: string): string {
 
 export function ProgressParticles({ progress, isPlaying }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rafRef = useRef<number | null>(null);
   const sparksRef = useRef<Spark[]>([]);
   const sizeRef = useRef<{ w: number; h: number; dpr: number }>({ w: 1, h: 22, dpr: 1 });
   const lastTsRef = useRef<number>(0);
@@ -77,68 +78,76 @@ export function ProgressParticles({ progress, isPlaying }: Props) {
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
   }, []);
 
-  // 初始化粒子 + ResizeObserver + RAF
-  useEffect(() => {
+  const resize = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    const parent = canvas.parentElement;
+    if (!parent) return;
+    const rect = parent.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const w = Math.max(1, Math.floor(rect.width));
+    const h = Math.max(1, Math.floor(rect.height));
+    sizeRef.current = { w, h, dpr };
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
 
-    const resize = () => {
-      const parent = canvas.parentElement;
-      if (!parent) return;
-      const rect = parent.getBoundingClientRect();
-      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-      const w = Math.max(1, Math.floor(rect.width));
-      const h = Math.max(1, Math.floor(rect.height));
-      sizeRef.current = { w, h, dpr };
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
+  const seedSparks = () => {
+    const { w, h } = sizeRef.current;
+    const sparks: Spark[] = [];
+    for (let i = 0; i < SPARK_COUNT; i++) {
+      sparks.push({
+        x: Math.random() * w,
+        y: h * (0.25 + Math.random() * 0.5), // 居中带一点抖动
+        r: 0.6 + Math.random() * 1.6,
+        vx: -(4 + Math.random() * 8), // px/s 向左轻微漂
+        amp: 0.6 + Math.random() * 1.4,
+        freq: 0.25 + Math.random() * 0.4,
+        phase: Math.random(),
+        phi: Math.random() * Math.PI * 2,
+        energy: Math.random(),
+      });
+    }
+    sparksRef.current = sparks;
+  };
 
-    const seedSparks = () => {
-      const { w, h } = sizeRef.current;
-      const sparks: Spark[] = [];
-      for (let i = 0; i < SPARK_COUNT; i++) {
-        sparks.push({
-          x: Math.random() * w,
-          y: h * (0.25 + Math.random() * 0.5), // 居中带一点抖动
-          r: 0.6 + Math.random() * 1.6,
-          vx: -(4 + Math.random() * 8), // px/s 向左轻微漂
-          amp: 0.6 + Math.random() * 1.4,
-          freq: 0.25 + Math.random() * 0.4,
-          phase: Math.random(),
-          phi: Math.random() * Math.PI * 2,
-          energy: Math.random(),
-        });
-      }
-      sparksRef.current = sparks;
-    };
-
-    resize();
-    seedSparks();
+  // 初始化 canvas 尺寸 + ResizeObserver
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
     const ro = new ResizeObserver(() => {
       resize();
     });
     if (canvas.parentElement) ro.observe(canvas.parentElement);
 
-    const step = (ts: number) => {
-      const dt = lastTsRef.current === 0 ? 0 : Math.min(0.05, (ts - lastTsRef.current) / 1000);
-      lastTsRef.current = ts;
-      draw(ctx, dt);
-      rafRef.current = window.requestAnimationFrame(step);
-    };
+    resize();
+    seedSparks();
 
-    rafRef.current = window.requestAnimationFrame(step);
     return () => {
-      if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
       ro.disconnect();
     };
   }, []);
+
+  // 使用 useVisibleRaf 接管绘制：后台/不可见时暂停
+  useVisibleRaf(
+    () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const now = performance.now();
+      const dt = lastTsRef.current === 0 ? 0 : Math.min(0.05, (now - lastTsRef.current) / 1000);
+      lastTsRef.current = now;
+      draw(ctx, dt);
+    },
+    { enabled: true, pauseOnHidden: true }
+  );
 
   // draw —— 直接从 ref 取最新状态，避免闭包陷阱
   const draw = (ctx: CanvasRenderingContext2D, dt: number) => {

@@ -108,27 +108,108 @@ impl LibraryDb {
 
     /// 关键词搜索（标题/艺术家/专辑）
     pub fn search(&self, query: &SearchQuery) -> Vec<Track> {
+        let path = match &self.db_path {
+            Some(p) => p.as_ref(),
+            None => {
+                // 内存模式：按老逻辑过滤
+                let kw = query.keyword.to_lowercase();
+                let guard = self.tracks.read();
+                return guard
+                    .iter()
+                    .filter(|t| {
+                        if kw.is_empty() {
+                            return true;
+                        }
+                        t.meta.title.to_lowercase().contains(&kw)
+                            || t.meta.artist.to_lowercase().contains(&kw)
+                            || t.meta
+                                .album
+                                .as_deref()
+                                .unwrap_or("")
+                                .to_lowercase()
+                                .contains(&kw)
+                    })
+                    .skip(((query.page.saturating_sub(1)) as usize) * query.page_size as usize)
+                    .take(query.page_size as usize)
+                    .cloned()
+                    .collect();
+            }
+        };
+        let conn = match Connection::open(path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
         let kw = query.keyword.to_lowercase();
-        if kw.is_empty() {
-            return self.all();
+        let offset = ((query.page.saturating_sub(1)) as usize) * query.page_size as usize;
+        let limit = query.page_size as usize;
+        let sql = if kw.is_empty() {
+            "SELECT data FROM tracks ORDER BY rowid LIMIT ?1 OFFSET ?2"
+        } else {
+            "SELECT data FROM tracks WHERE lower(json_extract(data, '$.meta.title')) LIKE ?1 \
+             OR lower(json_extract(data, '$.meta.artist')) LIKE ?1 \
+             OR lower(json_extract(data, '$.meta.album')) LIKE ?1 \
+             ORDER BY rowid LIMIT ?2 OFFSET ?3"
+        };
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let like = format!("%{}%", kw);
+        let mapper = |r: &rusqlite::Row| -> rusqlite::Result<String> { r.get::<_, String>(0) };
+        let rows = if kw.is_empty() {
+            stmt.query_map(params![limit as i64, offset as i64], mapper)
+        } else {
+            stmt.query_map(params![like, limit as i64, offset as i64], mapper)
+        };
+        match rows {
+            Ok(rs) => rs
+                .filter_map(|r| r.ok())
+                .filter_map(|json| serde_json::from_str::<Track>(&json).ok())
+                .collect(),
+            Err(_) => Vec::new(),
         }
-        let guard = self.tracks.read();
-        guard
-            .iter()
-            .filter(|t| {
-                t.meta.title.to_lowercase().contains(&kw)
-                    || t.meta.artist.to_lowercase().contains(&kw)
-                    || t.meta
-                        .album
-                        .as_deref()
-                        .unwrap_or("")
-                        .to_lowercase()
-                        .contains(&kw)
-            })
-            .skip(((query.page.saturating_sub(1)) as usize) * query.page_size as usize)
-            .take(query.page_size as usize)
-            .cloned()
-            .collect()
+    }
+
+    /// 分页查询曲目（优先走 SQLite，避免全内存克隆）
+    pub fn query_paged(&self, offset: usize, limit: usize, filter: Option<&str>) -> Vec<Track> {
+        let path = match &self.db_path {
+            Some(p) => p.as_ref(),
+            None => {
+                let guard = self.tracks.read();
+                let mut tracks = guard.iter().cloned().collect::<Vec<_>>();
+                match filter {
+                    Some("liked") => tracks.retain(|t| t.liked),
+                    Some("local") => {
+                        tracks.retain(|t| t.source_kind == orange_core::source::SourceKind::Local)
+                    }
+                    _ => {}
+                }
+                return tracks.into_iter().skip(offset).take(limit).collect();
+            }
+        };
+        let conn = match Connection::open(path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let sql = match filter {
+            Some("liked") => "SELECT data FROM tracks WHERE json_extract(data, '$.liked') = 1 ORDER BY rowid LIMIT ?1 OFFSET ?2",
+            Some("local") => "SELECT data FROM tracks WHERE json_extract(data, '$.source_kind') = 'local' ORDER BY rowid LIMIT ?1 OFFSET ?2",
+            _ => "SELECT data FROM tracks ORDER BY rowid LIMIT ?1 OFFSET ?2",
+        };
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params![limit as i64, offset as i64], |r| {
+            r.get::<_, String>(0)
+        });
+        match rows {
+            Ok(rs) => rs
+                .filter_map(|r| r.ok())
+                .filter_map(|json| serde_json::from_str::<Track>(&json).ok())
+                .collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// 写入本地曲目到 SQLite（增量：先删本地曲目再插，保留跨源收藏）
@@ -279,19 +360,35 @@ impl LibraryDb {
         Ok(())
     }
 
-    /// 获取歌单内全部歌曲
-    pub fn playlist_tracks(&self, playlist_id: &str) -> orange_core::Result<Vec<Track>> {
+    /// 获取歌单内歌曲（支持分页）
+    pub fn playlist_tracks(
+        &self,
+        playlist_id: &str,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> orange_core::Result<Vec<Track>> {
         let path = match &self.db_path {
             Some(p) => p.as_ref(),
             None => return Ok(vec![]),
         };
         let conn = Connection::open(path).map_err(sqlite_err)?;
-        let mut stmt = conn
-            .prepare("SELECT t.data FROM playlist_tracks pt JOIN tracks t ON pt.track_id=t.id WHERE pt.playlist_id=?1 ORDER BY pt.added_at")
-            .map_err(sqlite_err)?;
-        let rows = stmt
-            .query_map(params![playlist_id], |r| r.get::<_, String>(0))
-            .map_err(sqlite_err)?;
+        let sql = match (offset, limit) {
+            (Some(_), Some(_)) => {
+                "SELECT t.data FROM playlist_tracks pt JOIN tracks t ON pt.track_id=t.id \
+                 WHERE pt.playlist_id=?1 ORDER BY pt.added_at LIMIT ?2 OFFSET ?3"
+            }
+            _ => {
+                "SELECT t.data FROM playlist_tracks pt JOIN tracks t ON pt.track_id=t.id \
+                 WHERE pt.playlist_id=?1 ORDER BY pt.added_at"
+            }
+        };
+        let mut stmt = conn.prepare(sql).map_err(sqlite_err)?;
+        let mapper = |r: &rusqlite::Row| -> rusqlite::Result<String> { r.get::<_, String>(0) };
+        let rows = match (offset, limit) {
+            (Some(o), Some(l)) => stmt.query_map(params![playlist_id, l as i64, o as i64], mapper),
+            _ => stmt.query_map(params![playlist_id], mapper),
+        }
+        .map_err(sqlite_err)?;
         let mut tracks = Vec::new();
         for row in rows {
             let json = row.map_err(sqlite_err)?;
@@ -478,6 +575,47 @@ impl LibraryDb {
         Ok(())
     }
 
+    /// 清理播放历史：保留最近 keep_days 天且最多 max_rows 条
+    fn prune_play_history(
+        conn: &Connection,
+        keep_days: i64,
+        max_rows: usize,
+    ) -> orange_core::Result<()> {
+        let cutoff = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64 - keep_days * 24 * 60 * 60)
+            .unwrap_or(0);
+        conn.execute(
+            "DELETE FROM play_history WHERE played_at < ?1",
+            params![cutoff],
+        )
+        .map_err(sqlite_err)?;
+        // 若仍超过 max_rows，删除最旧的
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM play_history", [], |r| r.get(0))
+            .map_err(sqlite_err)?;
+        if count > max_rows as i64 {
+            let to_delete = count - max_rows as i64;
+            conn.execute(
+                "DELETE FROM play_history WHERE id IN (SELECT id FROM play_history ORDER BY played_at ASC LIMIT ?1)",
+                params![to_delete],
+            )
+            .map_err(sqlite_err)?;
+        }
+        Ok(())
+    }
+
+    /// 月度 VACUUM（可选，由调用方控制频次）
+    pub fn vacuum_play_history(&self) -> orange_core::Result<()> {
+        let path = match &self.db_path {
+            Some(p) => p.as_ref(),
+            None => return Ok(()),
+        };
+        let conn = Connection::open(path).map_err(sqlite_err)?;
+        conn.execute("VACUUM", []).map_err(sqlite_err)?;
+        Ok(())
+    }
+
     /// 喜欢的歌曲
     pub fn liked_tracks(&self) -> Vec<Track> {
         self.tracks
@@ -511,6 +649,12 @@ impl LibraryDb {
             params![track_id, now, played_secs, total_secs, completed as i32, skipped as i32],
         )
         .map_err(sqlite_err)?;
+        // 偶尔清理，避免历史记录无限增长
+        if now % 50 == 0 {
+            if let Err(e) = Self::prune_play_history(&conn, 90, 5000) {
+                tracing::warn!("清理播放历史失败: {}", e);
+            }
+        }
         Ok(())
     }
 

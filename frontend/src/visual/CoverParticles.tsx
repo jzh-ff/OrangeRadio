@@ -601,7 +601,15 @@ function CoverCloud({ positions, uvs, seeds, coverTexture, hasCover, mouseRef, p
 
 export function CoverParticles() {
   const currentTrack = usePlayerStore((s) => s.currentTrack) as any;
-  const coverResolution = usePlayerStore((s) => s.visualParams.coverResolution);
+  const rawCoverResolution = usePlayerStore((s) => s.visualParams.coverResolution);
+  const [coverResolution, setCoverResolution] = useState(rawCoverResolution);
+
+  // 对 coverResolution 滑块做 200ms debounce，避免拖动时每秒重建几何体
+  useEffect(() => {
+    const t = setTimeout(() => setCoverResolution(rawCoverResolution), 200);
+    return () => clearTimeout(t);
+  }, [rawCoverResolution]);
+
   const grid = gridForResolution(coverResolution);
 
   // 走 Rust cover_proxy 拉本地缓存（绕开浏览器 CORS）

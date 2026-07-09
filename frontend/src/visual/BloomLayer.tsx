@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -6,6 +6,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { usePlayerStore } from "../stores/playerStore";
 import { readBeat } from "../stores/spectrumBus";
+import { useVisibleRaf } from "../hooks/useVisibleRaf";
 
 /**
  * 共享 Bloom 后期处理组件（仅 BeatParticles preset 用）
@@ -20,6 +21,14 @@ export function BloomLayer({ bloomScale = 0.35 }: { bloomScale?: number }) {
   const { gl, scene, camera, size } = useThree();
   const composerRef = useRef<EffectComposer | null>(null);
   const bloomRef = useRef<UnrealBloomPass | null>(null);
+  const bloomStrength = usePlayerStore((s) => s.visualParams.bloomStrength);
+  const [visible, setVisible] = useState(!document.hidden);
+
+  useEffect(() => {
+    const onVisibility = () => setVisible(!document.hidden);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   useEffect(() => {
     const composer = new EffectComposer(gl);
@@ -46,10 +55,9 @@ export function BloomLayer({ bloomScale = 0.35 }: { bloomScale?: number }) {
   }, [size]);
 
   useFrame(() => {
+    if (!visible || bloomStrength === 0) return;
     const beat = readBeat();
-    const { bloomStrength } = usePlayerStore.getState().visualParams;
     if (bloomRef.current) {
-      // 节拍 hit 时 bloom 脉冲（强度按 bloomScale 收敛）
       bloomRef.current.strength =
         bloomStrength * bloomScale + beat.intensity * 0.35 * bloomScale;
     }

@@ -85,15 +85,19 @@ pub async fn library_tracks(
     limit: Option<usize>,
     filter: Option<String>,
 ) -> Result<Vec<Track>, String> {
-    let mut tracks = state.library.all();
-    match filter.as_deref() {
-        Some("liked") => tracks.retain(|t| t.liked),
-        Some("local") => tracks.retain(|t| t.source_kind == orange_core::source::SourceKind::Local),
-        _ => {}
-    }
     match (offset, limit) {
-        (Some(o), Some(l)) => Ok(tracks.into_iter().skip(o).take(l).collect()),
-        _ => Ok(tracks),
+        (Some(o), Some(l)) => Ok(state.library.query_paged(o, l, filter.as_deref())),
+        _ => {
+            let mut tracks = state.library.all();
+            match filter.as_deref() {
+                Some("liked") => tracks.retain(|t| t.liked),
+                Some("local") => {
+                    tracks.retain(|t| t.source_kind == orange_core::source::SourceKind::Local)
+                }
+                _ => {}
+            }
+            Ok(tracks)
+        }
     }
 }
 
@@ -838,13 +842,11 @@ pub async fn playlist_tracks(
 ) -> Result<Vec<Track>, String> {
     let library = state.library.clone();
     // SQLite JOIN + 分页在阻塞线程里完成
-    let mut tracks = tokio::task::spawn_blocking(move || library.playlist_tracks(&playlist_id))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-    if let (Some(o), Some(l)) = (offset, limit) {
-        tracks = tracks.into_iter().skip(o).take(l).collect();
-    }
+    let tracks =
+        tokio::task::spawn_blocking(move || library.playlist_tracks(&playlist_id, offset, limit))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
     Ok(tracks)
 }
 
@@ -1313,6 +1315,15 @@ pub async fn search_all(
     Ok(all)
 }
 
+/// 截断字符串，用于日志输出避免大对象
+fn trunc(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n).collect::<String>() + "..."
+    }
+}
+
 // ===== Spotify 命令 =====
 
 #[tauri::command]
@@ -1717,7 +1728,7 @@ pub async fn analyze_beatmap(
     if let Ok(s) = serde_json::to_string(&beatmap) {
         let _ = std::fs::write(&cache_file, s);
     }
-    tracing::info!(
+    tracing::debug!(
         "节拍图谱分析完成: {} 个 hit, BPM={:.1}",
         beatmap.hits.len(),
         beatmap.bpm
@@ -1826,9 +1837,9 @@ pub async fn cover_proxy(app: tauri::AppHandle, url: String) -> Result<String, S
         .await
         .map_err(|e| format!("读取封面字节失败: {e}"))?;
     std::fs::write(&cache_file, &bytes).map_err(|e| format!("写封面缓存失败: {e}"))?;
-    tracing::info!(
+    tracing::debug!(
         "封面已下载: {} ({} bytes) → {}",
-        url,
+        trunc(&url, 120),
         bytes.len(),
         cache_file.display()
     );

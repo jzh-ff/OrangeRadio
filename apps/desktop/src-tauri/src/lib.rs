@@ -10,11 +10,12 @@ use tauri::{Emitter, Manager};
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-/// 日志目录（相对于应用工作目录）
-fn log_dir() -> PathBuf {
-    let dir = std::env::current_dir()
+/// 日志目录（使用应用数据目录，避免 macOS 从 Finder 启动时 CWD 为 / 导致写到根目录）
+fn log_dir(app: &tauri::AppHandle) -> PathBuf {
+    let dir = app
+        .path()
+        .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
-        .join(".orangeradio")
         .join("logs");
     std::fs::create_dir_all(&dir).ok();
     dir
@@ -22,11 +23,11 @@ fn log_dir() -> PathBuf {
 
 /// 初始化日志：控制台 + 文件双输出
 ///
-/// 日志文件位置：`<工作目录>/.orangeradio/logs/orangeradio.log`
+/// 日志文件位置：`<app_data_dir>/logs/orangeradio.log`
 /// 按天滚动（每天一个文件，如 orangeradio.log.2026-07-02）。
 /// 启动时会在控制台打印日志文件路径。
-fn init_logging() -> (PathBuf, tracing_appender::non_blocking::WorkerGuard) {
-    let dir = log_dir();
+fn init_logging(app: &tauri::AppHandle) -> (PathBuf, tracing_appender::non_blocking::WorkerGuard) {
+    let dir = log_dir(app);
 
     // 文件 appender：按天滚动，前缀 orangeradio.log.
     let file_appender = rolling::daily(&dir, "orangeradio.log");
@@ -53,14 +54,10 @@ fn init_logging() -> (PathBuf, tracing_appender::non_blocking::WorkerGuard) {
 
 /// 启动应用
 pub fn run() {
-    // 初始化日志（guard 必须保活，否则文件写入会停止）
-    let (log_dir, _guard) = init_logging();
-
-    tracing::info!("========================================");
-    tracing::info!("OrangeRadio v{} 启动中...", orange_core::VERSION);
-    tracing::info!("日志目录: {}", log_dir.display());
-    tracing::info!("========================================");
-
+    // 先建一个最小 AppHandle 用于日志目录（Tauri generate_context 后才会进入 setup）
+    // 这里先初始化一个占位；真正启动后再用 app_handle 重新初始化日志。
+    // 但 tracing 只能 init 一次，因此把 init_logging 移到 setup 里。
+    // 保留 guard 在 setup 闭包内。
     // 注册自定义 URI scheme：`orangeradio://<host>/<path>?<query>`
     //   - 前端 <audio src="orangeradio://app/qqstream?url=..."> 直接能播
     //   - handler 在 Rust runtime 拉远端流，绕开 WebView CORS
@@ -77,7 +74,7 @@ pub fn run() {
             // handler 是同步闭包，且 WebView2 的 WebResourceRequested 回调在 main thread
             // （无 Tokio runtime context）→ tokio::spawn 会 panic（与 commands.rs:1472 同坑）。
             // 必须用 tauri::async_runtime::spawn（内部 RUNTIME.get_or_init，任意线程可调）。
-            // Tauri 2 该闭包第一参数是 UriSchemeContext<'_, R>，.app_handle() 拿 &AppHandle<R>，
+            // Tauri 2 该闭包第一参数是 UriSchemeContext'<_, R>，.app_handle() 拿 &AppHandle<R>，
             // 克隆 owned handle 才能 move 进 'static task。
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -90,7 +87,14 @@ pub fn run() {
     let builder = orange_tauri::commands::register_all(builder);
 
     builder
-        .setup(setup_tray)
+        .setup(|app| {
+            let (log_dir, _guard) = init_logging(app.handle());
+            tracing::info!("========================================");
+            tracing::info!("OrangeRadio v{} 启动中...", orange_core::VERSION);
+            tracing::info!("日志目录: {}", log_dir.display());
+            tracing::info!("========================================");
+            setup_tray(app)
+        })
         .run(tauri::generate_context!())
         .expect("OrangeRadio 启动失败");
 }

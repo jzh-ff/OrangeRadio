@@ -158,6 +158,10 @@ function ParticleCloud() {
   const pointsRef = useRef<THREE.Points>(null);
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const count = usePlayerStore((s) => s.visualParams.particleCount);
+  const colorTheme = usePlayerStore((s) => s.visualParams.colorTheme);
+  const dominantColor = usePlayerStore((s) => s.dominantColor);
+  const pointSize = usePlayerStore((s) => s.visualParams.pointSize);
+  const speed = usePlayerStore((s) => s.visualParams.speed);
 
   // 粒子几何属性（球面分布 + 随机速度/大小/种子）
   const { positions, sizes, seeds, velocities } = useMemo(() => {
@@ -199,7 +203,6 @@ function ParticleCloud() {
 
   useFrame((state) => {
     const beat = readBeat();
-    const { colorTheme } = usePlayerStore.getState().visualParams;
 
     if (matRef.current) {
       const u = matRef.current.uniforms;
@@ -207,15 +210,11 @@ function ParticleCloud() {
       u.uBass.value = beat.bass;
       u.uMid.value = beat.mid;
       u.uTreble.value = beat.treble;
-      // P11 fx 参数注入（对标 MineRadio syncFxUniforms）
-      u.uPointSize.value = usePlayerStore.getState().visualParams.pointSize;
-      u.uSpeed.value = usePlayerStore.getState().visualParams.speed;
+      u.uPointSize.value = pointSize;
+      u.uSpeed.value = speed;
       u.uBeat.value = beat.intensity;
-      // 颜色：按 mid 能量在主题 3 档间插值
-      // auto 主题：从封面主色推导 3 档调色板；dominantColor 为 null 时退回橙色默认
-      const st = usePlayerStore.getState();
       const palette = colorTheme === "auto"
-        ? (st.dominantColor ? paletteFromDominant(st.dominantColor) : THEME_PALETTES.orange)
+        ? (dominantColor ? paletteFromDominant(dominantColor) : THEME_PALETTES.orange)
         : THEME_PALETTES[colorTheme];
       const t = beat.mid;
       const rgb = t < 0.5
@@ -261,13 +260,12 @@ function CinematicCamera() {
   const baseZ = 18;
   const baseFOV = 60;
   const shakeOffset = useRef({ x: 0, y: 0 });
+  const cameraShake = usePlayerStore((s) => s.visualParams.cameraShake);
+  const cinemaShake = usePlayerStore((s) => s.visualParams.cinemaShake);
 
   useFrame((state) => {
     const bc = usePlayerStore.getState().beatCam;
     const beat = readBeat();
-    const vp = usePlayerStore.getState().visualParams;
-    const cameraShakeOn = vp.cameraShake;       // 旧布尔开关：是否随机晃动
-    const cinemaShakeAmt = Math.max(0, Math.min(1, vp.cinemaShake)); // 0~1，电影镜头幅度
     const t = state.clock.elapsedTime;
 
     // ===== 1. 用户 DIY 轨道 + 缓速漂浮（保留旧行为） =====
@@ -279,10 +277,10 @@ function CinematicCamera() {
     let targetY = Math.cos(t * 0.07 + userPhi) * orbitR * 0.5 + 2 + userPhi * 3;
 
     // ===== 2. ★ BeatCam 5 通道径向推近（对标 Mineradio radiusKick × cameraShake × 0.52） =====
-    let targetZ = baseZ - bc.radiusKick * cinemaShakeAmt * 0.52 + userRad;
+    let targetZ = baseZ - bc.radiusKick * cinemaShake * 0.52 + userRad;
 
     // ===== 3. 兜底：cameraShake 开关打开时附加随机晃动（向后兼容老视觉） =====
-    if (cameraShakeOn) {
+    if (cameraShake) {
       const shake = beat.intensity * 0.6;
       shakeOffset.current.x = Math.sin(t * 13.0) * shake;
       shakeOffset.current.y = Math.cos(t * 11.0) * shake;
@@ -300,15 +298,15 @@ function CinematicCamera() {
     camera.lookAt(0, 0, 0);
 
     // ===== 4. ★ 5 通道旋转 + FOV punch（对标 Mineradio 3925-3939） =====
-    if (cinemaShakeAmt > 0) {
+    if (cinemaShake > 0) {
       camera.rotation.order = "YXZ";
-      camera.rotation.x = bc.phiKick * cinemaShakeAmt * 0.45;
-      camera.rotation.y = bc.thetaKick * cinemaShakeAmt * 0.45;
-      camera.rotation.z = bc.rollKick * cinemaShakeAmt;
+      camera.rotation.x = bc.phiKick * cinemaShake * 0.45;
+      camera.rotation.y = bc.thetaKick * cinemaShake * 0.45;
+      camera.rotation.z = bc.rollKick * cinemaShake;
       // FOV punch（透视相机才有 fov 字段）
       const persp = camera as THREE.PerspectiveCamera;
       if (persp.isPerspectiveCamera) {
-        const cameraPunch = (bc.punch * 0.54 + bc.radiusKick * 0.16) * cinemaShakeAmt;
+        const cameraPunch = (bc.punch * 0.54 + bc.radiusKick * 0.16) * cinemaShake;
         const targetFov = baseFOV - cameraPunch * 1.75;
         persp.fov = persp.fov + (targetFov - persp.fov) * (targetFov < persp.fov ? 0.24 : 0.12);
         persp.updateProjectionMatrix();

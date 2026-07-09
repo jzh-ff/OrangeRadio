@@ -102,7 +102,7 @@ mod tests {
         let t = make_track("Playlist Song", "Artist", "/playlist/song.flac");
         db.add_to_playlist(&pl_id, &t).unwrap();
 
-        let tracks = db.playlist_tracks(&pl_id).unwrap();
+        let tracks = db.playlist_tracks(&pl_id, None, None).unwrap();
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].meta.title, "Playlist Song");
 
