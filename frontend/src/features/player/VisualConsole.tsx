@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { usePlayerStore, type ColorTheme } from "../../stores/playerStore";
+import { usePlayerStore, type ColorTheme, DEFAULT_VISUAL_PARAMS } from "../../stores/playerStore";
 import {
   loadArchives, createArchive, saveArchive, renameArchive, removeArchive,
   applyArchive, exportArchive, importArchiveFromFile, type FxArchive,
@@ -97,11 +97,8 @@ export function VisualConsole() {
   }, []);
 
   const reset = () => {
-    // 恢复默认（保留 colorTheme + cameraShake，重置 fx 参数）
-    setVisualParams({
-      intensity: 0.85, depth: 1.0, coverResolution: 1.0, cinemaShake: 0.5,
-      pointSize: 1.0, speed: 1.0, twist: 0, colorTension: 1.1, scatter: 0, bgFade: 0.2,
-    });
+    // 恢复视觉参数到出厂默认值
+    setVisualParams({ ...DEFAULT_VISUAL_PARAMS });
   };
 
   return (
@@ -112,11 +109,16 @@ export function VisualConsole() {
     >
       <div className="vc-panel__head">
         <span className="vc-panel__title">视觉控制台</span>
-        <button
-          className="vc-hotkey-btn"
-          onClick={() => usePlayerStore.getState().setHotkeysModalOpen(true)}
-          title="热键设置"
-        >热键</button>
+        <div className="vc-panel__tools">
+          <button className="vc-reset-btn vc-reset-btn--head" onClick={reset} title="恢复所有视觉参数为默认值">
+            恢复默认
+          </button>
+          <button
+            className="vc-hotkey-btn"
+            onClick={() => usePlayerStore.getState().setHotkeysModalOpen(true)}
+            title="热键设置"
+          >热键</button>
+        </div>
       </div>
 
       {/* Tab 条 */}

@@ -2,6 +2,7 @@ import { useRef, useMemo } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePlayerStore, type ColorTheme } from "../stores/playerStore";
+import { readBeat } from "../stores/spectrumBus";
 import { BloomLayer } from "./BloomLayer";
 
 /** DIY 运镜：用户拖拽/滚轮/双击控制（对标 MineRadio orbit + freeCamera）
@@ -24,7 +25,7 @@ const orbit = {
  *   - uniform uBass（低频）驱动粒子膨胀；uTreble（高频）驱动闪烁；uBeat（节拍）驱动爆发
  *   - 程序化电影镜头：缓慢轨道 + 节拍推拉 + 可选晃动
  *
- * 数据源：usePlayerStore.beat（由 useBeatDetector 每帧更新）
+ * 数据源：spectrumBus readBeat()（由 useBeatDetector / useAudioEngine 每帧更新）
  */
 
 /** 颜色主题调色板：每个主题 3 档（暗→中→亮），用于按 mid 能量插值 */
@@ -126,11 +127,12 @@ const vertexShader = /* glsl */ `
     gl_Position = projectionMatrix * mvPosition;
 
     // 低频放大粒子 + 节拍脉冲 + 中频膨胀（对标 MineRadio uMid 驱动）+ uPointSize 倍率
-    float sizeMul = (1.0 + uBass * 2.5 + uBeat * 2.0 + uMid * 1.5) * uPointSize;
+    // 系数收敛，避免 additive 累积成白屏
+    float sizeMul = (1.0 + uBass * 1.8 + uBeat * 1.4 + uMid * 1.0) * uPointSize;
     gl_PointSize = aSize * sizeMul * (320.0 / max(0.1, -mvPosition.z));
     // 高频驱动透明度闪烁
     vAlpha = clamp(0.35 + uTreble * 0.65 + uBeat * 0.3, 0.0, 1.0);
-    vGlow = 0.6 + uBass * 0.4 + uBeat * 0.5;
+    vGlow = 0.45 + uBass * 0.3 + uBeat * 0.35;
   }
 `;
 
@@ -146,7 +148,7 @@ const fragmentShader = /* glsl */ `
     // 软边发光：中心亮、边缘平滑衰减
     float glow = smoothstep(0.5, 0.0, d);
     float core = smoothstep(0.18, 0.0, d);
-    vec3 col = uColor * vGlow + vec3(core * 0.4);
+    vec3 col = uColor * vGlow + vec3(core * 0.25);
     gl_FragColor = vec4(col, glow * vAlpha);
   }
 `;
@@ -196,7 +198,7 @@ function ParticleCloud() {
   const colorRef = useRef(new THREE.Color(0xff6b1a));
 
   useFrame((state) => {
-    const beat = usePlayerStore.getState().beat;
+    const beat = readBeat();
     const { colorTheme } = usePlayerStore.getState().visualParams;
 
     if (matRef.current) {
@@ -262,7 +264,7 @@ function CinematicCamera() {
 
   useFrame((state) => {
     const bc = usePlayerStore.getState().beatCam;
-    const beat = usePlayerStore.getState().beat;
+    const beat = readBeat();
     const vp = usePlayerStore.getState().visualParams;
     const cameraShakeOn = vp.cameraShake;       // 旧布尔开关：是否随机晃动
     const cinemaShakeAmt = Math.max(0, Math.min(1, vp.cinemaShake)); // 0~1，电影镜头幅度

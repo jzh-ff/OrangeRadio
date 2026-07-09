@@ -50,6 +50,8 @@ export const engineRef: {
   playTrack: (t: { source_track_id: string }, index: number) => void;
   /** 音源解析器：网易云/QQ需要先获取播放URL，设为null表示直接用source_track_id */
   resolver: ((trackId: string) => Promise<string>) | null;
+  /** 获取当前音频播放时间（秒），用于节拍相机事件锚点 */
+  getCurrentTime: () => number;
 } = {
   playPath: () => {},
   toggle: () => {},
@@ -60,6 +62,7 @@ export const engineRef: {
   advance: () => {},
   playTrack: () => {},
   resolver: null,
+  getCurrentTime: () => 0,
 };
 
 // 全局播放请求序号：防止异步竞态（快速切歌时旧请求覆盖新请求）
@@ -74,7 +77,9 @@ export default function App() {
   const fullPlayerOpen = usePlayerStore((s) => s.fullPlayerOpen);
   const mainOpacity = usePlayerStore((s) => s.visualParams.mainOpacity);
   const engine = useAudioEngine(() => engineRef.advance());
-  // 全局节拍检测（驱动粒子等视觉）
+  // 全局节拍检测（驱动粒子等视觉）。
+  // 不在这里传 getCurrentTime：useBeatDetector 内部通过 engineRef.getCurrentTime() 调用，
+  // 避免 effect [] 闭包陈旧永远拿到 (() => 0) noop 函数。
   useBeatDetector();
   // 桌面歌词桥：主窗口推播放状态给 lyric-overlay，接收悬浮窗控件命令
   useLyricBridge({
@@ -101,35 +106,46 @@ export default function App() {
   }, []);
 
   // 同步窗口最大化/全屏状态到 body.class（驱动 global.css 的圆角去除规则）
-  // —— 之前由 TitleBar.tsx 维护；TitleBar 移除后这里补上，否则全屏时四角还是圆角
+  // —— 之前由 TitleBar.tsx 维护；TitleBar 移除后这里补上，否则全屏/最大化时四角还是圆角
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let rafId = 0;
-    const applyMaximizedClass = async () => {
+    const applyWindowStateClasses = async () => {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
         const max = await win.isMaximized();
+        const full = await win.isFullscreen();
         document.body.classList.toggle("window-maximized", max);
-        // 监听 resize（最大化/还原都会触发）
+        document.body.classList.toggle("window-fullscreen", full);
+        // 若用户通过系统快捷键退出全屏，沉浸模式也应同步退出
+        if (!full && usePlayerStore.getState().immersiveMode) {
+          usePlayerStore.getState().setImmersiveMode(false);
+        }
+        // 监听 resize（最大化/还原/全屏切换都会触发）
         unlisten = await win.onResized(async () => {
           // 用 rAF 合并频繁的 resize 事件
           if (rafId) cancelAnimationFrame(rafId);
           rafId = requestAnimationFrame(async () => {
             rafId = 0;
             const m = await win.isMaximized();
+            const f = await win.isFullscreen();
             document.body.classList.toggle("window-maximized", m);
+            document.body.classList.toggle("window-fullscreen", f);
+            if (!f && usePlayerStore.getState().immersiveMode) {
+              usePlayerStore.getState().setImmersiveMode(false);
+            }
           });
         });
       } catch {
         // 非 Tauri 环境（开发期浏览器预览）忽略
       }
     };
-    void applyMaximizedClass();
+    void applyWindowStateClasses();
     return () => {
       unlisten?.();
       if (rafId) cancelAnimationFrame(rafId);
-      document.body.classList.remove("window-maximized");
+      document.body.classList.remove("window-maximized", "window-fullscreen");
     };
   }, []);
   // 局内热键监听 + 全局热键注册（应用启动时启动，卸载时清理）
@@ -212,6 +228,7 @@ export default function App() {
       }
     };
     engineRef.setVol = engine.setVolume;
+    engineRef.getCurrentTime = engine.getCurrentTime;
     // next/prev 传入 playTrack 作为播放回调（带 resolver 支持）
     engineRef.advance = () => engine.next(engineRef.playTrack);
     engineRef.next = () => {

@@ -6,6 +6,7 @@ import { CoverParticles } from "../../visual/CoverParticles";
 import { BeatParticles } from "../../visual/BeatParticles";
 import { LyricStage3D } from "../../visual/LyricStage3D";
 import { PresetStage } from "../../visual/PresetStage";
+import { useLyricMotion } from "./useLyricMotion";
 import { FullPlayerRightDrawer } from "./FullPlayerRightDrawer";
 import { useLyrics } from "./useLyrics";
 import { getCoverUrl } from "./useCover";
@@ -106,6 +107,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
 
   // ===== 添加到歌单弹窗 =====
   const [showAddDialog, setShowAddDialog] = useState(false);
+
+  /** cinema 舞台歌词 mount 节点 */
+  const cinemaStageRef = useRef<HTMLDivElement | null>(null);
+  useLyricMotion(cinemaStageRef, { mode: "cinema" });
 
   // 切歌时提取封面主色 → 写入 store（驱动 cinema 模式 CoverParticles / BeatParticles auto 主题）
   useDominantColor(currentTrack);
@@ -379,7 +384,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                 return (
                   <>
                     {/* 主大字：当前行歌词字面，OrangeRadio 入场 + 冷调薄荷扫光 */}
-                    <div className="fp-cinema-stage__main">
+                    <div ref={cinemaStageRef} className="fp-cinema-stage__main">
                       <div className="fp-cinema-stage__time">{fmtLyricTime(cur.time)}</div>
                       <div className="fp-cinema-stage__text-wrap">
                         <div

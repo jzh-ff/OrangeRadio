@@ -154,7 +154,7 @@ export interface VisualParams {
   wallpaperDim: number;
   // ===== 沉浸模式设置 =====
   /** 沉浸模式背景源 */
-  immersiveBg: "cover" | "wallpaper" | "particles" | "solid";
+  immersiveBg: "cover" | "cover-particles" | "wallpaper" | "particles" | "solid";
   /** 沉浸模式歌词字号 */
   immersiveLyricSize: "sm" | "md" | "lg" | "xl";
   /** 沉浸模式歌词对齐 */
@@ -183,53 +183,55 @@ export interface VisualParams {
 /** 全屏播放页布局模式 */
 export type FullLayout = "immersive" | "lyric-stream" | "triple" | "rhythmic-album" | "rhythmic-particles";
 
+/** 视觉参数默认值（用于初始加载 & 视觉控制台「恢复默认」） */
+export const DEFAULT_VISUAL_PARAMS: VisualParams = {
+  sensitivity: 1.4,
+  particleCount: 2200,
+  bloomStrength: 1.1,
+  colorTheme: "orange",
+  cameraShake: true,
+  preset: 0,
+  intensity: 0.85,
+  depth: 1.0,
+  coverResolution: 1.0,
+  cinemaShake: 0.5,
+  pointSize: 1.0,
+  speed: 1.0,
+  twist: 0,
+  colorTension: 1.1,
+  scatter: 0,
+  bgFade: 0.2,
+  cinema: true,
+  bloom: true,
+  edge: false,
+  lyricGlow: true,
+  lyricGlowBeat: true,
+  wallpaperOpacity: 0.6,
+  wallpaperBlur: 8,
+  wallpaperScale: 1.05,
+  wallpaperDim: 0.3,
+  sidebarOpacity: 0.6,
+  playerBarOpacity: 0.6,
+  mainOpacity: 0.5,
+  fullPlayerOpacity: 0.5,
+  // ===== 沉浸模式默认 =====
+  immersiveBg: "cover-particles",
+  immersiveLyricSize: "xl",
+  immersiveLyricAlign: "center",
+  immersiveShowTranslation: true,
+  immersiveSolidColor: "#0a0a0f",
+  immersiveCoverBlur: true,
+  lyricColor: "#fff7e0",
+  lyricColorAuto: true,
+};
+
 /** 从 localStorage 读取视觉参数，合并默认值（对标 MineRadio fxDefaults） */
 function loadVisualParams(): VisualParams {
-  const def: VisualParams = {
-    sensitivity: 1.4,
-    particleCount: 2200,
-    bloomStrength: 1.1,
-    colorTheme: "orange",
-    cameraShake: true,
-    preset: 0,
-    intensity: 0.85,
-    depth: 1.0,
-    coverResolution: 1.0,
-    cinemaShake: 0.5,
-    pointSize: 1.0,
-    speed: 1.0,
-    twist: 0,
-    colorTension: 1.1,
-    scatter: 0,
-    bgFade: 0.2,
-    cinema: true,
-    bloom: true,
-    edge: false,
-    lyricGlow: true,
-    lyricGlowBeat: true,
-    wallpaperOpacity: 0.6,
-    wallpaperBlur: 8,
-    wallpaperScale: 1.05,
-    wallpaperDim: 0.3,
-    sidebarOpacity: 0.6,
-    playerBarOpacity: 0.6,
-    mainOpacity: 0.5,
-    fullPlayerOpacity: 0.5,
-    // ===== 沉浸模式默认 =====
-    immersiveBg: "cover",
-    immersiveLyricSize: "xl",
-    immersiveLyricAlign: "center",
-    immersiveShowTranslation: true,
-    immersiveSolidColor: "#0a0a0f",
-    immersiveCoverBlur: true,
-    lyricColor: "#fff7e0",
-    lyricColorAuto: true,
-  };
   try {
     const raw = localStorage.getItem("orangeradio_visual_params");
-    if (raw) return { ...def, ...JSON.parse(raw) };
+    if (raw) return { ...DEFAULT_VISUAL_PARAMS, ...JSON.parse(raw) };
   } catch { /* ignore */ }
-  return def;
+  return DEFAULT_VISUAL_PARAMS;
 }
 
 /** 触发"重新登录"的音源 key（toast 按钮设值，view listen 后自动切到扫码 UI） */

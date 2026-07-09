@@ -1,10 +1,11 @@
 /**
  * 沉浸模式背景层
  *
- * 根据 visualParams.immersiveBg 渲染四种背景之一：
- * - cover: 当前曲目封面（可切换模糊/清晰，异步走 cover_proxy 避免 Tauri 跨域拦截）
+ * 根据 visualParams.immersiveBg 渲染背景之一：
+ * - cover-particles: 封面粒子（MineRadio emily 效果）
+ * - cover: 当前曲目封面静态图
  * - wallpaper: 复用 wallpaperStore 的激活壁纸
- * - particles: BeatParticles 动态粒子
+ * - particles: BeatParticles 节奏粒子
  * - solid: 纯色背景
  */
 import { useEffect, useState } from "react";
@@ -37,6 +38,13 @@ export function ImmersiveBackground() {
   }, [currentTrack]);
 
   switch (vp.immersiveBg) {
+    case "cover-particles":
+      return (
+        <div className="immersive__bg immersive__bg--cover-particles">
+          <CoverParticles />
+          <div className="immersive__bg-dim immersive__bg-dim--particles" />
+        </div>
+      );
     case "wallpaper": {
       if (!activeWallpaper) {
         return (
@@ -60,6 +68,7 @@ export function ImmersiveBackground() {
       return (
         <div className="immersive__bg immersive__bg--particles">
           <BeatParticles />
+          <div className="immersive__bg-dim immersive__bg-dim--particles" />
         </div>
       );
     case "solid":

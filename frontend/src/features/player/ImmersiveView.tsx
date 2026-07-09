@@ -14,6 +14,7 @@ import { usePlayerStore } from "../../stores/playerStore";
 import { useLyrics } from "./useLyrics";
 import { getCoverUrl } from "./useCover";
 import { engineRef } from "../../App";
+import { useLyricMotion } from "./useLyricMotion";
 import { ImmersiveBackground } from "./immersive/ImmersiveBackground";
 import { ImmersiveControls } from "./immersive/ImmersiveControls";
 import "../../styles/immersive.css";
@@ -75,14 +76,15 @@ export function ImmersiveView() {
 
   const { lines, activeIndex, activeProgress } = useLyrics(lyricData?.raw_lrc ?? null, lyricData?.translated_lrc ?? null);
 
-  // 滚动容器 + 当前行 ref（自动滚动到当前行居中）
+  // 滚动容器 + 当前行 ref（自动滚动到当前行居中，同时挂载 beat 呼吸效果）
   const listRef = useRef<HTMLDivElement>(null);
-  const activeLineRef = useRef<HTMLDivElement>(null);
+  const beatLyricsRef = useRef<HTMLDivElement | null>(null);
+  useLyricMotion(beatLyricsRef, { mode: "immersive" });
 
   useEffect(() => {
     if (!immersiveMode) return;
     const container = listRef.current;
-    const activeLine = activeLineRef.current;
+    const activeLine = beatLyricsRef.current;
     if (!container || !activeLine) return;
     const target = activeLine.offsetTop - container.clientHeight / 2 + activeLine.clientHeight / 2;
     container.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
@@ -110,6 +112,18 @@ export function ImmersiveView() {
     return () => document.removeEventListener("keydown", onKey);
   }, [immersiveMode, setImmersiveMode, position]);
 
+  // 浏览器全屏被用户手动退出时（如按 Esc），同步退出沉浸模式
+  useEffect(() => {
+    if (!immersiveMode) return;
+    const onFull = () => {
+      if (!document.fullscreenElement) {
+        setImmersiveMode(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFull);
+    return () => document.removeEventListener("fullscreenchange", onFull);
+  }, [immersiveMode, setImmersiveMode]);
+
   // 鼠标移动时显示 header，静止 3 秒后隐藏
   const onActivity = () => {
     setShowHeader(true);
@@ -125,6 +139,46 @@ export function ImmersiveView() {
     };
   }, [immersiveMode]);
 
+  // 进入/退出沉浸模式时同步全屏：Tauri 原生优先，浏览器环境回退到 DOM fullscreen
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        await win.setFullscreen(immersiveMode);
+        const isFull = await win.isFullscreen();
+        if (!cancelled) {
+          document.body.classList.toggle("window-fullscreen", isFull);
+        }
+        if (isFull !== immersiveMode) {
+          console.warn("[沉浸模式] Tauri setFullscreen 返回值与预期不一致", { expected: immersiveMode, actual: isFull });
+        }
+        return;
+      } catch (e) {
+        console.warn("[沉浸模式] Tauri 全屏不可用，回退到 DOM fullscreen:", e);
+      }
+      // 浏览器/非 Tauri 环境回退
+      try {
+        if (immersiveMode) {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          }
+        } else {
+          if (document.fullscreenElement) {
+            await document.exitFullscreen();
+          }
+        }
+      } catch (e) {
+        console.warn("[沉浸模式] DOM fullscreen 失败:", e);
+      }
+    };
+    void sync();
+    return () => {
+      cancelled = true;
+    };
+  }, [immersiveMode]);
+
   if (!immersiveMode) return null;
 
   const cover = getCoverUrl(currentTrack);
@@ -132,7 +186,7 @@ export function ImmersiveView() {
   const artist = (currentTrack as { meta?: { artist?: string } })?.meta?.artist || "";
 
   const alignClass = vp.immersiveLyricAlign === "left" ? "immersive__lyrics--left" : "";
-  const sizeClass = `immersive__lyrics--${vp.immersiveLyricSize}`;
+  const sizeClass = `immersive__stack--${vp.immersiveLyricSize}`;
 
   return (
     <div
@@ -190,7 +244,7 @@ export function ImmersiveView() {
             )}
             {/* 当前行：OrangeRadio 入场 + 扫描光 + 薄荷冷调光晕（与 FullPlayer stage 同源） */}
             <div
-              ref={activeLineRef}
+              ref={beatLyricsRef}
               className="immersive__current"
               style={activeProgress > 0 ? ({
                 "--lyric-p": `${Math.round(activeProgress * 1000) / 10}%`,

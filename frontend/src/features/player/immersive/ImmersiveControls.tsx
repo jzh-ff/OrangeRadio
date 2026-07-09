@@ -10,9 +10,10 @@ export function ImmersiveControls() {
   const setWallpaper = useWallpaperStore((s) => s.setActive);
 
   const bgOptions: { id: typeof vp.immersiveBg; label: string; icon: string }[] = [
+    { id: "cover-particles", label: "专辑粒子", icon: "✦" },
     { id: "cover", label: "专辑封面", icon: "◉" },
     { id: "wallpaper", label: "我的壁纸", icon: "▣" },
-    { id: "particles", label: "动态粒子", icon: "✦" },
+    { id: "particles", label: "动态粒子", icon: "✧" },
     { id: "solid", label: "纯色", icon: "■" },
   ];
 

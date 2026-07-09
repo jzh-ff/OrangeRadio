@@ -5,6 +5,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { usePlayerStore } from "../stores/playerStore";
+import { readBeat } from "../stores/spectrumBus";
 
 /**
  * 共享 Bloom 后期处理组件（仅 BeatParticles preset 用）
@@ -15,7 +16,7 @@ import { usePlayerStore } from "../stores/playerStore";
  * bloomScale prop：粒子层 bloom 强度系数（默认 0.5，对比之前的 1.1 拉低一半），
  *   配合 store.visualParams.bloomStrength 由用户调。BeatParticles 场景下不再"糊一切"。
  */
-export function BloomLayer({ bloomScale = 0.5 }: { bloomScale?: number }) {
+export function BloomLayer({ bloomScale = 0.35 }: { bloomScale?: number }) {
   const { gl, scene, camera, size } = useThree();
   const composerRef = useRef<EffectComposer | null>(null);
   const bloomRef = useRef<UnrealBloomPass | null>(null);
@@ -45,12 +46,12 @@ export function BloomLayer({ bloomScale = 0.5 }: { bloomScale?: number }) {
   }, [size]);
 
   useFrame(() => {
-    const beat = usePlayerStore.getState().beat;
+    const beat = readBeat();
     const { bloomStrength } = usePlayerStore.getState().visualParams;
     if (bloomRef.current) {
       // 节拍 hit 时 bloom 脉冲（强度按 bloomScale 收敛）
       bloomRef.current.strength =
-        bloomStrength * bloomScale + beat.intensity * 0.6 * bloomScale;
+        bloomStrength * bloomScale + beat.intensity * 0.35 * bloomScale;
     }
     composerRef.current?.render();
   }, 1); // priority=1 接管渲染

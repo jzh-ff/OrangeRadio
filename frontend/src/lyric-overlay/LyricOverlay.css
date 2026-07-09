@@ -106,13 +106,19 @@
   letter-spacing: 0.5px;
   -webkit-text-stroke: 0.22px rgba(255, 255, 255, 0.82);
   paint-order: stroke fill;
+  /* 体积光晕:两个深色 drop-shadow 给歌词压深,亮度由 --lyric-beat-brightness 节奏驱动 */
   filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.58))
-    drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.30));
+    drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.30))
+    drop-shadow(0 0 calc(28px + var(--lyric-beat-glow, 0px)) rgba(156, 255, 223, 0.12))
+    drop-shadow(0 0 calc(72px + var(--lyric-beat-glow, 0px)) rgba(244, 210, 138, 0.08))
+    brightness(var(--lyric-beat-brightness, 1));
+  /* text-shadow 双层光晕（MineRadio desktop-lyrics.html line 104 同款） */
   text-shadow: 0 0 1px rgba(255, 255, 255, 0.36),
-    0 0 8px rgba(255, 217, 168, 0.34),
-    0 0 14px rgba(156, 255, 223, 0.22);
-  transform: scale(var(--lyric-beat-scale, 1));
-  transition: transform 0.12s ease-out;
+    0 0 calc(6px + var(--lyric-beat-glow, 0px)) rgba(255, 217, 168, 0.34),
+    0 0 calc(14px + var(--lyric-beat-glow, 0px)) rgba(156, 255, 223, 0.22);
+  /* transform 由 useLyricMotion（MineRadio updateMotion + applyStageMotion 同款）每帧直写，不要 transition 吃掉踹一下的瞬态 */
+  will-change: transform, filter;
+  transform-origin: center;
 }
 
 .lyric-line__bg,

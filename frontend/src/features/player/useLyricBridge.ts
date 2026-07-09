@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { usePlayerStore } from "../../stores/playerStore";
 import { closeLyricOverlay, setLyricLock } from "../../lib/lyricWindow";
+import { readBeat } from "../../stores/spectrumBus";
 
 /** 推给 lyric-overlay 窗口的播放状态 */
 interface LyricState {
@@ -60,7 +61,7 @@ export function useLyricBridge(opts?: { onToggle?: () => void; onPrev?: () => vo
         position: s.position,
         isPlaying: s.isPlaying,
         duration: s.duration,
-        beatIntensity: s.beat?.intensity ?? 0,
+        beatIntensity: readBeat().intensity,
       };
       void emit<LyricState>("lyric:state", payload).catch(() => {});
     });

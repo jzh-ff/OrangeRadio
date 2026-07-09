@@ -1,13 +1,15 @@
 import { useEffect, useRef } from "react";
-import { usePlayerStore } from "../../stores/playerStore";
+import { usePlayerStore, type BeatCombo, type BeatHit } from "../../stores/playerStore";
 import { readSpectrum, readBeat, writeBeat } from "../../stores/spectrumBus";
+import { scheduleBeatCameraFromHit } from "../../lib/beatCam";
+import { engineRef } from "../../App";
 
 /**
  * 纯前端实时节拍检测 Hook
  *
  * 算法灵感来自 Mineradio 的 dj-analyzer.js（服务端低频带通 + 能量阈值），
  * 但纯客户端实现：直接消费 AnalyserNode 产出的 spectrum（64 频段），
- * 用滑动窗口的"均值 + 灵敏度×标准差"判定低频能量突变 → 节拍。
+ * 用滑动窗口的"均值 + 标准差"判定低频能量突变 → 节拍。
  *
  * 频段划分（spectrum 有 64 个 bin，fftSize=128 → binCount=64）：
  *   - bass:   bin 0~3   （极低频，kick/底鼓）
@@ -15,7 +17,17 @@ import { readSpectrum, readBeat, writeBeat } from "../../stores/spectrumBus";
  *   - treble: bin 17~63 （高频，镲片/空气感）
  *
  * 把结果写入 spectrumBus.beat，供视觉层（BeatParticles 等）消费。
+ * 检测到节拍时，若当前没有 beatmap，则合成 BeatHit 入队 BeatCam 事件，驱动电影镜头。
  */
+
+/** 根据实时三频能量给一个镜头角色（对标 beatCam.ts 的 combo 语义） */
+function classifyLiveCombo(bass: number, mid: number, treble: number): BeatCombo {
+  if (treble > bass * 1.3 && treble > mid * 1.1) return "accent";
+  if (mid > bass * 1.2) return "push";
+  return "downbeat";
+}
+
+/** 无参：通过 engineRef.getCurrentTime() 拿到当前音频时间，避免闭包陈旧 */
 export function useBeatDetector() {
   const rafRef = useRef<number>(0);
   // 历史低频能量滑动窗口（用于计算局部均值/方差）
@@ -103,7 +115,23 @@ export function useBeatDetector() {
       const intensity = Math.max(0, Math.min(1, intensityRef.current));
 
       // 写入频谱 bus（不再每帧写 store，避免高频 setState）
-      writeBeat({ isBeat, bass, mid, treble, intensity });
+      writeBeat({ isBeat, bass, mid, treble, intensity, currentCombo: null });
+
+      // ===== 4. 无 beatmap 时，把检测到的节拍合成 BeatCam 事件入队，驱动电影镜头 =====
+      // 每帧调 engineRef.getCurrentTime()，不捕获闭包，避免 0 noop 永远生效
+      if (isBeat) {
+        const t = engineRef.getCurrentTime();
+        const hit: BeatHit = {
+          time: t,
+          impact: intensity,
+          low: bass,
+          body: mid,
+          snap: treble,
+          combo: classifyLiveCombo(bass, mid, treble),
+        };
+        const ev = scheduleBeatCameraFromHit(hit, t);
+        usePlayerStore.getState().pushBeatCamEvent(ev);
+      }
 
       rafRef.current = requestAnimationFrame(tick);
     };

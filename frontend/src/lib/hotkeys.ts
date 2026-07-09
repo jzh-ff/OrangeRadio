@@ -113,7 +113,7 @@ function executeAction(action: string): void {
       engineRef.setVol(Math.max(0, store.volume - 0.1));
       break;
     case "fullscreen":
-      store.setFullPlayer(!store.fullPlayerOpen);
+      store.setImmersiveMode(!store.immersiveMode);
       break;
     case "desktop-lyrics":
       void toggleLyricOverlay();

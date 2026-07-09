@@ -1,7 +1,7 @@
 import { useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { usePlayerStore } from "../stores/playerStore";
+import { readBeat } from "../stores/spectrumBus";
 
 /**
  * StarRiver 歌词背景星河（对标 MineRadio stageLyrics.starRiver，index.html 7330-7411）
@@ -93,7 +93,7 @@ function StarField() {
   );
 
   useFrame((state) => {
-    const beat = usePlayerStore.getState().beat;
+    const beat = readBeat();
     if (matRef.current) {
       matRef.current.uniforms.uTime.value = state.clock.elapsedTime;
       matRef.current.uniforms.uBeat.value = beat.intensity;

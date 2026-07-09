@@ -339,6 +339,7 @@ export function useAudioEngine(autoNext?: () => void) {
   }, [next]);
 
   const hasSrc = useCallback(() => !!audioRef.current?.src, []);
+  const getCurrentTime = useCallback(() => audioRef.current?.currentTime ?? 0, []);
 
-  return { playPath, togglePlay, hasSrc, seek, setVolume, next, prev };
+  return { playPath, togglePlay, hasSrc, seek, setVolume, next, prev, getCurrentTime };
 }

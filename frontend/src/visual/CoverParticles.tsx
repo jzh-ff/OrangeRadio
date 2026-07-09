@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePlayerStore } from "../stores/playerStore";
 import { proxyCoverUrl } from "../features/player/useCover";
+import { readBeat } from "../stores/spectrumBus";
 
 /**
  * 平面网格封面粒子（对标 Mineradio buildCoverParticleGeometry + 双层粒子）
@@ -458,7 +459,7 @@ function CoverCloud({ positions, uvs, seeds, coverTexture, hasCover, mouseRef, p
 
   // 每帧同步 beat + 视觉参数 + 鼠标水波（鼠标离场后 strength 平滑淡出）
   useFrame((state, delta) => {
-    const beat = usePlayerStore.getState().beat;
+    const beat = readBeat();
     const vp = usePlayerStore.getState().visualParams;
     uniforms.uTime.value = state.clock.elapsedTime;
     uniforms.uBass.value = beat.bass;
@@ -470,7 +471,8 @@ function CoverCloud({ positions, uvs, seeds, coverTexture, hasCover, mouseRef, p
     uniforms.uSpeed.value = vp.speed;
     uniforms.uScatter.value = vp.scatter;
     uniforms.uColorBoost.value = vp.colorTension;
-    uniforms.uBloomStrength.value = vp.bloomStrength;
+    // 封面粒子 bloom 比球面散点更保守，避免亮封面过曝成白屏
+    uniforms.uBloomStrength.value = vp.bloomStrength * 0.65;
 
     // K = intensity × 1.6（对标 Mineradio 5985 公式）
     uniforms.uK.value = Math.max(0.3, vp.intensity * 1.6);

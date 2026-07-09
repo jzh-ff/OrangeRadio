@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLyricMotion } from "../features/player/useLyricMotion";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -276,7 +277,15 @@ export function LyricOverlay() {
   const cur = activeIndex >= 0 ? lines[activeIndex] : null;
   const curText = cur ? (settings.showTranslation && cur.translation ? cur.text : cur.translation || cur.text) : (empty ? "暂无歌词" : "♪");
   const progressPct = (activeProgress * 100).toFixed(1);
-  const beatScale = isPlaying ? 1 + Math.min(beatIntensity, 1) * 0.04 : 1;
+
+  // beat 呼吸/抖动 —— 委托给 useLyricMotion（MineRadio 桌面歌词 desktop-lyrics.html:834-872 同款）
+  // 桌面歌词的事件桥只能拿到 beatIntensity，用它当 sample；没有高质量 beamap 也能凭借本地的
+  // sin^8 + floatY/floatX baseline 持续小幅漂浮。
+  const currentLineRef = useRef<HTMLDivElement | null>(null);
+  useLyricMotion(currentLineRef, {
+    mode: "overlay",
+    sample: { intensity: beatIntensity, bass: 0, highBloom: 0 },
+  });
 
   const theme = THEMES[settings.theme];
 
@@ -288,7 +297,6 @@ export function LyricOverlay() {
       className={`lyric-overlay${locked ? " lyric-overlay--locked" : ""}${isPlaying ? "" : " lyric-overlay--paused"} lyric-overlay--theme-${settings.theme}`}
       style={{
         "--lyric-progress": `${progressPct}%`,
-        "--lyric-beat-scale": beatScale,
         "--lyric-scale": settings.scale,
         "--lyric-primary": theme.primary,
         "--lyric-secondary": theme.secondary,
@@ -321,6 +329,7 @@ export function LyricOverlay() {
               return (
                 <div
                   key={index}
+                  ref={isCur ? currentLineRef : undefined}
                   className={`lyric-line ${isCur ? "lyric-line--cur" : "lyric-line--ctx"} lyric-line--offset-${offset}${isCur ? " lyric-line--in" : ""}`}
                   data-offset={offset}
                 >

@@ -781,12 +781,19 @@
   text-shadow: inherit;
 }
 
-/* 当前行发光增强（与上下文 5 段扫光叠加） */
+/* 当前行发光增强 + beat 呼吸抖动（与上下文 5 段扫光叠加） */
 .fp-lyric-line--active .fp-lyric-text {
+  transform: perspective(600px)
+    translate3d(0, var(--lyric-beat-y, 0), 0)
+    scale(var(--lyric-beat-scale, 1))
+    rotateZ(var(--lyric-beat-rz, 0));
+  filter: brightness(var(--lyric-beat-brightness, 1));
   text-shadow:
-    0 0 18px rgba(255, 217, 168, 0.55),
-    0 0 36px rgba(156, 255, 223, 0.22),
+    0 0 calc(18px + var(--lyric-beat-glow, 0px)) rgba(255, 217, 168, 0.55),
+    0 0 calc(36px + var(--lyric-beat-glow, 0px)) rgba(156, 255, 223, 0.22),
     0 2px 8px rgba(0, 0, 0, 0.6);
+  transition: transform 0.08s ease-out, filter 0.08s ease-out;
+  will-change: transform, filter;
 }
 
 .fp-lyrics-empty {
@@ -1597,6 +1604,7 @@
 }
 .vc-panel__title { font-size: 13px; font-weight: 700; color: #fff; }
 .vc-panel__hint { font-size: 9px; color: rgba(255, 255, 255, 0.3); }
+.vc-panel__tools { display: flex; align-items: center; gap: 8px; }
 .vc-hotkey-btn {
   padding: 4px 10px;
   border-radius: 6px;
@@ -1905,9 +1913,15 @@
   cursor: pointer;
   transition: all 0.2s ease;
 }
+.vc-reset-btn--head {
+  margin-top: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+}
 .vc-reset-btn:hover {
   background: rgba(255, 107, 26, 0.12);
-  border-color: rgba(255, 107, 26, 0.4);
+  border-color: rgba(255, 157, 69, 0.4);
   color: #fff;
 }
 
@@ -3266,7 +3280,8 @@
   color: rgba(246, 245, 239, 0.55);
 }
 
-/* ===== 中央歌词舞台（核心：当前行超大 + MineRadio 扫描光 + 暖光晕） ===== */
+/* ===== 中央歌词舞台（核心：当前行超大 + MineRadio 扫描光 + 暖光晕）
+   整层加 MineRadio 风格的彩色 drop-shadow 体积光晕，glow 半径随 --lyric-beat-glow 增量 */
 .fp-cinema-stage {
   position: relative;
   z-index: 5;
@@ -3279,6 +3294,10 @@
   text-align: center;
   min-height: 0;
   padding: 32px 0;
+  filter:
+    drop-shadow(0 0 calc(8px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.18))
+    drop-shadow(0 0 calc(28px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.10))
+    drop-shadow(0 0 calc(72px + var(--lyric-beat-glow, 0px)) rgba(244, 210, 138, 0.08));
 }
 
 /* ============================================================
@@ -3322,6 +3341,15 @@
   gap: 14px;
   max-width: 100%;
   position: relative;
+  transform: perspective(600px)
+    translate3d(0, var(--lyric-beat-y, 0), 0)
+    scale(var(--lyric-beat-scale, 1))
+    rotateX(var(--lyric-beat-rx, 0))
+    rotateY(var(--lyric-beat-ry, 0))
+    rotateZ(var(--lyric-beat-rz, 0));
+  filter: brightness(var(--lyric-beat-brightness, 1));
+  transform-style: preserve-3d;
+  will-change: transform, filter;
 }
 
 /* 时间戳：等宽 + 极光 + 极细（不是"标签"感） */
@@ -3354,17 +3382,12 @@
   padding: 8px 0 10px;
   color: var(--or-paper);
   text-shadow:
-    /* 紧贴：极亮核（描边感） */
     0 0 1px rgba(255, 255, 255, 0.95),
-    /* 8-12px：明亮极光绿内层 */
-    0 0 10px rgba(122, 223, 176, 0.75),
-    0 0 22px rgba(122, 223, 176, 0.55),
-    /* 50-80px：远场柔光晕（深色背景下大范围光圈） */
-    0 0 60px rgba(122, 223, 176, 0.35),
-    0 0 110px rgba(122, 223, 176, 0.22),
-    /* 160px：环境散射（更大范围，让"光"在律动暗背景上扩散开） */
-    0 0 180px rgba(122, 223, 176, 0.12);
-  /* 入场：350ms 极简 fade + 0.5px translateY（不是 3D 旋转） */
+    0 0 calc(10px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.75),
+    0 0 calc(22px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.55),
+    0 0 calc(60px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.35),
+    0 0 calc(110px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.22),
+    0 0 calc(180px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.12);
   animation: or-fade-up 350ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
@@ -3373,19 +3396,29 @@
   100% { opacity: 1; transform: translateY(0); }
 }
 
-/* 翻译：等宽 + 60% 不透明 + 居中 */
+/* 翻译：与主歌词同款的字体、光晕、暖白色，字号约主歌词一半 */
 .fp-cinema-stage__trans {
-  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
-  font-size: clamp(13px, 1.4vw, 16px);
-  font-style: normal;       /* 不是 italic（italic 是模板） */
-  color: rgba(246, 245, 239, 0.55);
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: clamp(18px, 3vw, 36px);
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1.1;
+  color: var(--or-paper);
   letter-spacing: 0;
   text-align: center;
-  margin-top: -4px;
+  margin-top: 2px;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.95),
+    0 0 calc(10px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.55),
+    0 0 calc(22px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.35),
+    0 0 calc(50px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.18);
 }
 
 .fp-cinema-stage__trans--ai {
-  color: rgba(122, 223, 176, 0.6);  /* AI 译注用极光色 */
+  color: rgba(122, 223, 176, 0.8);  /* AI 译注用极光色 */
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.6),
+    0 0 calc(10px + var(--lyric-beat-glow, 0px)) rgba(122, 223, 176, 0.45);
 }
 
 /* 注解：等宽文字（去掉左侧 2px 极光竖线，纯文字） */
@@ -3438,5 +3471,5 @@
   .fp-cinema-top__cover { width: 44px; height: 44px; }
   .fp-cinema-top__title { font-size: 15px; }
   .fp-cinema-stage__text { font-size: clamp(28px, 8vw, 48px); }
-  .fp-cinema-stage__trans { font-size: 12px; }
+  .fp-cinema-stage__trans { font-size: clamp(14px, 4vw, 24px); }
 }
