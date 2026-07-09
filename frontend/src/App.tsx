@@ -6,6 +6,7 @@ import { WallpaperBackground } from "./visual/WallpaperBackground";
 import { WallpaperLayer } from "./visual/WallpaperLayer";
 import { HotkeysModal } from "./components/HotkeysModal";
 import { WindowControls } from "./components/WindowControls";
+import { LayoutControls } from "./components/LayoutControls";
 import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
 import { ProfilePanel } from "./components/ProfilePanel";
 import { PlaylistShelf } from "./visual/PlaylistShelf";
@@ -384,6 +385,7 @@ export default function App() {
       {/* 主窗口可拖拽顶条：decorations:false 时给整个窗口提供 drag 区域（高度 10px，见 global.css） */}
       <div className="app-drag-strip" data-tauri-drag-region aria-hidden="true" />
       <WindowControls onRequestClose={() => setCloseConfirmOpen(true)} />
+      <LayoutControls />
       {wallpaperActive ? <WallpaperLayer /> : <WallpaperBackground />}
       <div className="app__layout">
         <Sidebar />

@@ -1,0 +1,64 @@
+/* ===== LayoutControls · VS Code 风格布局开关 =====
+   固定在窗口控制按钮左侧，与 WindowControls 共用一套视觉语言。 */
+
+.layout-controls {
+  position: fixed;
+  top: 10px;
+  right: 100px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.layout-controls__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease), transform 0.12s var(--ease), opacity 0.15s var(--ease);
+  padding: 0;
+  opacity: 0.5;
+}
+
+.layout-controls__btn:hover {
+  opacity: 1;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.layout-controls__btn:active {
+  transform: scale(0.88);
+}
+
+/* 激活态：面板可见时图标高亮 */
+.layout-controls__btn--active {
+  opacity: 0.95;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+/* 鼠标悬停在整组上时，所有按钮可见度提升 */
+.layout-controls:hover .layout-controls__btn {
+  opacity: 0.85;
+}
+
+.layout-controls:hover .layout-controls__btn--active {
+  opacity: 1;
+}
+
+@media (max-width: 540px) {
+  .layout-controls {
+    top: 4px;
+    right: 92px;
+  }
+}

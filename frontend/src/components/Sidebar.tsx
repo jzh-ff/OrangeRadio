@@ -176,33 +176,20 @@ export function Sidebar() {
       })()
     : { label: "—", tier: "none" as QualityTier };
 
-  // 隐藏态（持久化到 localStorage，跨刷新记住）
-  // 跟旧版 collapsed 的区别：旧版是"折叠到 60px 只剩图标列"，
-  // 现在是"整条侧边栏滑出屏幕 + 左下角淡入一个恢复按钮"，主内容区同步扩展到全宽。
-  const [hidden, setHidden] = useState(() => {
-    try { return localStorage.getItem("orangeradio:sidebar-hidden") === "1"; }
-    catch { return false; }
-  });
-  const toggleHidden = () => {
-    setHidden((prev) => {
-      const next = !prev;
-      try { localStorage.setItem("orangeradio:sidebar-hidden", next ? "1" : "0"); }
-      catch { /* 隐私模式可能写不进去，忽略 */ }
-      return next;
-    });
-  };
+  // 隐藏态（持久化到 playerStore，跨刷新记住）
+  const sidebarHidden = usePlayerStore((s) => s.sidebarHidden);
 
   // 同步给 .app__main —— 通过 body 属性触发，主内容区 padding-left 同步收/放
   useEffect(() => {
-    if (hidden) document.body.setAttribute("data-sidebar-hidden", "true");
+    if (sidebarHidden) document.body.setAttribute("data-sidebar-hidden", "true");
     else document.body.removeAttribute("data-sidebar-hidden");
     return () => { document.body.removeAttribute("data-sidebar-hidden"); };
-  }, [hidden]);
+  }, [sidebarHidden]);
 
   return (
     <>
     <aside
-      className={`sidebar ${isPlaying ? "sidebar--live" : ""} ${hidden ? "sidebar--hidden" : ""}`}
+      className={`sidebar ${isPlaying ? "sidebar--live" : ""} ${sidebarHidden ? "sidebar--hidden" : ""}`}
       style={{ "--ui-opacity": sidebarOpacity } as React.CSSProperties}
     >
       <SpectrumPulse />
@@ -324,39 +311,9 @@ export function Sidebar() {
           <span className="sb-item__icon">SET</span>
           <span className="sb-item__label">设置</span>
         </button>
-        <button
-          type="button"
-          className="sb-item sb-item--hide"
-          onClick={toggleHidden}
-          title="隐藏侧边栏"
-          aria-label="隐藏侧边栏"
-        >
-          <span className="sb-item__icon" aria-hidden>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </span>
-          <span className="sb-item__label">隐藏</span>
-        </button>
         <div className="sidebar__version">v0.4 · 沉浸视觉</div>
       </div>
     </aside>
-
-    {/* 隐藏态：左下角恢复按钮（fixed 定位，浮在 .app 之上，跟 .sidebar 同 z-index 区） */}
-    {hidden && (
-      <button
-        type="button"
-        className="sidebar-restore"
-        onClick={toggleHidden}
-        title="展开侧边栏"
-        aria-label="展开侧边栏"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M9 18l6-6-6-6" />
-        </svg>
-        <span className="sidebar-restore__tip">导航</span>
-      </button>
-    )}
     </>
   );
 }
