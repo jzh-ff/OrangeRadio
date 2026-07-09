@@ -9,6 +9,18 @@ import type { Track } from "../../stores/libraryStore";
  */
 export const DEFAULT_COVER = "/vinyl.png";
 
+// 前端封面缓存：避免多组件同时请求同一 cover_proxy
+const COVER_CACHE = new Map<string, string | null>();
+const COVER_INFLIGHT = new Map<string, Promise<string | null>>();
+
+function coverCacheKey(track: Track): string {
+  const src = track.meta?.artwork?.source;
+  if (!src) return `none:${track.id}`;
+  if (src.kind === "url") return `url:${src.url || ""}`;
+  if (src.kind === "local") return `local:${src.path || ""}`;
+  return `other:${track.id}`;
+}
+
 /**
  * 封面 URL 解析工具（同步版）
  *
@@ -41,12 +53,30 @@ export function getCoverUrl(track: Track | null | undefined): string | null {
  *
  * 绕开浏览器 CORS，让 WebGL/canvas 能拿到封面像素（CoverParticles 平面网格依赖此）。
  * 命中本地缓存秒返。失败返回 null（CoverParticles 收到 hasCover=false 后用默认色）。
+ * 对同一封面做前端级去重：多个组件同时调用只触发一次 cover_proxy。
  */
 export async function proxyCoverUrl(
   track: Track | null | undefined
 ): Promise<string | null> {
-  if (!track?.meta?.artwork?.source) return null;
-  const src = track.meta.artwork.source;
+  if (!track) return null;
+  const key = coverCacheKey(track);
+  const cached = COVER_CACHE.get(key);
+  if (cached !== undefined) return cached;
+
+  const inflight = COVER_INFLIGHT.get(key);
+  if (inflight) return inflight;
+
+  const promise = doProxyCoverUrl(track);
+  COVER_INFLIGHT.set(key, promise);
+  const result = await promise;
+  COVER_INFLIGHT.delete(key);
+  COVER_CACHE.set(key, result);
+  return result;
+}
+
+async function doProxyCoverUrl(track: Track): Promise<string | null> {
+  const src = track.meta?.artwork?.source;
+  if (!src) return null;
   if (src.kind === "local" && src.path) return convertFileSrc(src.path);
   if (src.kind === "url" && src.url) {
     try {

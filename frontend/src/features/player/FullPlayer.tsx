@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useRef } from "react";
+import React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore, type FullLayout } from "../../stores/playerStore";
 import { useLibraryStore } from "../../stores/libraryStore";
@@ -48,13 +49,106 @@ interface FullPlayerProps {
   pushToast?: (msg: string, kind?: ToastKind, ttl?: number) => void;
 }
 
+/** 进度条 + 时间显示（独立 memo 组件，只订阅 position/duration） */
+const ProgressSection = React.memo(function ProgressSection() {
+  const position = usePlayerStore((s) => s.position);
+  const duration = usePlayerStore((s) => s.duration);
+  const progress = duration > 0 ? (position / duration) * 100 : 0;
+  const [scrubPos, setScrubPos] = useState<number | null>(null);
+  const onProgressMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    setScrubPos(x);
+  };
+  const notesRef = useRef<HTMLDivElement>(null);
+  const progressRefFull = useRef(progress);
+  useEffect(() => { progressRefFull.current = progress; }, [progress]);
+
+  // 跳动的音符：每 1.5s 在进度条当前位置生成 ♪♫♬♩，1.5s 后自动消失
+  useEffect(() => {
+    const container = notesRef.current;
+    if (!container) return;
+    const NOTES = ["♪", "♫", "♬", "♩"];
+    const COLORS = [
+      "rgba(255, 107, 26, 0.95)",
+      "rgba(255, 157, 69, 0.95)",
+      "rgba(255, 196, 107, 0.95)",
+      "rgba(244, 210, 138, 0.95)",
+    ];
+    const tick = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const note = document.createElement("span");
+      note.className = "fp-note";
+      note.textContent = NOTES[Math.floor(Math.random() * NOTES.length)];
+      note.style.left = `${(progressRefFull.current / 100) * rect.width}px`;
+      note.style.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      container.appendChild(note);
+      setTimeout(() => note.remove(), 1500);
+    };
+    let interval: number | undefined;
+    if (usePlayerStore.getState().isPlaying) {
+      interval = window.setInterval(tick, 1500);
+      tick();
+    }
+    const unsub = usePlayerStore.subscribe((s) => {
+      if (interval && !s.isPlaying) {
+        window.clearInterval(interval);
+        interval = undefined;
+      } else if (!interval && s.isPlaying) {
+        interval = window.setInterval(tick, 1500);
+        tick();
+      }
+    });
+    return () => {
+      if (interval) window.clearInterval(interval);
+      unsub();
+    };
+  }, []);
+
+  return (
+    <div className="fp-progress-row">
+      <span className="fp-time fp-time--cur">
+        <span className="fp-time__pulse" aria-hidden />
+        {fmt(position)}
+      </span>
+      <div
+        className="fp-progress"
+        style={{ "--fp-thumb-x": scrubPos != null ? `${scrubPos * 100}%` : `${progress}%` } as React.CSSProperties}
+        onMouseMove={onProgressMove}
+        onMouseLeave={() => setScrubPos(null)}
+      >
+        <div className="fp-progress__mist" aria-hidden />
+        <div className="fp-progress__ticks" aria-hidden />
+        <div className="fp-progress-track" />
+        <div className="fp-progress-fill" style={{ width: `${progress}%` }}>
+          <span className="fp-progress-shimmer" aria-hidden />
+          <span className="fp-progress-edge" aria-hidden />
+        </div>
+        <div className="fp-progress-glow" style={{ left: `${progress}%` }} aria-hidden />
+        <div className="fp-notes" ref={notesRef} aria-hidden />
+        {scrubPos != null && duration > 0 && (
+          <div className="fp-progress-tooltip">{fmt(scrubPos * duration)}</div>
+        )}
+        <input
+          type="range" min={0} max={duration || 0} step={0.1} value={position}
+          onChange={(e) => engineRef.seek(parseFloat(e.target.value))}
+          className="fp-progress-input"
+          aria-label="播放进度"
+        />
+      </div>
+      <span className="fp-time fp-time--rem">
+        <span className="fp-time__minus">−</span>
+        {fmt(Math.max(0, duration - position))}
+      </span>
+    </div>
+  );
+});
+
 export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
-  const position = usePlayerStore((s) => s.position);
-  const duration = usePlayerStore((s) => s.duration);
   const fullLayout = usePlayerStore((s) => s.fullLayout);
-  const progress = duration > 0 ? (position / duration) * 100 : 0;
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
@@ -120,14 +214,6 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const [loading, setLoading] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [annotateLoading, setAnnotateLoading] = useState(false);
-  /** 进度条 hover scrub 预览（0~1 百分比；null = 未 hover） */
-  const [scrubPos, setScrubPos] = useState<number | null>(null);
-  const onProgressMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setScrubPos(x);
-  };
-
   /** Footer 折叠：只显示进度条，隐藏 3 列按钮行（▼ 切 ▲） */
   const [footerCollapsed, setFooterCollapsed] = useState(false);
   /** AI 译注结果：按原文行文本索引 → {translation, annotation} */
@@ -270,36 +356,6 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setFullPlayer]);
-
-  // 跳动的音符：每 1.5s 在 FullPlayer 进度条当前位置生成 ♪♫♬♩，1.5s 后自动消失
-  const notesRef = useRef<HTMLDivElement>(null);
-  const progressRefFull = useRef(progress);
-  useEffect(() => { progressRefFull.current = progress; }, [progress]);
-  useEffect(() => {
-    if (!isPlaying) return;
-    const container = notesRef.current;
-    if (!container) return;
-    const NOTES = ["♪", "♫", "♬", "♩"];
-    const COLORS = [
-      "rgba(255, 107, 26, 0.95)",
-      "rgba(255, 157, 69, 0.95)",
-      "rgba(255, 196, 107, 0.95)",
-      "rgba(244, 210, 138, 0.95)",
-    ];
-    const tick = () => {
-      const rect = container.getBoundingClientRect();
-      if (rect.width === 0) return;
-      const note = document.createElement("span");
-      note.className = "fp-note";
-      note.textContent = NOTES[Math.floor(Math.random() * NOTES.length)];
-      note.style.left = `${(progressRefFull.current / 100) * rect.width}px`;
-      note.style.color = COLORS[Math.floor(Math.random() * COLORS.length)];
-      container.appendChild(note);
-      setTimeout(() => note.remove(), 1500);
-    };
-    const interval = setInterval(tick, 1500);
-    return () => clearInterval(interval);
-  }, [isPlaying]);
 
   const { lines, activeIndex, activeProgress } = useLyrics(lyricData?.raw_lrc || null, lyricData?.translated_lrc);
 
@@ -630,43 +686,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           </svg>
         </button>
         {/* ===== Row 1 · 进度条（独占一行） ===== */}
-        <div className="fp-progress-row">
-          <span className="fp-time fp-time--cur">
-            <span className="fp-time__pulse" aria-hidden />
-            {fmt(position)}
-          </span>
-          <div
-            className="fp-progress"
-            style={{ "--fp-thumb-x": scrubPos != null ? `${scrubPos * 100}%` : `${progress}%` } as React.CSSProperties}
-            onMouseMove={onProgressMove}
-            onMouseLeave={() => setScrubPos(null)}
-          >
-            <div className="fp-progress__mist" aria-hidden />
-            <div className="fp-progress__ticks" aria-hidden />
-            <div className="fp-progress-track" />
-            <div className="fp-progress-fill" style={{ width: `${progress}%` }}>
-              <span className="fp-progress-shimmer" aria-hidden />
-              <span className="fp-progress-edge" aria-hidden />
-            </div>
-            <div className="fp-progress-glow" style={{ left: `${progress}%` }} aria-hidden />
-            {/* 跳动的音符层（pointer-events 透传，不挡 scrub） */}
-            <div className="fp-notes" ref={notesRef} aria-hidden />
-            {/* Scrub Ԥ����hover ʱ��ʾ���λ�õ�ʱ���븡����λ���� --fp-thumb-x ������ */}
-            {scrubPos != null && duration > 0 && (
-              <div className="fp-progress-tooltip">{fmt(scrubPos * duration)}</div>
-            )}
-            <input
-              type="range" min={0} max={duration || 0} step={0.1} value={position}
-              onChange={(e) => engineRef.seek(parseFloat(e.target.value))}
-              className="fp-progress-input"
-              aria-label="播放进度"
-            />
-          </div>
-          <span className="fp-time fp-time--rem">
-            <span className="fp-time__minus">−</span>
-            {fmt(Math.max(0, duration - position))}
-          </span>
-        </div>
+        <ProgressSection />
 
         {/* ===== Row 2 · 3 列控制台 ===== */}
         <div className="fp-buttons-row">

@@ -13,6 +13,7 @@ use orange_sources::{
     QqMusicSource, SpotifySource, WebRadioSource,
 };
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
@@ -75,6 +76,20 @@ pub struct AppState {
     /// 由 wallpaper_engine_scan 命令扫描完成后写入；Task 5 的 wefile handler 读这里。
     /// Arc 包裹以保留 `#[derive(Clone)]`（parking_lot::RwLock 本身不是 Clone）。
     pub we_roots: Arc<parking_lot::RwLock<Vec<PathBuf>>>,
+    pub cover_cache: Arc<CoverCache>,
+}
+
+/// 封面缓存：内存索引 + 并发下载去重 + 磁盘 LRU 清理
+#[derive(Default)]
+pub struct CoverCache {
+    /// 正在下载中的 URL → shared future，相同 URL 并发请求只下载一次
+    pub in_flight: Mutex<HashMap<String, Arc<tokio::sync::Mutex<Option<String>>>>>,
+}
+
+impl CoverCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 // ===== 跨平台数据目录工具 =====
@@ -178,6 +193,7 @@ impl Default for AppState {
             recommender,
             sources: Arc::new(registry),
             we_roots: Arc::new(parking_lot::RwLock::new(Vec::new())),
+            cover_cache: Arc::new(CoverCache::new()),
         }
     }
 }

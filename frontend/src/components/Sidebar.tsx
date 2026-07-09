@@ -96,7 +96,10 @@ export function Sidebar() {
 
   useEffect(() => {
     loadPlaylists();
-    const t = setInterval(loadPlaylists, 5000);
+    // 仅在 Sidebar 可见时每 30 秒轮询一次，降低不必要的后端调用
+    const t = setInterval(() => {
+      if (!document.hidden) loadPlaylists();
+    }, 30000);
     return () => clearInterval(t);
   }, []);
 

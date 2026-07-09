@@ -5,6 +5,7 @@ use orange_core::source::{AudioSource, SearchQuery};
 use orange_core::track::{Track, TrackMeta};
 use orange_library::{LibraryScanner, ScanOptions};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 
@@ -1790,14 +1791,19 @@ fn fnv_hash(s: &str) -> u64 {
 /// 远端封面代理下载到本地（绕开浏览器 CORS，驱动 cinema 模式 CoverParticles）
 ///
 /// 输入是网易云/QQ 返回的封面 URL（不带 CORS 头），下载到
-/// `.orangeradio/covers/<fnv(url)>.jpg` 后返回本地路径，前端用 `convertFileSrc` 喂给 WebView。
+/// `<app_data_dir>/covers/<fnv(url)>.jpg` 后返回本地路径，前端用 `convertFileSrc` 喂给 WebView。
 ///
-/// 命中缓存（URL 不变）秒返，避免重复下载。
+/// 命中缓存（URL 不变）秒返；并发相同 URL 共享一次下载。
+/// 限制单文件 8MB，磁盘缓存总大小超过 256MB 时清理最旧的 20%。
 /// 失败返回 Err，前端 fallback 到 hasCover=false（粒子层用默认色渐变）。
 #[tauri::command]
-pub async fn cover_proxy(app: tauri::AppHandle, url: String) -> Result<String, String> {
+pub async fn cover_proxy(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<String, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err(format!("仅支持 http(s) URL: {url}"));
+        return Err(format!("仅支持 http(s) URL: {}", url));
     }
 
     let cache_dir = crate::app_data_subdir(&app, "covers")?;
@@ -1814,7 +1820,22 @@ pub async fn cover_proxy(app: tauri::AppHandle, url: String) -> Result<String, S
 
     // 命中缓存直接返回
     if cache_file.is_file() {
+        // 更新 atime 用于 LRU 清理（只读打开即可）
+        let _ = std::fs::OpenOptions::new().read(true).open(&cache_file).map(|_| ());
         return Ok(cache_file.to_string_lossy().into_owned());
+    }
+
+    // 并发去重：相同 URL 共享一次下载
+    let slot = {
+        let mut map = state.cover_cache.in_flight.lock();
+        map.entry(url.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(None)))
+            .clone()
+    };
+
+    let mut guard = slot.lock().await;
+    if let Some(path) = guard.as_ref() {
+        return Ok(path.clone());
     }
 
     // 下载（带 UA + Referer，部分 CDN 拦截裸请求）
@@ -1832,18 +1853,70 @@ pub async fn cover_proxy(app: tauri::AppHandle, url: String) -> Result<String, S
     if !resp.status().is_success() {
         return Err(format!("封面 HTTP {}: {}", resp.status(), url));
     }
+
+    // 限制单文件大小
+    if let Some(len) = resp.content_length() {
+        if len > 8 * 1024 * 1024 {
+            return Err(format!("封面过大 ({} bytes): {}", len, url));
+        }
+    }
     let bytes = resp
         .bytes()
         .await
         .map_err(|e| format!("读取封面字节失败: {e}"))?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err(format!("封面过大 ({} bytes): {}", bytes.len(), url));
+    }
+
     std::fs::write(&cache_file, &bytes).map_err(|e| format!("写封面缓存失败: {e}"))?;
+
+    // 磁盘缓存 LRU 清理：总大小超过 256MB 时删除最旧的 20%
+    prune_covers(&cache_dir, 256 * 1024 * 1024, 0.2);
+
     tracing::debug!(
         "封面已下载: {} ({} bytes) → {}",
         trunc(&url, 120),
         bytes.len(),
         cache_file.display()
     );
-    Ok(cache_file.to_string_lossy().into_owned())
+
+    let path = cache_file.to_string_lossy().into_owned();
+    *guard = Some(path.clone());
+    Ok(path)
+}
+
+/// 清理 covers 目录：总大小超过 max_total_bytes 时，按 atime 删除最旧的 ratio
+fn prune_covers(dir: &std::path::Path, max_total_bytes: u64, ratio: f64) {
+    let entries: Vec<_> = std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().ok().map(|t| t.is_file()).unwrap_or(false))
+        .collect();
+
+    let total: u64 = entries
+        .iter()
+        .filter_map(|e| e.metadata().ok().map(|m| m.len()))
+        .sum();
+    if total <= max_total_bytes {
+        return;
+    }
+
+    let mut with_atime: Vec<_> = entries
+        .into_iter()
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            let atime = meta.accessed().ok()?;
+            Some((atime, e.path()))
+        })
+        .collect();
+    with_atime.sort_by_key(|a| a.0);
+
+    let to_remove = (with_atime.len() as f64 * ratio).ceil() as usize;
+    for (_, path) in with_atime.into_iter().take(to_remove) {
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 // ===== Hue 灯光联动（v0.8 MVP） =====

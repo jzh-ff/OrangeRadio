@@ -453,18 +453,39 @@ export const usePlayerStore = create<PlayerState>()(
       name: "orangeradio_player",
       storage: createJSONStorage(() => localStorage),
       // 只持久化队列与播放偏好，排除 spectrum/beat/beatmap 等高频瞬时态
-      partialize: (s) => ({
-        tracks: s.tracks,
-        currentIndex: s.currentIndex,
-        radioTracks: s.radioTracks,
-        radioIndex: s.radioIndex,
-        activeQueue: s.activeQueue,
-        mode: s.mode,
-        volume: s.volume,
-        currentTrack: s.currentTrack,
-        sidebarHidden: s.sidebarHidden,
-        playerBarHidden: s.playerBarHidden,
-      }),
+      partialize: (s) => {
+        // 限制持久化队列长度，防止 localStorage 膨胀
+        const MAX_PERSISTED_QUEUE = 200;
+        let tracks = s.tracks;
+        let currentIndex = s.currentIndex;
+        if (tracks.length > MAX_PERSISTED_QUEUE) {
+          // 以 currentIndex 为中心保留前后各一半，确保重启后仍在附近
+          const half = Math.floor(MAX_PERSISTED_QUEUE / 2);
+          const start = Math.max(0, Math.min(currentIndex - half, tracks.length - MAX_PERSISTED_QUEUE));
+          currentIndex = currentIndex >= 0 ? currentIndex - start : -1;
+          tracks = tracks.slice(start, start + MAX_PERSISTED_QUEUE);
+        }
+        let radioTracks = s.radioTracks;
+        let radioIndex = s.radioIndex;
+        if (radioTracks.length > MAX_PERSISTED_QUEUE) {
+          const half = Math.floor(MAX_PERSISTED_QUEUE / 2);
+          const start = Math.max(0, Math.min(radioIndex - half, radioTracks.length - MAX_PERSISTED_QUEUE));
+          radioIndex = radioIndex >= 0 ? radioIndex - start : -1;
+          radioTracks = radioTracks.slice(start, start + MAX_PERSISTED_QUEUE);
+        }
+        return {
+          tracks,
+          currentIndex,
+          radioTracks,
+          radioIndex,
+          activeQueue: s.activeQueue,
+          mode: s.mode,
+          volume: s.volume,
+          currentTrack: s.currentTrack,
+          sidebarHidden: s.sidebarHidden,
+          playerBarHidden: s.playerBarHidden,
+        };
+      },
     }
   )
 );
