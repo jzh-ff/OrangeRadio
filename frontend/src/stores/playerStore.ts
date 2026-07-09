@@ -298,6 +298,8 @@ interface PlayerState {
   hotkeysModalOpen: boolean;
   /** 侧栏智能动作激活态（"AI 推荐" / "懂你模式" 等动作项的高亮标记,与 subView 解耦) */
   smartAction: "recommend" | "understand_you" | null;
+  /** 当前歌曲情绪（由 emotion_analyze 分析歌词得出，驱动懂你模式 mood / 视觉主题） */
+  mood: string | null;
   /** 侧边栏是否收起（VS Code 风格右上角开关） */
   sidebarHidden: boolean;
   /** 底部播放栏是否手动收起（VS Code 风格右上角开关） */
@@ -338,6 +340,7 @@ interface PlayerState {
   setImmersiveMode: (b: boolean) => void;
   setHotkeysModalOpen: (open: boolean) => void;
   setSmartAction: (a: "recommend" | "understand_you" | null) => void;
+  setMood: (m: string | null) => void;
   setSidebarHidden: (b: boolean) => void;
   setPlayerBarHidden: (b: boolean) => void;
   /** 请求某个 source 触发重新登录（toast / settings 用） */
@@ -381,6 +384,7 @@ export const usePlayerStore = create<PlayerState>()(
   profileOpen: false,
   immersiveMode: false,
   smartAction: null,
+  mood: null,
   sidebarHidden: false,
   playerBarHidden: false,
 
@@ -438,6 +442,7 @@ export const usePlayerStore = create<PlayerState>()(
   setImmersiveMode: (immersiveMode: boolean) => set({ immersiveMode }),
   setHotkeysModalOpen: (hotkeysModalOpen: boolean) => set({ hotkeysModalOpen }),
   setSmartAction: (smartAction) => set({ smartAction }),
+  setMood: (mood) => set({ mood }),
   setSidebarHidden: (sidebarHidden: boolean) => set({ sidebarHidden }),
   setPlayerBarHidden: (playerBarHidden: boolean) => set({ playerBarHidden }),
   requestRelogin: (source) => set({ pendingLoginSource: source }),

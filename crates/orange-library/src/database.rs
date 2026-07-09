@@ -691,11 +691,42 @@ impl LibraryDb {
         // BPM 偏好归一化（无数据时保留默认分布）
         let bpm_total: f32 = bpm_buckets.iter().sum();
         if bpm_total > 0.0 {
+            let dist = [
+                bpm_buckets[0] / bpm_total,
+                bpm_buckets[1] / bpm_total,
+                bpm_buckets[2] / bpm_total,
+                bpm_buckets[3] / bpm_total,
+            ];
+            // 桶中点：slow=75 / medium=105 / fast=130 / very_fast=160
+            let weighted_center =
+                dist[0] * 75.0 + dist[1] * 105.0 + dist[2] * 130.0 + dist[3] * 160.0;
+            // 根据有数据的桶估计 min/max
+            let thresholds = [
+                (dist[0], 60.0, 90.0),
+                (dist[1], 90.0, 120.0),
+                (dist[2], 120.0, 140.0),
+                (dist[3], 140.0, 180.0),
+            ];
+            let min_bpm = thresholds
+                .iter()
+                .find(|(w, _, _)| *w > 0.001)
+                .map(|(_, lo, _)| *lo)
+                .unwrap_or(60.0);
+            let max_bpm = thresholds
+                .iter()
+                .rev()
+                .find(|(w, _, _)| *w > 0.001)
+                .map(|(_, _, hi)| *hi)
+                .unwrap_or(180.0);
             profile.bpm_preference = BpmPreference {
-                slow: bpm_buckets[0] / bpm_total,
-                medium: bpm_buckets[1] / bpm_total,
-                fast: bpm_buckets[2] / bpm_total,
-                very_fast: bpm_buckets[3] / bpm_total,
+                slow: dist[0],
+                medium: dist[1],
+                fast: dist[2],
+                very_fast: dist[3],
+                min: min_bpm,
+                max: max_bpm,
+                center: weighted_center,
+                distribution: dist.to_vec(),
             };
         }
 

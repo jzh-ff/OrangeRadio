@@ -236,11 +236,13 @@ export function useAudioEngine(autoNext?: () => void) {
       if (onPlay) onPlay(t, ni);
       else playPath(t.source_track_id);
     };
-    // 懂你模式：异步拉推荐（基于用户画像 + 跳过反馈，仅单曲队列生效）
+    // 懂你模式：异步拉推荐（基于用户画像 + 跳过反馈 + 当前情绪，仅单曲队列生效）
     if (mode === "understand_you" && !isRadio) {
+      const mood = usePlayerStore.getState().mood;
       void invoke<Track[]>("recommend_next", {
         limit: 1,
         currentTrackId: (currentTrack as { id?: string } | null)?.id,
+        mood,
         llmConfig: getLlmConfig(),
       })
         .then((list) => {

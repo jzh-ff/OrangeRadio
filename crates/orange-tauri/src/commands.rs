@@ -1492,7 +1492,7 @@ pub async fn get_user_profile(
     serde_json::to_value(profile).map_err(|e| e.to_string())
 }
 
-/// 懂你模式推荐下一首（排除最近播放 + 跳过反馈）
+/// 懂你模式推荐下一首（排除最近播放 + 跳过反馈；候选池不足时自动跨源补充）
 #[tauri::command]
 pub async fn recommend_next(
     state: tauri::State<'_, AppState>,
@@ -1502,6 +1502,7 @@ pub async fn recommend_next(
     llm_config: Option<LlmConfig>,
 ) -> Result<Vec<Track>, String> {
     use orange_core::recommendation::{Mood, RecommendContext, Scene};
+    use orange_core::source::{AudioSource, SearchQuery};
     // 把所有同步 SQLite + 内存聚合打包进一次 spawn_blocking
     let library = state.library.clone();
     let prep = tokio::task::spawn_blocking(move || -> Result<_, String> {
@@ -1515,10 +1516,75 @@ pub async fn recommend_next(
     })
     .await
     .map_err(|e| e.to_string())??;
-    let (profile, recent, feedback, all) = prep;
-    let current = current_track_id
-        .as_ref()
-        .and_then(|id| all.iter().find(|t| t.id.0.to_string() == *id).cloned());
+    let (profile, recent, feedback, mut candidates) = prep;
+
+    // 跨源候选补充：本地库为空或不足时，从就绪的网络音源搜索 + 热门电台兜底
+    if candidates.len() < 50 {
+        let keyword = profile
+            .top_artists
+            .first()
+            .map(|(a, _)| a.clone())
+            .or_else(|| {
+                current_track_id.as_ref().and_then(|id| {
+                    candidates
+                        .iter()
+                        .find(|t| t.id.0.to_string() == *id)
+                        .map(|t| t.meta.artist.clone())
+                })
+            })
+            .filter(|s| !s.trim().is_empty());
+
+        if let Some(kw) = keyword {
+            let query = SearchQuery {
+                keyword: kw,
+                page: 1,
+                page_size: 50,
+                ..Default::default()
+            };
+            let sources = state.sources.list();
+            let mut set = tokio::task::JoinSet::new();
+            for src in sources {
+                if !src.is_ready() {
+                    continue;
+                }
+                let q = query.clone();
+                set.spawn(async move {
+                    match tokio::time::timeout(std::time::Duration::from_secs(5), src.search(&q))
+                        .await
+                    {
+                        Ok(Ok(r)) => r.tracks,
+                        _ => vec![],
+                    }
+                });
+            }
+            while let Some(res) = set.join_next().await {
+                if let Ok(tracks) = res {
+                    candidates.extend(tracks);
+                }
+            }
+        }
+    }
+    // 最终兜底：网络源也没有时，用热门电台填充（保证空库也能「懂你」）
+    if candidates.is_empty() {
+        if let Ok(radio) = state.web_radio.recommendations(30).await {
+            candidates.extend(radio);
+        }
+    }
+    // 去重：同一 source_track_id + source_kind 视为同一首
+    {
+        let mut seen = std::collections::HashSet::new();
+        candidates.retain(|t| {
+            let key = format!("{}:{:?}", t.source_track_id, t.source_kind);
+            seen.insert(key)
+        });
+    }
+
+    let current = current_track_id.as_ref().and_then(|id| {
+        candidates
+            .iter()
+            .find(|t| t.id.0.to_string() == *id)
+            .cloned()
+    });
     let n = limit.unwrap_or(1).max(1);
 
     // 时段推导场景（0-6/22+ = Sleep，7-9 = Commute，9-18 = Work，18-22 = Relax）
@@ -1552,16 +1618,26 @@ pub async fn recommend_next(
         scene,
         recent_track_ids: recent,
         limit: n,
-        candidates: all,
+        candidates,
     };
 
     // 若前端传了 llm_config，临时构造带 LLM 的 recommender（覆盖默认 local 引擎）
     let recommender: std::sync::Arc<dyn orange_core::recommendation::RecommendationEngine> =
         if let Some(cfg) = llm_config {
             if !cfg.api_key.is_empty() {
-                let provider: std::sync::Arc<dyn orange_ai::LlmProvider> = std::sync::Arc::new(
-                    orange_ai::CloudLlmProvider::new(cfg.api_base, cfg.api_key, cfg.model),
-                );
+                let provider: std::sync::Arc<dyn orange_ai::LlmProvider> =
+                    match cfg.provider.as_deref().unwrap_or("openai") {
+                        "minimax" => std::sync::Arc::new(orange_ai::MinimaxProvider::new(
+                            cfg.api_base,
+                            cfg.api_key,
+                            cfg.model,
+                        )),
+                        _ => std::sync::Arc::new(orange_ai::CloudLlmProvider::new(
+                            cfg.api_base,
+                            cfg.api_key,
+                            cfg.model,
+                        )),
+                    };
                 std::sync::Arc::new(orange_ai::AiRecommendationEngine::with_llm(provider))
             } else {
                 state.recommender.clone()
@@ -1587,6 +1663,7 @@ pub async fn recommend_next(
 /// LLM 配置（前端从 localStorage 读取后传入 recommend_next）
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct LlmConfig {
+    pub provider: Option<String>,
     pub api_base: String,
     pub api_key: String,
     pub model: String,

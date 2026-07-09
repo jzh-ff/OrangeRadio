@@ -137,6 +137,27 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   /** 展开了 annotation 的歌词行索引集合 */
   const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
 
+  // AI 歌词情绪分析：切歌/歌词加载后自动调用，结果写入 store（懂你模式推荐用）
+  const analyzeEmotion = async (lyrics: string) => {
+    const key = localStorage.getItem("orangeradio_minimax_key") || "";
+    if (!key) return;
+    const apiBase = localStorage.getItem("orangeradio_minimax_base") || "https://api.minimaxi.com/anthropic";
+    const model = localStorage.getItem("orangeradio_minimax_model") || "MiniMax-M1";
+    try {
+      const r = await invoke<{ mood?: string; reason?: string }>("emotion_analyze", {
+        lyrics,
+        apiBase,
+        apiKey: key,
+        model,
+      });
+      if (r?.mood) {
+        usePlayerStore.getState().setMood(r.mood);
+      }
+    } catch (e) {
+      console.warn("情绪分析失败:", e);
+    }
+  };
+
   // AI 歌词译注（MiniMax LLM，key/base/model 从 localStorage 读，由 SettingsModal 配置）
   const handleAnnotate = async () => {
     const lrc = lyricData?.raw_lrc;
@@ -231,7 +252,12 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
     }
     setLoading(true);
     invoke<LyricData>(cmd, { songId: tid })
-      .then((d) => setLyricData(d))
+      .then((d) => {
+        setLyricData(d);
+        // 有歌词时自动分析情绪，驱动懂你模式 mood 与视觉主题
+        const lrc = d?.raw_lrc || d?.translated_lrc;
+        if (lrc) analyzeEmotion(lrc);
+      })
       .catch(() => setLyricData(null))
       .finally(() => setLoading(false));
   }, [currentTrack]);

@@ -70,6 +70,17 @@ export function SettingsModal() {
   const [llmKey, setLlmKey] = useState(() => localStorage.getItem("orangeradio_llm_key") || "");
   const [llmBase, setLlmBase] = useState(() => localStorage.getItem("orangeradio_llm_base") || "https://open.bigmodel.cn/api/paas/v4");
   const [llmModel, setLlmModel] = useState(() => localStorage.getItem("orangeradio_llm_model") || "glm-4-flash");
+  // Hue 智能光效配置（ discovered/pair/set_state，配对接 token 存 localStorage）
+  const [hueLoading, setHueLoading] = useState(false);
+  const [hueError, setHueError] = useState("");
+  const [hueBridges, setHueBridges] = useState<{ ip: string }[]>([]);
+  const [hueIp, setHueIp] = useState(() => localStorage.getItem("orangeradio_hue_ip") || "");
+  const [hueToken, setHueToken] = useState(() => localStorage.getItem("orangeradio_hue_token") || "");
+  const [hueLightId, setHueLightId] = useState(() => localStorage.getItem("orangeradio_hue_light_id") || "1");
+  const [hueOn, setHueOn] = useState(true);
+  const [hueBri, setHueBri] = useState(128);
+  const [hueHue, setHueHue] = useState(0);
+  const [hueSat, setHueSat] = useState(254);
   // 音乐生成配置（Studio 创作台用，与上面共用同一个 Key）
   const [musicBase, setMusicBase] = useState(() => localStorage.getItem("orangeradio_minimax_music_base") || "https://api.minimaxi.com");
   const [musicModel, setMusicModel] = useState(() => localStorage.getItem("orangeradio_minimax_music_model") || "music-2.6-free");
@@ -113,6 +124,60 @@ export function SettingsModal() {
     setView("player");
     setSubView(source as any);
     requestRelogin(source as any);
+  };
+
+  // Hue 发现 / 配对 / 控制
+  const hueDiscover = async () => {
+    setHueLoading(true);
+    setHueError("");
+    try {
+      const r = await invoke<{ ip: string }[]>("hue_discover");
+      setHueBridges(r || []);
+      if (r?.[0]) setHueIp(r[0].ip);
+    } catch (e: any) {
+      setHueError(String(e?.message || e));
+    } finally {
+      setHueLoading(false);
+    }
+  };
+  const huePair = async () => {
+    if (!hueIp) return;
+    setHueLoading(true);
+    setHueError("");
+    try {
+      const token = await invoke<string>("hue_pair", { ip: hueIp });
+      setHueToken(token);
+      localStorage.setItem("orangeradio_hue_token", token);
+      localStorage.setItem("orangeradio_hue_ip", hueIp);
+    } catch (e: any) {
+      setHueError(String(e?.message || e));
+    } finally {
+      setHueLoading(false);
+    }
+  };
+  const hueApply = async () => {
+    if (!hueIp || !hueToken) {
+      setHueError("请先发现并配对 Hue Bridge");
+      return;
+    }
+    setHueLoading(true);
+    setHueError("");
+    try {
+      await invoke("hue_set_state", {
+        ip: hueIp,
+        token: hueToken,
+        lightId: hueLightId,
+        on: hueOn,
+        bri: hueBri,
+        hue: hueHue,
+        sat: hueSat,
+      });
+      localStorage.setItem("orangeradio_hue_light_id", hueLightId);
+    } catch (e: any) {
+      setHueError(String(e?.message || e));
+    } finally {
+      setHueLoading(false);
+    }
   };
 
   const handleSpotifyReconfigure = async () => {
@@ -395,6 +460,139 @@ export function SettingsModal() {
             </div>
             <div className="settings-note">
               默认 <code>music-2.6-free</code> 限免版（有 RPM 限制）；额度耗尽可切 <code>music-2.6</code> 正式版。
+            </div>
+          </section>
+
+          {/* Hue 智能光效（后端已存在，前端控制面板） */}
+          <section className="settings-section">
+            <h3 className="settings-section__title">Hue 智能光效</h3>
+            <div className="settings-meta settings-ai-form">
+              <label className="settings-ai-row">
+                <span className="settings-ai-label">Bridge IP</span>
+                <input
+                  type="text"
+                  className="settings-ai-input"
+                  placeholder="点击右侧发现自动填入"
+                  value={hueIp}
+                  onChange={(e) => setHueIp(e.target.value)}
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  className="settings-mini-btn"
+                  onClick={hueDiscover}
+                  disabled={hueLoading}
+                >
+                  发现
+                </button>
+              </label>
+              {hueBridges.length > 0 && (
+                <div className="settings-note">
+                  发现 {hueBridges.length} 个 Bridge：
+                  {hueBridges.map((b) => (
+                    <button
+                      key={b.ip}
+                      type="button"
+                      className="btn-link"
+                      style={{ marginLeft: 8 }}
+                      onClick={() => setHueIp(b.ip)}
+                    >
+                      {b.ip}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <label className="settings-ai-row">
+                <span className="settings-ai-label">配对 Token</span>
+                <input
+                  type="text"
+                  className="settings-ai-input"
+                  placeholder="先按 Bridge 顶部 link button 再点配对"
+                  value={hueToken}
+                  onChange={(e) => {
+                    setHueToken(e.target.value);
+                    localStorage.setItem("orangeradio_hue_token", e.target.value);
+                  }}
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  className="settings-mini-btn"
+                  onClick={huePair}
+                  disabled={hueLoading || !hueIp}
+                >
+                  配对
+                </button>
+              </label>
+              <div className="settings-ai-row" style={{ gap: 12, flexWrap: "wrap" }}>
+                <label className="settings-ai-row" style={{ flex: "1 1 120px" }}>
+                  <span className="settings-ai-label">灯 ID</span>
+                  <input
+                    type="text"
+                    className="settings-ai-input"
+                    value={hueLightId}
+                    onChange={(e) => setHueLightId(e.target.value)}
+                  />
+                </label>
+                <label className="settings-ai-row" style={{ flex: "1 1 120px" }}>
+                  <span className="settings-ai-label">亮度 0-254</span>
+                  <input
+                    type="number"
+                    className="settings-ai-input"
+                    min={0}
+                    max={254}
+                    value={hueBri}
+                    onChange={(e) => setHueBri(Number(e.target.value))}
+                  />
+                </label>
+                <label className="settings-ai-row" style={{ flex: "1 1 120px" }}>
+                  <span className="settings-ai-label">色相 0-65535</span>
+                  <input
+                    type="number"
+                    className="settings-ai-input"
+                    min={0}
+                    max={65535}
+                    value={hueHue}
+                    onChange={(e) => setHueHue(Number(e.target.value))}
+                  />
+                </label>
+                <label className="settings-ai-row" style={{ flex: "1 1 120px" }}>
+                  <span className="settings-ai-label">饱和度 0-254</span>
+                  <input
+                    type="number"
+                    className="settings-ai-input"
+                    min={0}
+                    max={254}
+                    value={hueSat}
+                    onChange={(e) => setHueSat(Number(e.target.value))}
+                  />
+                </label>
+              </div>
+              <div className="settings-ai-row" style={{ gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  className={`settings-mini-btn ${hueOn ? "is-active" : ""}`}
+                  onClick={() => setHueOn(true)}
+                >
+                  开灯
+                </button>
+                <button
+                  type="button"
+                  className={`settings-mini-btn ${!hueOn ? "is-active" : ""}`}
+                  onClick={() => setHueOn(false)}
+                >
+                  关灯
+                </button>
+                <button
+                  type="button"
+                  className="settings-mini-btn"
+                  onClick={hueApply}
+                  disabled={hueLoading || !hueToken}
+                >
+                  应用
+                </button>
+              </div>
+              {hueError && <div className="settings-error">{hueError}</div>}
             </div>
           </section>
 
