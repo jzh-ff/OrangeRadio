@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlayerStore, type FullLayout } from "../../stores/playerStore";
+import { useLibraryStore } from "../../stores/libraryStore";
 import { engineRef } from "../../App";
 import { CoverParticles } from "../../visual/CoverParticles";
 import { BeatParticles } from "../../visual/BeatParticles";
@@ -663,16 +664,15 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                 className={`fp-ctrl-btn ${currentTrack.liked ? "fp-ctrl-btn--active" : ""}`}
                 onClick={async () => {
                   const track = currentTrack;
-                  const isNetease = (track as any).source_kind === "netease_cloud_music";
+                  const next = !track.liked;
                   try {
-                    if (isNetease) {
-                      await invoke("netease_like_track", { songId: track.source_track_id });
-                      usePlayerStore.setState({ currentTrack: { ...track, liked: true } });
+                    if (next) {
+                      await invoke("add_to_favorites", { track });
                     } else {
-                      const next = !track.liked;
-                      usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
-                      await invoke("toggle_liked", { trackId: track.id, liked: next });
+                      await invoke("remove_from_favorites", { track });
                     }
+                    usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
+                    await useLibraryStore.getState().refreshTracks();
                   } catch {}
                 }}
                 title={currentTrack.liked ? "取消收藏" : "收藏"}

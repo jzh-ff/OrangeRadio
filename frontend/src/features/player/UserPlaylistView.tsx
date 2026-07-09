@@ -30,23 +30,33 @@ export function UserPlaylistView() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
-  useEffect(() => {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadPlaylist = useCallback(async (isRefresh = false) => {
     if (!playlistId) return;
-    setLoading(true);
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     setPage(1); setHasMore(false);
-    invoke<Track[]>("playlist_tracks", { playlistId, offset: 0, limit: PAGE_SIZE })
-      .then((list) => {
-        setTracks(list);
-        setHasMore(list.length === PAGE_SIZE);
-        setQueue(list);
-        invoke<{ id: string; name: string }[]>("all_playlists").then((ps) => {
-          const p = ps.find((x) => x.id === playlistId);
-          if (p) setPlaylistName(p.name);
-        }).catch(() => {});
-      })
-      .catch(() => setTracks([]))
-      .finally(() => setLoading(false));
+    try {
+      const list = await invoke<Track[]>("playlist_tracks", { playlistId, offset: 0, limit: PAGE_SIZE });
+      setTracks(list);
+      setHasMore(list.length === PAGE_SIZE);
+      if (!isRefresh) setQueue(list);
+      invoke<{ id: string; name: string }[]>("all_playlists").then((ps) => {
+        const p = ps.find((x) => x.id === playlistId);
+        if (p) setPlaylistName(p.name);
+      }).catch(() => {});
+    } catch {
+      setTracks([]);
+    } finally {
+      if (isRefresh) setRefreshing(false);
+      else setLoading(false);
+    }
   }, [playlistId, setQueue]);
+
+  useEffect(() => {
+    loadPlaylist();
+  }, [loadPlaylist]);
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore || !playlistId) return;
@@ -98,6 +108,18 @@ export function UserPlaylistView() {
             onClick={() => handlePlay(tracks[0], 0)}
           >播放全部</button>
         )}
+        <button
+          className="nav-pill"
+          style={{ marginLeft: 8, padding: "6px 14px", fontSize: 12 }}
+          onClick={() => loadPlaylist(true)}
+          disabled={refreshing || loading}
+          title="刷新歌单"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ marginRight: 4 }} aria-hidden>
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 17.6-6.1M22 12.5a10 10 0 0 1-17.6 6.1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {refreshing ? "刷新中" : "刷新"}
+        </button>
       </div>
 
       {tracks.length === 0 ? (

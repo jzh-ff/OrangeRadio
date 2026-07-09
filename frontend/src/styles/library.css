@@ -270,7 +270,8 @@
 
 /* 主按钮 */
 .btn-tune,
-.btn-scan {
+.btn-scan,
+.btn-refresh {
   position: relative;
   overflow: hidden;
   height: 48px;
@@ -321,8 +322,22 @@
     0 0 0 1px rgba(255, 157, 69, 0.4);
 }
 
+.btn-refresh {
+  border: 1px solid rgba(168, 196, 214, 0.22);
+  color: #a8c4d6;
+  background: linear-gradient(180deg, rgba(168, 196, 214, 0.04), rgba(168, 196, 214, 0.01));
+}
+
+.btn-refresh:hover:not(:disabled) {
+  border-color: rgba(168, 196, 214, 0.45);
+  color: var(--paper);
+  background: linear-gradient(180deg, rgba(168, 196, 214, 0.1), rgba(168, 196, 214, 0.03));
+  transform: translateY(-1px);
+}
+
 .btn-scan:disabled,
-.btn-tune:disabled {
+.btn-tune:disabled,
+.btn-refresh:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none !important;
@@ -1227,7 +1242,8 @@
   }
   .library__switcher,
   .btn-tune,
-  .btn-scan {
+  .btn-scan,
+  .btn-refresh {
     justify-content: center;
   }
   .library__grid {

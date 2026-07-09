@@ -258,9 +258,11 @@ export function PlaylistShelf({ onClose }: { onClose: () => void }) {
       (t) => t.meta.artwork?.source?.kind === "url"
     )?.meta.artwork?.source;
     const coverUrl = firstUrlCover?.kind === "url" ? firstUrlCover.url : null;
+    const likedTracks = libraryTracks.filter((t) => t.liked);
+    const localTracks = libraryTracks.filter((t) => (t.source_kind ?? "local") === "local");
     const fixed: ShelfCard[] = [
-      { id: "liked", name: "我喜欢的音乐", sub: `${libraryTracks.filter((t) => t.liked).length} 首`, cover: coverUrl, onClick: () => { setSubView("library"); close(); } },
-      { id: "library", name: "本地音乐库", sub: `${libraryTracks.length} 首`, cover: coverUrl, onClick: () => { setSubView("library"); close(); } },
+      { id: "liked", name: "我的收藏", sub: `${likedTracks.length} 首`, cover: coverUrl, onClick: () => { setSubView("library"); close(); } },
+      { id: "library", name: "本地音乐库", sub: `${localTracks.length} 首`, cover: coverUrl, onClick: () => { setSubView("local_library"); close(); } },
     ];
     invoke<{ id: string; name: string; track_count: number; cover?: string | null }[]>("all_playlists")
       .then((pls) => {

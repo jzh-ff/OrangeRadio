@@ -128,7 +128,9 @@ export function HomeView() {
       .catch(() => {});
   };
 
-  const likedCount = libraryTracks.filter((t) => t.liked).length;
+  const likedTracks = libraryTracks.filter((t) => t.liked);
+  const likedCount = likedTracks.length;
+  const localTracks = libraryTracks.filter((t) => (t.source_kind ?? "local") === "local");
   const recentTracks = tracks.slice(-5).reverse();
   const topArtists = profile?.top_artists?.slice(0, 3) || [];
   const heroCover = getCoverUrl(currentTrack);
@@ -157,13 +159,12 @@ export function HomeView() {
   }[] = [
     {
       id: "library",
-      label: "Library",
-      title: "我的歌单",
+      label: "Favorites",
+      title: "我的收藏",
       sub: (() => {
-        const list = countSources(libraryTracks);
-        const total = libraryTracks.length;
-        if (total === 0) return "还没有歌曲，去搜一首吧";
-        // 拼成 "本 32 · NE 18 · QQ 12 · 共 78"
+        const list = countSources(likedTracks);
+        const total = likedTracks.length;
+        if (total === 0) return "还没有收藏，点一下爱心吧";
         const shown = list.slice(0, 3);
         const left = total - shown.reduce((s, x) => s + x.count, 0);
         return [
@@ -174,9 +175,26 @@ export function HomeView() {
       })(),
       tone: "library",
       featured: true,
-      cover: getCoverUrl(libraryTracks[0]),
-      sourceBadges: countSources(libraryTracks).slice(0, 4),  // 封面右下角徽章层
+      cover: getCoverUrl(likedTracks[0]),
+      sourceBadges: countSources(likedTracks).slice(0, 4),
       onClick: () => setSubView("library"),
+    },
+    {
+      id: "local",
+      label: "Local",
+      title: "本地音乐库",
+      sub: (() => {
+        const total = localTracks.length;
+        if (total === 0) return "还没有本地歌曲，去扫描吧";
+        const totalSecs = localTracks.reduce((s, t) => s + (t.meta.duration_secs ?? 0), 0);
+        const h = Math.floor(totalSecs / 3600);
+        const m = Math.floor((totalSecs % 3600) / 60);
+        const dur = h > 0 ? `${h}h ${m}m` : `${m}m`;
+        return `${total} 首本地曲目 · 总时长 ${dur}`;
+      })(),
+      tone: "local",
+      cover: getCoverUrl(localTracks[0]),
+      onClick: () => setSubView("local_library"),
     },
     {
       id: "daily",
@@ -281,8 +299,8 @@ export function HomeView() {
     })),
   ];
   // 不足 5 个时：用本地库补齐（同时明确标 "本地" 来源，不混充"推荐"）
-  while (tiles.length < 5 && tiles.length < libraryTracks.length) {
-    const t = libraryTracks[tiles.length]!;
+  while (tiles.length < 5 && tiles.length < localTracks.length) {
+    const t = localTracks[tiles.length]!;
     tiles.push({
       title: t.meta.title,
       sub: t.meta.artist,
@@ -340,7 +358,7 @@ export function HomeView() {
               </>
             ) : (
               <button type="button" className="home-btn home-btn--primary" onClick={() => setSubView("library")}>
-                浏览音乐库
+                浏览我的收藏
               </button>
             )}
           </div>

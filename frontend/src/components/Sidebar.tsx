@@ -16,7 +16,7 @@ interface UserPlaylist {
 }
 
 type SubView =
-  | "home" | "library" | "wallpaper" | "radio" | "netease"
+  | "home" | "library" | "local_library" | "wallpaper" | "radio" | "netease"
   | "podcast" | "qqmusic" | "spotify" | "gequbao" | "kugou" | "kuwo" | "qishui";
 
 interface MenuItem {
@@ -40,6 +40,7 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
     items: [
       { label: "首页", icon: "HM", sub: "home" },
       { label: "我的音乐库", icon: "LIB", sub: "library" },
+      { label: "本地音乐库", icon: "LOC", sub: "local_library" },
       { label: "壁纸", icon: "WP", sub: "wallpaper" },
     ],
   },
@@ -266,7 +267,7 @@ export function Sidebar() {
 
         <div className="sidebar__section">
           <div className="sidebar__section-head">
-            <span className="sidebar__section-title">我的歌单</span>
+            <span className="sidebar__section-title">自建歌单</span>
             <button type="button" className="sidebar__section-add" onClick={createPlaylist} title="新建歌单">+</button>
           </div>
           {playlists.map((p) => (

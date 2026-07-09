@@ -46,6 +46,10 @@ export function PlayerView() {
         <PodcastView />
       ) : subView === "user_playlist" ? (
         <UserPlaylistView />
+      ) : subView === "library" ? (
+        <LibraryView filter="liked" />
+      ) : subView === "local_library" ? (
+        <LibraryView filter="local" />
       ) : (
         <LibraryView />
       )}

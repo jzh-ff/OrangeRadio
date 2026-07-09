@@ -13,7 +13,7 @@ pub mod fingerprint;
 pub mod metadata;
 pub mod scanner;
 
-pub use database::{LibraryDb, UserPlaylist};
+pub use database::{LibraryDb, UserPlaylist, FAVORITES_PLAYLIST_ID};
 pub use fingerprint::FingerprintRecognizer;
 pub use metadata::read_track;
 pub use scanner::{LibraryScanner, ScanOptions};

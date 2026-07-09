@@ -48,14 +48,19 @@ type ViewMode = "list" | "grid";
 
 const VIEW_STORAGE_KEY = "orangeradio.library.viewMode";
 
-export function LibraryView() {
-  const { tracks, loading, searchKeyword, loadTracks, loadMore, hasMore, scanLocal, doSearch, setSearchKeyword } =
+interface LibraryViewProps {
+  filter?: "all" | "liked" | "local";
+}
+
+export function LibraryView({ filter = "all" }: LibraryViewProps) {
+  const { tracks, loading, searchKeyword, loadTracks, refreshTracks, loadMore, hasMore, scanLocal, doSearch, setSearchKeyword } =
     useLibraryStore(
       useShallow((s) => ({
         tracks: s.tracks,
         loading: s.loading,
         searchKeyword: s.searchKeyword,
         loadTracks: s.loadTracks,
+        refreshTracks: s.refreshTracks,
         loadMore: s.loadMore,
         hasMore: s.hasMore,
         scanLocal: s.scanLocal,
@@ -81,8 +86,14 @@ export function LibraryView() {
   }, [viewMode]);
 
   useEffect(() => {
-    loadTracks();
-  }, [loadTracks]);
+    loadTracks(filter);
+  }, [loadTracks, filter]);
+
+  const filteredTracks = useMemo(() => {
+    if (filter === "liked") return tracks.filter((t) => t.liked);
+    if (filter === "local") return tracks.filter((t) => (t.source_kind ?? "local") === "local");
+    return tracks;
+  }, [tracks, filter]);
 
   const onLoadMore = useCallback(() => { loadMore(); }, [loadMore]);
   const onItemsRendered = useVirtualInfiniteScroll({
@@ -97,6 +108,28 @@ export function LibraryView() {
 
   const isSearching = searchKeyword.trim().length > 0;
 
+  const topLabel = filter === "liked" ? "FAVORITES" : filter === "local" ? "LOCAL" : "LIBRARY";
+  const topMeta = (() => {
+    const list = filteredTracks;
+    if (list.length === 0) {
+      if (filter === "liked") return "还没有收藏歌曲";
+      if (filter === "local") return "尚未接入本地音乐";
+      return "尚未接入本地音乐";
+    }
+    const totalSecs = list.reduce((s, t) => s + (t.meta.duration_secs ?? 0), 0);
+    return `${list.length} 首曲目 · 总时长 ${fmtHours(totalSecs)}`;
+  })();
+
+  const emptyTitle = loading
+    ? "正在扫描你的音乐库…"
+    : filter === "liked"
+      ? "收藏夹还是空的"
+      : "唱片店里还没有唱片";
+  const emptyDesc = filter === "liked"
+    ? "播放任何歌曲时点击爱心，它就会出现在这里。"
+    : "点击下方按钮选择文件夹，OrangeRadio 会把本地声波接入这台深夜调音台。";
+  const showScan = filter !== "liked";
+
   return (
     <div className="library">
       {/* 轻量级顶栏：左侧状态条 + 右侧数据概览 */}
@@ -104,13 +137,9 @@ export function LibraryView() {
         <div className="library__topbar-left">
           <span className="library__topbar-tag">
             <span className="library__topbar-dot" />
-            LIBRARY
+            {topLabel}
           </span>
-          <span className="library__topbar-meta">
-            {tracks.length > 0
-              ? `${tracks.length} 首曲目 · 总时长 ${fmtHours(tracks.reduce((s, t) => s + (t.meta.duration_secs ?? 0), 0))}`
-              : "尚未接入本地音乐"}
-          </span>
+          <span className="library__topbar-meta">{topMeta}</span>
         </div>
       </div>
 
@@ -179,10 +208,16 @@ export function LibraryView() {
           </svg>
           {loading ? "扫描中…" : "扫描本地音乐"}
         </button>
+        <button className="btn-refresh" onClick={() => refreshTracks()} disabled={loading} title="刷新列表">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 17.6-6.1M22 12.5a10 10 0 0 1-17.6 6.1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          刷新
+        </button>
       </div>
 
       {/* 内容区 */}
-      {tracks.length === 0 ? (
+      {filteredTracks.length === 0 ? (
         <div className="library__empty">
           <div className="library__empty-glow" />
           <div className="library__empty-icon">
@@ -192,20 +227,20 @@ export function LibraryView() {
               <circle cx="18" cy="16" r="3" stroke="currentColor" strokeWidth="1.5" />
             </svg>
           </div>
-          <div className="library__empty-title">{loading ? "正在扫描你的音乐库…" : "唱片店里还没有唱片"}</div>
-          <div className="library__empty-desc">
-            点击下方按钮选择文件夹,OrangeRadio 会把本地声波接入这台深夜调音台。
-          </div>
-          <button className="library__empty-cta" onClick={() => scanLocal()} disabled={loading}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7l-2-2H5a2 2 0 0 0-2 2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-            </svg>
-            {loading ? "扫描中…" : "接入本地音乐"}
-          </button>
+          <div className="library__empty-title">{emptyTitle}</div>
+          <div className="library__empty-desc">{emptyDesc}</div>
+          {showScan && (
+            <button className="library__empty-cta" onClick={() => scanLocal()} disabled={loading}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7l-2-2H5a2 2 0 0 0-2 2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              </svg>
+              {loading ? "扫描中…" : "接入本地音乐"}
+            </button>
+          )}
         </div>
       ) : viewMode === "list" ? (
         <ListView
-          tracks={tracks}
+          tracks={filteredTracks}
           currentTrackId={currentTrack?.id}
           isPlaying={isPlaying}
           hasMore={hasMore}
@@ -216,7 +251,7 @@ export function LibraryView() {
         />
       ) : (
         <GridView
-          tracks={tracks}
+          tracks={filteredTracks}
           currentTrackId={currentTrack?.id}
           onPlay={handlePlay}
         />

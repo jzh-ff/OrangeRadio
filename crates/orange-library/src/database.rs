@@ -14,6 +14,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// 默认“我的收藏”歌单固定 ID（应用级默认歌单，不可删除）
+pub const FAVORITES_PLAYLIST_ID: &str = "__favorites__";
+
 /// 本地库（线程安全，内存索引 + SQLite 持久化）
 #[derive(Clone)]
 pub struct LibraryDb {
@@ -39,6 +42,8 @@ impl LibraryDb {
         let conn = Connection::open(&path).map_err(sqlite_err)?;
         init_schema(&conn)?;
         let tracks = load_tracks(&conn)?;
+        ensure_favorites_playlist(&conn)?;
+        migrate_liked_to_favorites(&conn, &tracks)?;
         tracing::info!("已加载本地库缓存 {} 首（SQLite）", tracks.len());
         Ok(Self {
             tracks: Arc::new(RwLock::new(tracks)),
@@ -207,7 +212,13 @@ impl LibraryDb {
     }
 
     /// 删除歌单（连带关联）
+    /// 默认“我的收藏”歌单不可删除。
     pub fn delete_playlist(&self, id: &str) -> orange_core::Result<()> {
+        if id == FAVORITES_PLAYLIST_ID {
+            return Err(orange_core::CoreError::Internal(
+                "默认“我的收藏”歌单不可删除".into(),
+            ));
+        }
         let path = match &self.db_path {
             Some(p) => p.as_ref(),
             None => return Ok(()),
@@ -291,7 +302,7 @@ impl LibraryDb {
         Ok(tracks)
     }
 
-    /// 全部用户歌单
+    /// 全部用户自建歌单（不含默认“我的收藏”歌单）
     pub fn all_playlists(&self) -> orange_core::Result<Vec<UserPlaylist>> {
         let path = match &self.db_path {
             Some(p) => p.as_ref(),
@@ -299,10 +310,10 @@ impl LibraryDb {
         };
         let conn = Connection::open(path).map_err(sqlite_err)?;
         let mut stmt = conn
-            .prepare("SELECT p.id, p.name, p.created_at, COUNT(pt.track_id) as cnt FROM user_playlists p LEFT JOIN playlist_tracks pt ON p.id=pt.playlist_id GROUP BY p.id ORDER BY p.created_at DESC")
+            .prepare("SELECT p.id, p.name, p.created_at, COUNT(pt.track_id) as cnt FROM user_playlists p LEFT JOIN playlist_tracks pt ON p.id=pt.playlist_id WHERE p.id != ?1 GROUP BY p.id ORDER BY p.created_at DESC")
             .map_err(sqlite_err)?;
         let rows = stmt
-            .query_map([], |r| {
+            .query_map(params![FAVORITES_PLAYLIST_ID], |r| {
                 let cnt: i64 = r.get(3)?;
                 Ok(UserPlaylist {
                     id: r.get::<_, String>(0)?,
@@ -340,8 +351,60 @@ impl LibraryDb {
         Ok(result)
     }
 
-    /// 设置喜欢状态
-    pub fn set_liked(&self, track_id: &str, liked: bool) -> orange_core::Result<()> {
+    /// 获取默认“我的收藏”歌单信息
+    pub fn favorites_playlist(&self) -> orange_core::Result<Option<UserPlaylist>> {
+        let path = match &self.db_path {
+            Some(p) => p.as_ref(),
+            None => return Ok(None),
+        };
+        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let mut stmt = conn
+            .prepare("SELECT p.id, p.name, p.created_at, COUNT(pt.track_id) as cnt FROM user_playlists p LEFT JOIN playlist_tracks pt ON p.id=pt.playlist_id WHERE p.id = ?1 GROUP BY p.id")
+            .map_err(sqlite_err)?;
+        let mut rows = stmt
+            .query_map(params![FAVORITES_PLAYLIST_ID], |r| {
+                let cnt: i64 = r.get(3)?;
+                Ok(UserPlaylist {
+                    id: r.get::<_, String>(0)?,
+                    name: r.get::<_, String>(1)?,
+                    created_at: r.get::<_, String>(2)?,
+                    track_count: cnt as u32,
+                    cover: None,
+                })
+            })
+            .map_err(sqlite_err)?;
+        if let Some(row) = rows.next() {
+            let mut pl = row.map_err(sqlite_err)?;
+            // 取该歌单第一首有 artwork 的曲目，提取封面 URL/路径
+            let mut cover_stmt = conn
+                .prepare("SELECT t.data FROM playlist_tracks pt JOIN tracks t ON pt.track_id=t.id WHERE pt.playlist_id=?1 ORDER BY pt.added_at")
+                .map_err(sqlite_err)?;
+            let data_rows: Vec<String> = cover_stmt
+                .query_map(params![pl.id], |r| r.get::<_, String>(0))
+                .map_err(sqlite_err)?
+                .filter_map(|r| r.ok())
+                .collect();
+            for json in data_rows {
+                if let Ok(t) = serde_json::from_str::<Track>(&json) {
+                    if let Some(art) = &t.meta.artwork {
+                        if let Some(url) = extract_cover_url(&art.source) {
+                            pl.cover = Some(url.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+            return Ok(Some(pl));
+        }
+        Ok(None)
+    }
+
+    /// 设置喜欢状态，并同步到默认“我的收藏”歌单
+    ///
+    /// liked=true 时：加入 FAVORITES_PLAYLIST_ID
+    /// liked=false 时：从 FAVORITES_PLAYLIST_ID 移除
+    pub fn set_liked(&self, track: &Track, liked: bool) -> orange_core::Result<()> {
+        let track_id = track.id.0.to_string();
         let path = match &self.db_path {
             Some(p) => p.as_ref(),
             None => return Ok(()),
@@ -367,9 +430,17 @@ impl LibraryDb {
             }
         }
         // 同步内存
-        let mut guard = self.tracks.write();
-        if let Some(t) = guard.iter_mut().find(|t| t.id.0.to_string() == track_id) {
-            t.liked = liked;
+        {
+            let mut guard = self.tracks.write();
+            if let Some(t) = guard.iter_mut().find(|t| t.id.0.to_string() == track_id) {
+                t.liked = liked;
+            }
+        }
+        // 同步默认“我的收藏”歌单
+        if liked {
+            self.add_to_playlist(FAVORITES_PLAYLIST_ID, track)?;
+        } else {
+            self.remove_from_playlist(FAVORITES_PLAYLIST_ID, &track_id)?;
         }
         Ok(())
     }
@@ -744,6 +815,40 @@ fn load_tracks(conn: &Connection) -> orange_core::Result<Vec<Track>> {
         }
     }
     Ok(tracks)
+}
+
+/// 确保默认“我的收藏”歌单存在
+fn ensure_favorites_playlist(conn: &Connection) -> orange_core::Result<()> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM user_playlists WHERE id=?1",
+            params![FAVORITES_PLAYLIST_ID],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !exists {
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO user_playlists (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
+            params![FAVORITES_PLAYLIST_ID, "我的收藏", now],
+        )
+        .map_err(sqlite_err)?;
+        tracing::info!("已创建默认“我的收藏”歌单");
+    }
+    Ok(())
+}
+
+/// 将历史 liked 曲目迁移到默认“我的收藏”歌单（幂等）
+fn migrate_liked_to_favorites(conn: &Connection, tracks: &[Track]) -> orange_core::Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut stmt = conn
+        .prepare("INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, added_at) VALUES (?1, ?2, ?3)")
+        .map_err(sqlite_err)?;
+    for t in tracks.iter().filter(|t| t.liked) {
+        stmt.execute(params![FAVORITES_PLAYLIST_ID, t.id.0.to_string(), now])
+            .map_err(sqlite_err)?;
+    }
+    Ok(())
 }
 
 fn sqlite_err(e: rusqlite::Error) -> orange_core::CoreError {

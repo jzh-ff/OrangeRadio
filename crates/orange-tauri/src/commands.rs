@@ -77,15 +77,23 @@ pub struct QrStatusInfo {
 }
 
 /// 获取本地库全部曲目（支持分页：不传参返回全量；传 offset+limit 则分页）
+/// filter 可选："liked" 只返回收藏，"local" 只返回本地来源。
 #[tauri::command]
 pub async fn library_tracks(
     state: tauri::State<'_, AppState>,
     offset: Option<usize>,
     limit: Option<usize>,
+    filter: Option<String>,
 ) -> Result<Vec<Track>, String> {
+    let mut tracks = state.library.all();
+    match filter.as_deref() {
+        Some("liked") => tracks.retain(|t| t.liked),
+        Some("local") => tracks.retain(|t| t.source_kind == orange_core::source::SourceKind::Local),
+        _ => {}
+    }
     match (offset, limit) {
-        (Some(o), Some(l)) => Ok(state.library.all().into_iter().skip(o).take(l).collect()),
-        _ => Ok(state.library.all()),
+        (Some(o), Some(l)) => Ok(tracks.into_iter().skip(o).take(l).collect()),
+        _ => Ok(tracks),
     }
 }
 
@@ -684,13 +692,65 @@ pub async fn netease_add_track_to_playlist(
 #[tauri::command]
 pub async fn toggle_liked(
     state: tauri::State<'_, AppState>,
-    track_id: String,
+    track: Track,
     liked: bool,
 ) -> Result<(), String> {
     let library = state.library.clone();
-    tokio::task::spawn_blocking(move || library.set_liked(&track_id, liked))
+    tokio::task::spawn_blocking(move || library.set_liked(&track, liked))
         .await
         .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// 添加到默认“我的收藏”歌单
+#[tauri::command]
+pub async fn add_to_favorites(
+    state: tauri::State<'_, AppState>,
+    track: Track,
+) -> Result<(), String> {
+    let source_track_id = track.source_track_id.clone();
+    let source_kind = track.source_kind;
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || {
+        library.add_to_playlist(orange_library::FAVORITES_PLAYLIST_ID, &track)?;
+        library.set_liked(&track, true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    // 网易云曲目额外同步到远端“我喜欢的音乐”
+    if source_kind == orange_core::source::SourceKind::NeteaseCloudMusic {
+        state
+            .netease
+            .like_track(&source_track_id)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 从默认“我的收藏”歌单移除
+#[tauri::command]
+pub async fn remove_from_favorites(
+    state: tauri::State<'_, AppState>,
+    track: Track,
+) -> Result<(), String> {
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.set_liked(&track, false))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// 获取默认“我的收藏”歌单信息
+#[tauri::command]
+pub async fn favorites_playlist(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<orange_library::UserPlaylist>, String> {
+    state
+        .library
+        .favorites_playlist()
         .map_err(|e| e.to_string())
 }
 
@@ -2321,6 +2381,9 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             qishui_status,
             toggle_liked,
             liked_tracks,
+            add_to_favorites,
+            remove_from_favorites,
+            favorites_playlist,
             create_playlist,
             rename_playlist,
             delete_playlist,

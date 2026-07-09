@@ -1,4 +1,5 @@
 import { usePlayerStore, type PlaybackMode } from "../../stores/playerStore";
+import { useLibraryStore } from "../../stores/libraryStore";
 import { engineRef } from "../../App";
 import { getCoverUrl, DEFAULT_COVER } from "./useCover";
 import { invoke } from "@tauri-apps/api/core";
@@ -375,16 +376,15 @@ export function PlayerBar() {
             className={`pb-btn pb-like-btn ${currentTrack.liked ? "pb-like-btn--active" : ""}`}
             onClick={async () => {
               const track = currentTrack;
-              const isNetease = (track as any).source_kind === "netease_cloud_music";
+              const next = !track.liked;
               try {
-                if (isNetease) {
-                  await invoke("netease_like_track", { songId: track.source_track_id });
-                  usePlayerStore.setState({ currentTrack: { ...track, liked: true } });
+                if (next) {
+                  await invoke("add_to_favorites", { track });
                 } else {
-                  const next = !track.liked;
-                  usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
-                  await invoke("toggle_liked", { trackId: track.id, liked: next });
+                  await invoke("remove_from_favorites", { track });
                 }
+                usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
+                await useLibraryStore.getState().refreshTracks();
               } catch {}
             }}
             title={currentTrack.liked ? "取消收藏" : "收藏"}

@@ -4,10 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Track } from "../../stores/libraryStore";
 
 /**
- * "添加到歌单" 弹窗（v0.4 分区版，对标 PlayerBar 入口 + TrackActions 复用）
+ * "添加到歌单" 弹窗（v0.4 分区版）
  *
  * 三个分区：
- * - **本地** —— 列出 `all_playlists`，支持「创建并添加」，调用 `add_to_playlist`
+ * - **本地** —— 列出默认“我的收藏” + `all_playlists`，支持「创建并添加」，调用 `add_to_playlist`
  * - **网易云** —— 列出 `netease_playlists`：
  *   - 第一项（约定是「我喜欢的音乐」）走现成 `netease_like_track`
  *   - 之后是用户自建/收藏的远端歌单，走新加的 `netease_add_track_to_playlist`
@@ -45,6 +45,7 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
     track.source_kind === "netease_cloud_music" ? "netease" : "local"
   );
   const [localPlaylists, setLocalPlaylists] = useState<LocalPlaylist[]>([]);
+  const [favorites, setFavorites] = useState<LocalPlaylist | null>(null);
   const [neteasePlaylists, setNeteasePlaylists] = useState<RemotePlaylist[] | null>(null);
   const [neteaseErr, setNeteaseErr] = useState<string | null>(null);
   const [qqPlaylists, setQqPlaylists] = useState<RemotePlaylist[] | null>(null);
@@ -55,6 +56,12 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
   // 加载本地 / 网易云 / QQ 三个数据
   useEffect(() => {
     invoke<LocalPlaylist[]>("all_playlists").then(setLocalPlaylists).catch(() => {});
+
+    invoke<LocalPlaylist | null>("favorites_playlist")
+      .then((p) => {
+        if (p) setFavorites({ ...p, track_count: p.track_count ?? 0 });
+      })
+      .catch(() => {});
 
     invoke<RemotePlaylist[]>("netease_playlists")
       .then((p) => {
@@ -162,45 +169,52 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
           ? "本地音源"
           : "其他音源";
 
-  const renderLocalSection = () => (
-    <>
-      <div className="atp-section">
-        <div className="atp-section__title">本地歌单</div>
-        <div className="atp-list">
-          {localPlaylists.length === 0 && !newName && (
-            <div className="atp-empty">还没有歌单，在下方创建一个吧</div>
-          )}
-          {localPlaylists.map((p) => (
-            <button
-              key={p.id}
-              className="atp-item"
-              onClick={() => doAddLocal(p.id)}
-              disabled={loading}
-            >
-              <span className="atp-item-name">{p.name}</span>
-              <span className="atp-item-count">{p.track_count} 首</span>
-            </button>
-          ))}
+  const renderLocalSection = () => {
+    const allLocal = favorites ? [favorites, ...localPlaylists] : localPlaylists;
+    return (
+      <>
+        <div className="atp-section">
+          <div className="atp-section__title">本地歌单</div>
+          <div className="atp-list">
+            {allLocal.length === 0 && !newName && (
+              <div className="atp-empty">还没有歌单，在下方创建一个吧</div>
+            )}
+            {allLocal.map((p) => {
+              const isFav = favorites && p.id === favorites.id;
+              return (
+                <button
+                  key={p.id}
+                  className={`atp-item ${isFav ? "atp-item--fav" : ""}`}
+                  onClick={() => doAddLocal(p.id)}
+                  disabled={loading}
+                  title={isFav ? "添加到“我的收藏”" : "添加到此歌单"}
+                >
+                  <span className="atp-item-name">{p.name}</span>
+                  <span className="atp-item-count">{p.track_count} 首</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <div className="atp-create">
-        <input
-          className="atp-input"
-          placeholder="新建歌单名称…"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && doCreateLocal()}
-        />
-        <button
-          className="atp-create-btn"
-          onClick={doCreateLocal}
-          disabled={loading || !newName.trim()}
-        >
-          新建并添加
-        </button>
-      </div>
-    </>
-  );
+        <div className="atp-create">
+          <input
+            className="atp-input"
+            placeholder="新建歌单名称…"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && doCreateLocal()}
+          />
+          <button
+            className="atp-create-btn"
+            onClick={doCreateLocal}
+            disabled={loading || !newName.trim()}
+          >
+            新建并添加
+          </button>
+        </div>
+      </>
+    );
+  };
 
   const renderNeteaseSection = () => {
     if (neteasePlaylists === null) {

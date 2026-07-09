@@ -56,13 +56,18 @@ interface LibraryState {
   /** 分页状态（本地库大列表懒加载） */
   page: number;
   hasMore: boolean;
+  /** 当前列表过滤条件 */
+  filter: "all" | "liked" | "local";
   /** 当前是否在搜索（搜索时不分页，搜索结果一次性返回但虚拟化已覆盖渲染） */
   searching: boolean;
 
   setLoading: (b: boolean) => void;
   setSearchKeyword: (k: string) => void;
+  setFilter: (f: "all" | "liked" | "local") => void;
   scanLocal: () => Promise<number>;
-  loadTracks: () => Promise<void>;
+  loadTracks: (filter?: "all" | "liked" | "local") => Promise<void>;
+  /** 刷新当前过滤条件下的列表（不重置播放队列） */
+  refreshTracks: () => Promise<void>;
   /** 加载本地库下一页（追加，用于无限滚动） */
   loadMore: () => Promise<void>;
   doSearch: () => Promise<void>;
@@ -74,10 +79,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   searchKeyword: "",
   page: 1,
   hasMore: false,
+  filter: "all",
   searching: false,
 
   setLoading: (loading) => set({ loading }),
   setSearchKeyword: (searchKeyword) => set({ searchKeyword }),
+  setFilter: (filter) => set({ filter }),
 
   scanLocal: async () => {
     set({ loading: true });
@@ -99,23 +106,32 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  loadTracks: async () => {
-    // 首次加载第一页（200 条），标记 hasMore 供无限滚动
+  loadTracks: async (filter) => {
+    if (filter) set({ filter });
+    const currentFilter = get().filter;
     const PAGE_SIZE = 200;
-    const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE });
+    const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE, filter: currentFilter });
     set({ tracks, page: 1, hasMore: tracks.length === PAGE_SIZE, searching: false });
     usePlayerStore.getState().setQueue(tracks);
   },
 
+  refreshTracks: async () => {
+    const currentFilter = get().filter;
+    const PAGE_SIZE = 200;
+    const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE, filter: currentFilter });
+    set({ tracks, page: 1, hasMore: tracks.length === PAGE_SIZE, searching: false });
+    // 不重置播放队列，避免打断当前播放
+  },
+
   loadMore: async () => {
-    const { loading, hasMore, searching, page, tracks } = get();
+    const { loading, hasMore, searching, page, tracks, filter } = get();
     if (loading || !hasMore || searching) return;
     const PAGE_SIZE = 200;
     const next = page + 1;
     const offset = page * PAGE_SIZE;
     set({ loading: true });
     try {
-      const list = await invoke<Track[]>("library_tracks", { offset, limit: PAGE_SIZE });
+      const list = await invoke<Track[]>("library_tracks", { offset, limit: PAGE_SIZE, filter });
       if (list.length === 0) {
         set({ hasMore: false });
       } else {
@@ -130,7 +146,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   doSearch: async () => {
     const kw = get().searchKeyword;
     if (!kw.trim()) {
-      // 空搜索 → 回到全库（重新分页加载）
       await get().loadTracks();
       return;
     }
