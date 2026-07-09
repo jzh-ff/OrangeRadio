@@ -37,6 +37,14 @@ pub struct BpmPreference {
     pub medium: f32,
     pub fast: f32,
     pub very_fast: f32,
+    /// 前端展示用：估计最小 BPM（有数据的最低桶下限）
+    pub min: f32,
+    /// 前端展示用：估计最大 BPM（有数据的最高桶上限）
+    pub max: f32,
+    /// 前端展示用：加权中心 BPM
+    pub center: f32,
+    /// 前端展示用：与 slow/medium/fast/very_fast 对应的分布数组
+    pub distribution: Vec<f32>,
 }
 
 impl Default for BpmPreference {
@@ -46,6 +54,10 @@ impl Default for BpmPreference {
             medium: 0.35,
             fast: 0.25,
             very_fast: 0.15,
+            min: 60.0,
+            max: 180.0,
+            center: 110.0,
+            distribution: vec![0.25, 0.35, 0.25, 0.15],
         }
     }
 }

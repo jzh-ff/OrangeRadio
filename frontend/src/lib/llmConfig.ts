@@ -10,6 +10,7 @@
  */
 
 export interface LlmConfig {
+  provider: string;
   api_base: string;
   api_key: string;
   model: string;
@@ -29,6 +30,7 @@ export function getLlmConfig(): LlmConfig | null {
     const apiKey = localStorage.getItem("orangeradio_llm_key") || "";
     if (!apiKey) return null;
     return {
+      provider,
       api_base: localStorage.getItem("orangeradio_llm_base") || "https://open.bigmodel.cn/api/paas/v4",
       api_key: apiKey,
       model: localStorage.getItem("orangeradio_llm_model") || "glm-4-flash",
@@ -38,6 +40,7 @@ export function getLlmConfig(): LlmConfig | null {
   const apiKey = localStorage.getItem("orangeradio_minimax_key") || "";
   if (!apiKey) return null;
   return {
+    provider,
     api_base: localStorage.getItem("orangeradio_minimax_base") || "https://api.minimaxi.com/anthropic",
     api_key: apiKey,
     model: localStorage.getItem("orangeradio_minimax_model") || "MiniMax-M1",
