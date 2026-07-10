@@ -77,6 +77,13 @@ export function useAudioEngine(autoNext?: () => void) {
   // 频谱采样循环（真实优先，回退模拟）+ 节拍图谱回放
   const loopSpectrum = useCallback(() => {
     const tick = () => {
+      // 后台标签页/窗口最小化时跳过所有重活（getByteFrequencyData + setState），
+      // 仅续帧保活；可见后由 onPlay 重启正常采样。浏览器虽把 RAF 降频到 ~1fps，
+      // 但每帧仍跑 setState + 订阅回调，浪费 CPU。
+      if (document.hidden) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       // 节拍图谱回放（优先于实时检测：预知 hit 时间点，消除"慢半拍"）
       const audio = audioRef.current;
       const { beatmap, beatmapIndex } = usePlayerStore.getState();

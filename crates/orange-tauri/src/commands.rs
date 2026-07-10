@@ -5,6 +5,7 @@ use orange_core::source::{AudioSource, SearchQuery};
 use orange_core::track::{Track, TrackMeta};
 use orange_library::{LibraryScanner, ScanOptions};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
@@ -1745,12 +1746,10 @@ pub async fn analyze_track_bpm(
     state: tauri::State<'_, AppState>,
     track_id: String,
 ) -> Result<f32, String> {
-    // 查曲目
+    // 查曲目（按 id 直接定位，避免 all() 全库 clone）
     let track = state
         .library
-        .all()
-        .into_iter()
-        .find(|t| t.id.0.to_string() == track_id)
+        .find_by_id_str(&track_id)
         .ok_or_else(|| format!("曲目不存在: {track_id}"))?;
     // 标签已有 bpm → 秒返
     if let Some(bpm) = track.meta.bpm {
@@ -1841,14 +1840,12 @@ pub async fn cover_proxy(
         return Ok(path.clone());
     }
 
-    // 下载（带 UA + Referer，部分 CDN 拦截裸请求）
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 OrangeRadio")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("构建 HTTP 客户端失败: {e}"))?;
-    let resp = client
+    // 下载（复用 AppState 共享 client，连接池/TLS 复用；带 UA + Referer 绕 CDN 拦截）
+    let resp = state
+        .http_client
+        .client()
         .get(&url)
+        .header("User-Agent", "Mozilla/5.0 OrangeRadio")
         .header("Referer", "https://music.163.com/")
         .send()
         .await
@@ -1873,8 +1870,11 @@ pub async fn cover_proxy(
 
     std::fs::write(&cache_file, &bytes).map_err(|e| format!("写封面缓存失败: {e}"))?;
 
-    // 磁盘缓存 LRU 清理：总大小超过 256MB 时删除最旧的 20%
-    prune_covers(&cache_dir, 256 * 1024 * 1024, 0.2);
+    // 磁盘缓存 LRU 清理：每 32 次下载清一次（避免每次下载都全目录 read_dir + stat + 排序）
+    let dl_count = state.cover_download_count.fetch_add(1, Ordering::Relaxed) + 1;
+    if dl_count.is_multiple_of(32) {
+        prune_covers(&cache_dir, 256 * 1024 * 1024, 0.2);
+    }
 
     tracing::debug!(
         "封面已下载: {} ({} bytes) → {}",

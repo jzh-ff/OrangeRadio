@@ -292,13 +292,16 @@ impl NeteaseSource {
                     chain.push_str(&s.to_string());
                     src = s.source();
                 }
-                tracing::warn!("weapi {} 首次请求失败 (timeout={}): {}", path, is_timeout, chain);
+                tracing::warn!(
+                    "weapi {} 首次请求失败 (timeout={}): {}",
+                    path,
+                    is_timeout,
+                    chain
+                );
                 // 重试一次
-                do_request()
-                    .await
-                    .map_err(|e2| orange_core::CoreError::Network(format!(
-                        "weapi {path} 请求失败(已重试): {e2}"
-                    )))?
+                do_request().await.map_err(|e2| {
+                    orange_core::CoreError::Network(format!("weapi {path} 请求失败(已重试): {e2}"))
+                })?
             }
         };
 

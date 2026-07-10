@@ -31,8 +31,15 @@ function SpectrumPulseImpl() {
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
+    // 不播放时不启动 RAF，避免侧边栏常驻组件每帧 style invalidation
+    if (!isPlaying) return;
     let raf = 0;
     const tick = () => {
+      // 后台标签页跳过 setProperty，仅续帧保活
+      if (document.hidden) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       const spectrum = readSpectrum();
       for (let i = 0; i < DOT_COUNT; i++) {
         const start = BAND_EDGES[i];
@@ -52,7 +59,7 @@ function SpectrumPulseImpl() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [isPlaying]);
 
   return (
     <div

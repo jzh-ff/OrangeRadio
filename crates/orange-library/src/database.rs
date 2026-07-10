@@ -12,6 +12,7 @@ use parking_lot::RwLock;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// 默认“我的收藏”歌单固定 ID（应用级默认歌单，不可删除）
@@ -22,6 +23,8 @@ pub const FAVORITES_PLAYLIST_ID: &str = "__favorites__";
 pub struct LibraryDb {
     tracks: Arc<RwLock<Vec<Track>>>,
     db_path: Option<Arc<PathBuf>>,
+    /// 播放历史记录计数器：每记 N 条清理一次（替代原先 `now % 50` 的概率触发）
+    play_history_counter: Arc<AtomicU64>,
 }
 
 impl LibraryDb {
@@ -30,6 +33,7 @@ impl LibraryDb {
         Self {
             tracks: Arc::new(RwLock::new(Vec::new())),
             db_path: None,
+            play_history_counter: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -48,6 +52,7 @@ impl LibraryDb {
         Ok(Self {
             tracks: Arc::new(RwLock::new(tracks)),
             db_path: Some(Arc::new(path)),
+            play_history_counter: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -103,6 +108,15 @@ impl LibraryDb {
             .read()
             .iter()
             .find(|t| t.id == *track_id)
+            .cloned()
+    }
+
+    /// 按 ID 字符串查找（避免调用方为查一首歌而 clone 整库再 find）
+    pub fn find_by_id_str(&self, track_id: &str) -> Option<Track> {
+        self.tracks
+            .read()
+            .iter()
+            .find(|t| t.id.0.to_string() == track_id)
             .cloned()
     }
 
@@ -649,8 +663,9 @@ impl LibraryDb {
             params![track_id, now, played_secs, total_secs, completed as i32, skipped as i32],
         )
         .map_err(sqlite_err)?;
-        // 偶尔清理，避免历史记录无限增长
-        if now % 50 == 0 {
+        // 每 64 条记录清理一次，避免历史表无限增长（原 `now % 50` 是 Unix 秒取模，几乎永不命中）
+        let count = self.play_history_counter.fetch_add(1, Ordering::Relaxed) + 1;
+        if count.is_multiple_of(64) {
             if let Err(e) = Self::prune_play_history(&conn, 90, 5000) {
                 tracing::warn!("清理播放历史失败: {}", e);
             }
