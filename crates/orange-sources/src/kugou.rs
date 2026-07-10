@@ -20,6 +20,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::auth_store::AuthStore;
+use crate::http_client::HttpClient;
 
 const SEARCH_BASE: &str = "https://complexsearch.kugou.com/v2/search/song";
 const PLAY_BASE: &str = "https://wwwapi.kugou.com/yy/index.php?r=play/getdata";
@@ -37,6 +38,7 @@ pub struct KugouSource {
     logged_in: Arc<AtomicBool>,
     /// 加密持久化存储
     auth_store: Arc<AuthStore>,
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl KugouSource {
@@ -72,12 +74,52 @@ impl KugouSource {
             cookie: Arc::new(RwLock::new(initial_cookie)),
             logged_in: Arc::new(AtomicBool::new(already_logged_in)),
             auth_store,
+            shared_client: None,
         }
     }
 
     /// 不带持久化的默认构造（用于 trait 默认 / 测试）
     pub fn without_event_sink(auth_store: Arc<AuthStore>) -> Self {
         Self::new(auth_store)
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    async fn http_get_cached(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        ttl: u64,
+    ) -> Result<String> {
+        if let Some(c) = self.shared_client.as_ref() {
+            c.get_cached(url, headers, ttl).await
+        } else {
+            let mut req = self.client.get(url);
+            for (k, v) in headers {
+                req = req.header(*k, *v);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            if !status.is_success() {
+                return Err(orange_core::CoreError::Network(format!(
+                    "HTTP {}: {}",
+                    status,
+                    crate::http_client::safe_truncate(&text, 200)
+                )));
+            }
+            Ok(text)
+        }
     }
 
     async fn cookie_str(&self) -> Option<String> {
@@ -140,22 +182,18 @@ impl KugouSource {
                 .join("&")
         );
 
-        let mut req = self
-            .client
-            .get(&url)
-            .header("Referer", "https://www.kugou.com/")
-            .header("Origin", "https://www.kugou.com");
-        if let Some(c) = self.cookie_str().await {
-            req = req.header("Cookie", c);
+        let mut headers: Vec<(&str, &str)> = vec![
+            ("Referer", "https://www.kugou.com/"),
+            ("Origin", "https://www.kugou.com"),
+        ];
+        let cookie = self.cookie_str().await;
+        let cookie_str;
+        if let Some(ref c) = cookie {
+            cookie_str = c.as_str();
+            headers.push(("Cookie", cookie_str));
         }
 
-        let text = req
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let text = self.http_get_cached(&url, &headers, 300).await?;
 
         // 接口可能返回 JSONP：jQueryxxx({...})
         let json_text = strip_jsonp_callback(&text);
@@ -163,7 +201,7 @@ impl KugouSource {
             orange_core::CoreError::Network(format!(
                 "酷狗搜索解析失败: {} body={}",
                 e,
-                &text[..text.len().min(200)]
+                crate::http_client::safe_truncate(&text, 200)
             ))
         })?;
 
@@ -200,13 +238,68 @@ impl KugouSource {
 
     /// 获取酷狗歌曲歌词
     ///
-    /// 优先从 play/getdata 返回的 `lyrics` 字段取（已随 resolve_stream 调用过），
-    /// 若为空则单独请求一次 play/getdata 尝试补全。
+    /// 优先从 play/getdata 返回的 `lyrics` 字段取，使用 TTL 缓存避免重复请求。
     pub async fn song_lyric(&self, hash: &str, album_id: Option<&str>) -> Result<Option<String>> {
-        // 复用 resolve_by_hash 的内部响应数据需要额外请求一次；这里直接调用 resolve_by_hash
-        // 并提取 lyrics。若后续发现 dedicated 歌词接口更稳定，可替换。
-        let resp = self.resolve_by_hash_raw(hash, album_id).await?;
-        Ok(resp.lyrics)
+        let data = self.fetch_playdata_cached(hash, album_id).await?;
+        Ok(data.lyrics)
+    }
+
+    /// 供歌词使用的缓存版 play/getdata 请求（播放地址解析仍走无缓存的 resolve_by_hash_raw）。
+    async fn fetch_playdata_cached(
+        &self,
+        hash: &str,
+        album_id: Option<&str>,
+    ) -> Result<KugouPlayData> {
+        let mut params: BTreeMap<&str, String> = BTreeMap::new();
+        params.insert("r", "play/getdata".into());
+        params.insert("hash", hash.into());
+        params.insert("dfid", "".into());
+        params.insert("mid", self.mid.clone());
+        params.insert("platid", "4".into());
+        if let Some(aid) = album_id {
+            params.insert("album_id", aid.into());
+        }
+
+        let url = format!(
+            "{}?{}",
+            PLAY_BASE,
+            params
+                .iter()
+                .map(|(k, v)| format!("{}={}", urlencoding(k), urlencoding(v)))
+                .collect::<Vec<_>>()
+                .join("&")
+        );
+
+        let mut headers: Vec<(&str, &str)> = vec![
+            ("Referer", "https://www.kugou.com/"),
+            ("Origin", "https://www.kugou.com"),
+        ];
+        let cookie = self.cookie_str().await;
+        let cookie_str;
+        if let Some(ref c) = cookie {
+            cookie_str = c.as_str();
+            headers.push(("Cookie", cookie_str));
+        }
+
+        let text = self.http_get_cached(&url, &headers, 300).await?;
+        let json_text = strip_jsonp_callback(&text);
+        let resp: KugouPlayResp = serde_json::from_str(json_text).map_err(|e| {
+            orange_core::CoreError::Network(format!(
+                "酷狗播放解析失败: {} body={}",
+                e,
+                crate::http_client::safe_truncate(&text, 200)
+            ))
+        })?;
+
+        if resp.err_code != 0 {
+            return Err(orange_core::CoreError::Unsupported(format!(
+                "酷狗无法获取播放地址: err_code={}",
+                resp.err_code
+            )));
+        }
+
+        resp.data
+            .ok_or_else(|| orange_core::CoreError::Unsupported("酷狗返回空数据".into()))
     }
 
     /// 获取当前登录用户信息
@@ -280,14 +373,11 @@ impl KugouSource {
             "https://www.kugou.com/yy/index.php?r=playlist/getlist&uid={}&pagesize=100",
             urlencoding(&uid)
         );
-        let mut req = self
-            .client
-            .get(&url)
-            .header("Referer", "https://www.kugou.com/");
-        req = req.header("Cookie", &cookie);
+        let headers: Vec<(&str, &str)> =
+            vec![("Referer", "https://www.kugou.com/"), ("Cookie", &cookie)];
 
-        let text = match req.send().await {
-            Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
+        let text = match self.http_get_cached(&url, &headers, 300).await {
+            Ok(t) => t,
             _ => return Ok(vec![]),
         };
 
@@ -333,28 +423,21 @@ impl KugouSource {
             "https://www.kugou.com/yy/index.php?r=playlist/getinfo&id={}",
             urlencoding(playlist_id)
         );
-        let mut req = self
-            .client
-            .get(&url)
-            .header("Referer", "https://www.kugou.com/");
+        let mut headers: Vec<(&str, &str)> = vec![("Referer", "https://www.kugou.com/")];
+        let cookie_ref;
         if !cookie.is_empty() {
-            req = req.header("Cookie", &cookie);
+            cookie_ref = cookie.as_str();
+            headers.push(("Cookie", cookie_ref));
         }
 
-        let text = req
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let text = self.http_get_cached(&url, &headers, 300).await?;
 
         let json_text = strip_jsonp_callback(&text);
         let resp: serde_json::Value = serde_json::from_str(json_text).map_err(|e| {
             orange_core::CoreError::Network(format!(
                 "酷狗歌单解析失败: {} body={}",
                 e,
-                &text[..text.len().min(200)]
+                crate::http_client::safe_truncate(&text, 200)
             ))
         })?;
 
@@ -472,7 +555,7 @@ impl KugouSource {
             orange_core::CoreError::Network(format!(
                 "酷狗播放解析失败: {} body={}",
                 e,
-                &text[..text.len().min(200)]
+                crate::http_client::safe_truncate(&text, 200)
             ))
         })?;
 

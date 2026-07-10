@@ -21,6 +21,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::auth_store::AuthStore;
+use crate::http_client::HttpClient;
 
 const BASE: &str = "https://music.163.com";
 const AUTH_SOURCE_KEY: &str = "netease";
@@ -42,6 +43,8 @@ pub struct NeteaseSource {
     event_sink: Option<Arc<dyn orange_core::AuthEventSink>>,
     /// 当前播放音质偏好（映射到网易云 player/url/v1 的 level 参数）
     quality_level: Arc<RwLock<String>>,
+    /// 共享 HTTP 客户端（注入时用于幂等 GET 缓存）
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl NeteaseSource {
@@ -83,12 +86,52 @@ impl NeteaseSource {
             auth_store,
             event_sink,
             quality_level: Arc::new(RwLock::new("standard".into())),
+            shared_client: None,
         }
     }
 
     /// 构造时不带 event_sink（用于测试 / 默认 fallback）
     pub fn without_event_sink(auth_store: Arc<AuthStore>) -> Self {
         Self::new(auth_store, None)
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    async fn http_get_cached(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        ttl: u64,
+    ) -> Result<String> {
+        if let Some(c) = self.shared_client.as_ref() {
+            c.get_cached(url, headers, ttl).await
+        } else {
+            let mut req = self.client.get(url);
+            for (k, v) in headers {
+                req = req.header(*k, *v);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            if !status.is_success() {
+                return Err(orange_core::CoreError::Network(format!(
+                    "HTTP {}: {}",
+                    status,
+                    crate::http_client::safe_truncate(&text, 200)
+                )));
+            }
+            Ok(text)
+        }
     }
 
     /// 设置播放音质（对应网易云 /weapi/song/enhance/player/url/v1 的 level 参数）
@@ -240,7 +283,7 @@ impl NeteaseSource {
             orange_core::CoreError::Network(format!(
                 "JSON解析失败: {} body={}",
                 e,
-                &text[..text.len().min(200)]
+                crate::http_client::safe_truncate(&text, 200)
             ))
         })
     }
@@ -740,17 +783,13 @@ impl AudioSource for NeteaseSource {
             &query.keyword
         );
 
-        let mut req = self.client.get(&url).header("Referer", BASE);
+        let mut headers: Vec<(&str, &str)> = vec![("Referer", BASE)];
         if let Some(c) = &cookie {
-            req = req.header("Cookie", c);
+            headers.push(("Cookie", c));
         }
-        let resp: NeteaseSearchResp = req
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .json()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let body = self.http_get_cached(&url, &headers, 300).await?;
+        let resp: NeteaseSearchResp = serde_json::from_str(&body)
+            .map_err(|e| orange_core::CoreError::Network(format!("JSON 解析失败: {e}")))?;
 
         let result = resp.result.unwrap_or_default();
         let songs = result.songs.unwrap_or_default();
@@ -979,7 +1018,7 @@ impl AuthSource for NeteaseSource {
                 tracing::warn!(
                     "扫码未知状态 code={} 响应: {}",
                     code,
-                    &body_text[..body_text.len().min(200)]
+                    crate::http_client::safe_truncate(&body_text, 200)
                 );
                 Ok(QrCodeStatus::Waiting)
             }

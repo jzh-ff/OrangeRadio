@@ -17,6 +17,7 @@
 
 pub mod auth_store;
 pub mod gequbao;
+pub mod http_client;
 pub mod kugou;
 pub mod kuwo;
 pub mod local;
@@ -31,6 +32,7 @@ pub mod spotify;
 
 pub use auth_store::{AuthStore, StoredAuth};
 pub use gequbao::GequbaoSource;
+pub use http_client::HttpClient;
 pub use kugou::KugouSource;
 pub use kuwo::KuwoSource;
 pub use netease::NeteaseSource;

@@ -20,6 +20,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::auth_store::AuthStore;
+use crate::http_client::HttpClient;
 
 const AUTH_SOURCE_KEY: &str = "spotify";
 
@@ -38,6 +39,7 @@ pub struct SpotifySource {
     auth_store: Arc<AuthStore>,
     /// 鉴权过期事件 sink（token 获取失败 / Client ID 失效时调用）
     event_sink: Option<Arc<dyn orange_core::AuthEventSink>>,
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl SpotifySource {
@@ -61,6 +63,7 @@ impl SpotifySource {
             configured: Arc::new(AtomicBool::new(false)),
             auth_store,
             event_sink,
+            shared_client: None,
         };
 
         // 注意：启动恢复凭据的逻辑（tokio::spawn）不能在 new() 里跑，
@@ -68,6 +71,46 @@ impl SpotifySource {
         // 调用方应在 Tauri setup 钩子里 spawn 后调 [`SpotifySource::resume_from_store`]。
 
         source
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    #[allow(dead_code)]
+    async fn http_get_cached(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        ttl: u64,
+    ) -> Result<String> {
+        if let Some(c) = self.shared_client.as_ref() {
+            c.get_cached(url, headers, ttl).await
+        } else {
+            let mut req = self.client.get(url);
+            for (k, v) in headers {
+                req = req.header(*k, *v);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            if !status.is_success() {
+                return Err(orange_core::CoreError::Network(format!(
+                    "HTTP {}: {}",
+                    status,
+                    crate::http_client::safe_truncate(&text, 200)
+                )));
+            }
+            Ok(text)
+        }
     }
 
     /// 从 AuthStore 恢复 Client Credentials 并异步拿 token
@@ -310,6 +353,7 @@ impl AudioSource for SpotifySource {
             "https://api.spotify.com/v1/search?q={}&type=track&limit={}",
             query.keyword, query.page_size
         );
+        // token 在请求之间会过期，不能直接缓存（会导致 token 错误命中缓存）
         let resp: SearchResp = self
             .client
             .get(&url)

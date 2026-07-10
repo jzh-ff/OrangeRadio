@@ -1821,7 +1821,10 @@ pub async fn cover_proxy(
     // 命中缓存直接返回
     if cache_file.is_file() {
         // 更新 atime 用于 LRU 清理（只读打开即可）
-        let _ = std::fs::OpenOptions::new().read(true).open(&cache_file).map(|_| ());
+        let _ = std::fs::OpenOptions::new()
+            .read(true)
+            .open(&cache_file)
+            .map(|_| ());
         return Ok(cache_file.to_string_lossy().into_owned());
     }
 
@@ -2488,6 +2491,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
     let netease_for_loop = state.netease.clone();
     let qqmusic_for_loop = state.qqmusic.clone();
     let spotify_for_resume = state.spotify.clone();
+    let http_client_for_prune = state.http_client.clone();
 
     builder
         .manage(state)
@@ -2619,6 +2623,13 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
                     tracing::warn!("Spotify 凭据恢复失败: {}", e);
                 }
             });
+
+            // 5. 启动共享 HTTP 客户端的缓存定时清理（每 10 分钟清一次超过 10 分钟的条目）
+            //    防止 search/lyrics/toplist 缓存随运行时间无界增长。
+            http_client_for_prune
+                .as_ref()
+                .clone()
+                .spawn_prune_task(600, 600);
 
             Ok(())
         })

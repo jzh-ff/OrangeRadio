@@ -19,6 +19,9 @@ use orange_core::audio_format::{AudioFormat, Quality};
 use orange_core::source::*;
 use orange_core::track::{Artwork, ArtworkSource, Track, TrackMeta};
 use orange_core::Result;
+use std::sync::Arc;
+
+use crate::http_client::HttpClient;
 
 /// 酷我音乐音源
 pub struct KuwoSource {
@@ -27,6 +30,7 @@ pub struct KuwoSource {
     play_base: String,
     anti_base: String,
     client: reqwest::Client,
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl Default for KuwoSource {
@@ -49,7 +53,58 @@ impl KuwoSource {
                 .redirect(reqwest::redirect::Policy::limited(5))
                 .build()
                 .unwrap_or_default(),
+            shared_client: None,
         }
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    async fn http_get_cached(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        ttl: u64,
+    ) -> Result<String> {
+        if let Some(c) = self.shared_client.as_ref() {
+            c.get_cached(url, headers, ttl).await
+        } else {
+            let resp = self
+                .client
+                .get(url)
+                .headers(self.headers_from_slice(headers))
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            if !status.is_success() {
+                return Err(orange_core::CoreError::Network(format!(
+                    "HTTP {}: {}",
+                    status,
+                    crate::http_client::safe_truncate(&text, 200)
+                )));
+            }
+            Ok(text)
+        }
+    }
+
+    fn headers_from_slice(&self, pairs: &[(&str, &str)]) -> reqwest::header::HeaderMap {
+        let mut h = reqwest::header::HeaderMap::new();
+        for (k, v) in pairs {
+            if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                if let Ok(value) = reqwest::header::HeaderValue::from_str(v) {
+                    h.insert(name, value);
+                }
+            }
+        }
+        h
     }
 
     /// 酷我搜索接口字段是全大写（SONGNAME/ARTIST/DC_TARGETID），做 HTML 实体反转义
@@ -153,25 +208,9 @@ impl AudioSource for KuwoSource {
             query.page,
             page_size
         );
-        let resp = self
-            .client
-            .get(&url)
-            .header("Referer", "http://www.kuwo.cn/")
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let status = resp.status();
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        if !status.is_success() {
-            return Err(orange_core::CoreError::Network(format!(
-                "酷我搜索 HTTP {}: {}",
-                status,
-                &text[..text.len().min(200)]
-            )));
-        }
+        let text = self
+            .http_get_cached(&url, &[("Referer", "http://www.kuwo.cn/")], 300)
+            .await?;
         // 酷我返回的 rformat=json 有时是 JS 对象字面量（单引号），统一替换为合法 JSON
         let json_text = text.replace('\'', "\"");
         let parsed: serde_json::Value = serde_json::from_str(&json_text)
@@ -293,17 +332,9 @@ impl KuwoSource {
             self.search_base.trim_end_matches('/'),
             limit.clamp(30, 50)
         );
-        let resp = self
-            .client
-            .get(&url)
-            .header("Referer", "http://www.kuwo.cn/")
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let text = self
+            .http_get_cached(&url, &[("Referer", "http://www.kuwo.cn/")], 300)
+            .await?;
         let json_text = text.replace('\'', "\"");
         let parsed: serde_json::Value = serde_json::from_str(&json_text).unwrap_or_default();
         let abslist = parsed
@@ -355,19 +386,17 @@ impl KuwoSource {
             bang_id,
             limit.clamp(30, 50)
         );
-        let resp = self
-            .client
-            .get(&url)
-            .header("Referer", "http://www.kuwo.cn/")
-            .header("csrf", "0")
-            .header("Cookie", "kw_token=0")
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let text = self
+            .http_get_cached(
+                &url,
+                &[
+                    ("Referer", "http://www.kuwo.cn/"),
+                    ("csrf", "0"),
+                    ("Cookie", "kw_token=0"),
+                ],
+                300,
+            )
+            .await?;
         let parsed: serde_json::Value = serde_json::from_str(&text)
             .map_err(|e| orange_core::CoreError::Network(format!("酷我榜单解析失败: {}", e)))?;
 
@@ -441,17 +470,9 @@ impl KuwoSource {
             "http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={}",
             rid
         );
-        let resp = self
-            .client
-            .get(&url)
-            .header("Referer", "http://m.kuwo.cn/")
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let text = self
+            .http_get_cached(&url, &[("Referer", "http://m.kuwo.cn/")], 300)
+            .await?;
         let parsed: serde_json::Value = serde_json::from_str(&text)
             .map_err(|e| orange_core::CoreError::Network(format!("酷我歌词解析失败: {}", e)))?;
 

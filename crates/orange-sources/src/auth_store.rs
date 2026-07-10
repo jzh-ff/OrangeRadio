@@ -322,7 +322,7 @@ mod tests {
         assert!(
             !raw.contains("THIS_IS_A_SECRET_TOKEN_XYZ"),
             "磁盘文件不应包含明文 cookie，实际内容: {}",
-            &raw[..raw.len().min(200)]
+            crate::http_client::safe_truncate(&raw, 200)
         );
         // 文件应至少 16 字节（AES-GCM nonce + 密文 + tag）
         assert!(bytes.len() > 16, "加密文件太小: {} bytes", bytes.len());

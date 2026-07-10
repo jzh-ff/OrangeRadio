@@ -15,6 +15,7 @@ tracing.workspace = true
 reqwest.workspace = true
 uuid.workspace = true
 quick-xml = "0.36"
+dashmap.workspace = true
 chrono.workspace = true
 aes = "0.8"
 cbc = "0.1"

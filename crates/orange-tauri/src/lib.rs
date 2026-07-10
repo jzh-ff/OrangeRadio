@@ -9,8 +9,8 @@ use orange_ai::AiRecommendationEngine;
 use orange_core::{AuthEventSink, AuthExpiredPayload};
 use orange_library::LibraryDb;
 use orange_sources::{
-    AuthStore, GequbaoSource, KugouSource, KuwoSource, NeteaseSource, PodcastSource, QishuiSource,
-    QqMusicSource, SpotifySource, WebRadioSource,
+    AuthStore, GequbaoSource, HttpClient, KugouSource, KuwoSource, NeteaseSource, PodcastSource,
+    QishuiSource, QqMusicSource, SpotifySource, WebRadioSource,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -72,6 +72,8 @@ pub struct AppState {
     pub recommender: Arc<dyn orange_core::recommendation::RecommendationEngine>,
     /// 音源注册表：聚合所有网络音源，供 search_all 遍历（本地库走 library 字段单独处理）
     pub sources: Arc<orange_sources::SourceRegistry>,
+    /// 共享 HTTP 客户端（含 TTL 缓存）。暴露引用用于 setup 钩子里启动后台清理任务。
+    pub http_client: Arc<orange_sources::HttpClient>,
     /// Wallpaper Engine Workshop 根目录白名单（wefile 安全校验用）。
     /// 由 wallpaper_engine_scan 命令扫描完成后写入；Task 5 的 wefile handler 读这里。
     /// Arc 包裹以保留 `#[derive(Clone)]`（parking_lot::RwLock 本身不是 Clone）。
@@ -132,35 +134,41 @@ impl Default for AppState {
         // AuthStore：加密持久化网易云 / QQ 音乐 Cookie（keyring + AES-GCM）
         let auth_store = AuthStore::new(data_dir);
 
+        // 共享 HTTP 客户端（含 TTL 缓存），注入到各网络音源
+        let http_client = Arc::new(HttpClient::new());
+
         // 鉴权过期事件 sink（handle 后续由 setup 钩子注入）
         let auth_sink = TauriAuthSink::new();
         let auth_sink_dyn: Arc<dyn AuthEventSink> = auth_sink.clone();
 
-        let qqmusic = Arc::new(QqMusicSource::new(
-            auth_store.clone(),
-            Some(auth_sink_dyn.clone()),
-        ));
+        let qqmusic = Arc::new(
+            QqMusicSource::new(auth_store.clone(), Some(auth_sink_dyn.clone()))
+                .with_client(http_client.clone()),
+        );
         // 注意：start_refresh_loop 必须在 Tauri runtime 起来后调
         // （见 commands.rs::register_all 的 setup 钩子），不能在 default() 里调
 
-        let netease = Arc::new(NeteaseSource::new(
-            auth_store.clone(),
-            Some(auth_sink_dyn.clone()),
-        ));
+        let netease = Arc::new(
+            NeteaseSource::new(auth_store.clone(), Some(auth_sink_dyn.clone()))
+                .with_client(http_client.clone()),
+        );
         // 同上：start_health_loop 在 setup 钩子里调
 
         // Spotify：启动恢复要 spawn tokio task，同样放 setup 钩子
-        let spotify = Arc::new(SpotifySource::new(auth_store.clone(), Some(auth_sink_dyn)));
+        let spotify = Arc::new(
+            SpotifySource::new(auth_store.clone(), Some(auth_sink_dyn))
+                .with_client(http_client.clone()),
+        );
 
         // 推荐引擎（懂你模式）：本地画像打分，开箱即用
         let recommender: Arc<dyn orange_core::recommendation::RecommendationEngine> =
             Arc::new(AiRecommendationEngine::local());
 
-        let web_radio = Arc::new(WebRadioSource::new());
-        let podcast = Arc::new(PodcastSource::new());
-        let gequbao = Arc::new(GequbaoSource::new());
-        let kugou = Arc::new(KugouSource::new(auth_store.clone()));
-        let kuwo = Arc::new(KuwoSource::new());
+        let web_radio = Arc::new(WebRadioSource::new().with_client(http_client.clone()));
+        let podcast = Arc::new(PodcastSource::new().with_client(http_client.clone()));
+        let gequbao = Arc::new(GequbaoSource::new().with_client(http_client.clone()));
+        let kugou = Arc::new(KugouSource::new(auth_store.clone()).with_client(http_client.clone()));
+        let kuwo = Arc::new(KuwoSource::new().with_client(http_client.clone()));
         let qishui = Arc::new(QishuiSource::new(auth_store.clone()));
 
         // 音源注册表：聚合所有网络音源，search_all 遍历用
@@ -192,6 +200,7 @@ impl Default for AppState {
             auth_sink,
             recommender,
             sources: Arc::new(registry),
+            http_client,
             we_roots: Arc::new(parking_lot::RwLock::new(Vec::new())),
             cover_cache: Arc::new(CoverCache::new()),
         }

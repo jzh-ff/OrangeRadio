@@ -18,6 +18,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::auth_store::AuthStore;
+use crate::http_client::HttpClient;
 
 const AUTH_SOURCE_KEY: &str = "qqmusic";
 
@@ -30,6 +31,7 @@ pub struct QqMusicSource {
     auth_store: Arc<AuthStore>,
     /// 鉴权过期事件 sink（cookie 失效时调用，emit 到前端）
     event_sink: Option<Arc<dyn orange_core::AuthEventSink>>,
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl QqMusicSource {
@@ -59,12 +61,55 @@ impl QqMusicSource {
             logged_in: Arc::new(AtomicBool::new(already_logged_in)),
             auth_store,
             event_sink,
+            shared_client: None,
         }
     }
 
     /// 构造时不带 event_sink（用于测试 / 默认 fallback）
     pub fn without_event_sink(auth_store: Arc<AuthStore>) -> Self {
         Self::new(auth_store, None)
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    ///
+    /// 当前 QQ 搜索/歌词均为 POST，helper 暂未使用；保留以备未来 GET 端点复用。
+    #[allow(dead_code)]
+    async fn http_get_cached(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        ttl: u64,
+    ) -> Result<String> {
+        if let Some(c) = self.shared_client.as_ref() {
+            c.get_cached(url, headers, ttl).await
+        } else {
+            let mut req = self.client.get(url);
+            for (k, v) in headers {
+                req = req.header(*k, *v);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            if !status.is_success() {
+                return Err(orange_core::CoreError::Network(format!(
+                    "HTTP {}: {}",
+                    status,
+                    crate::http_client::safe_truncate(&text, 200)
+                )));
+            }
+            Ok(text)
+        }
     }
 
     /// 当前 cookie（克隆）
@@ -556,9 +601,10 @@ impl QqMusicSource {
             .json::<serde_json::Value>()
             .await
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let resp3_str = resp3.to_string();
         tracing::info!(
             "QQ扫码 QQLogin resp={}",
-            &resp3.to_string()[..resp3.to_string().len().min(200)]
+            crate::http_client::safe_truncate(&resp3_str, 200)
         );
         let musicid = resp3["req"]["data"]["str_musicid"]
             .as_str()
@@ -573,7 +619,7 @@ impl QqMusicSource {
         if musickey.is_empty() {
             return Err(orange_core::CoreError::AuthFailed(format!(
                 "QQLogin 未返回 musickey, resp={}",
-                &resp3.to_string()[..resp3.to_string().len().min(200)]
+                crate::http_client::safe_truncate(&resp3_str, 200)
             )));
         }
         tracing::info!("QQ扫码登录成功 musicid={}", musicid);

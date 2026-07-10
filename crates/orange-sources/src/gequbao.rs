@@ -18,12 +18,16 @@ use orange_core::source::*;
 use orange_core::track::{Artwork, ArtworkSource, Track, TrackMeta};
 use orange_core::Result;
 use scraper::{Html, Selector};
+use std::sync::Arc;
+
+use crate::http_client::HttpClient;
 
 /// 歌曲宝音源
 pub struct GequbaoSource {
     id: SourceId,
     base: String,
     client: reqwest::Client,
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl GequbaoSource {
@@ -36,6 +40,46 @@ impl GequbaoSource {
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
                 .unwrap_or_default(),
+            shared_client: None,
+        }
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    async fn http_get_cached(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        ttl: u64,
+    ) -> Result<String> {
+        if let Some(c) = self.shared_client.as_ref() {
+            c.get_cached(url, headers, ttl).await
+        } else {
+            let mut req = self.client.get(url);
+            for (k, v) in headers {
+                req = req.header(*k, *v);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+            if !status.is_success() {
+                return Err(orange_core::CoreError::Network(format!(
+                    "HTTP {}: {}",
+                    status,
+                    crate::http_client::safe_truncate(&text, 200)
+                )));
+            }
+            Ok(text)
         }
     }
 
@@ -103,25 +147,9 @@ impl GequbaoSource {
     /// 请求详情页，提取 appData 里的 play_id 和元数据（封面/歌词）
     async fn fetch_detail(&self, song_path: &str) -> Result<DetailInfo> {
         let url = format!("{}/{}", self.base.trim_end_matches('/'), song_path);
-        let resp = self
-            .client
-            .get(&url)
-            .header("Referer", &self.base)
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let status = resp.status();
-        let html = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        if !status.is_success() {
-            return Err(orange_core::CoreError::Network(format!(
-                "歌曲宝详情页 HTTP {}: {}",
-                status,
-                &html[..html.len().min(200)]
-            )));
-        }
+        let html = self
+            .http_get_cached(&url, &[("Referer", &self.base)], 300)
+            .await?;
         parse_detail(&html)
     }
 
@@ -146,7 +174,7 @@ impl GequbaoSource {
             return Err(orange_core::CoreError::Network(format!(
                 "歌曲宝取流 HTTP {}: {}",
                 status,
-                &text[..text.len().min(200)]
+                crate::http_client::safe_truncate(&text, 200)
             )));
         }
         let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
@@ -288,25 +316,9 @@ impl AudioSource for GequbaoSource {
             });
         }
         let url = format!("{}/s/{}", self.base.trim_end_matches('/'), urlencode(kw));
-        let resp = self
-            .client
-            .get(&url)
-            .header("Referer", &self.base)
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let status = resp.status();
-        let html = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        if !status.is_success() {
-            return Err(orange_core::CoreError::Network(format!(
-                "歌曲宝搜索 HTTP {}: {}",
-                status,
-                &html[..html.len().min(200)]
-            )));
-        }
+        let html = self
+            .http_get_cached(&url, &[("Referer", &self.base)], 300)
+            .await?;
         let tracks = self.parse_search_html(&html, kw);
         let total = tracks.len() as u32;
         Ok(SearchResult {
@@ -330,17 +342,9 @@ impl AudioSource for GequbaoSource {
     async fn recommendations(&self, limit: u32) -> Result<Vec<Track>> {
         // 用首页 /hot-music 抓推荐
         let url = format!("{}/hot-music", self.base.trim_end_matches('/'));
-        let resp = self
-            .client
-            .get(&url)
-            .header("Referer", &self.base)
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let html = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let html = self
+            .http_get_cached(&url, &[("Referer", &self.base)], 300)
+            .await?;
         let mut tracks = self.parse_search_html(&html, "");
         tracks.truncate(limit as usize);
         Ok(tracks)

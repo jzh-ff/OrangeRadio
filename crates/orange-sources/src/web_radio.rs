@@ -12,6 +12,9 @@ use orange_core::source::*;
 use orange_core::track::{Artwork, ArtworkSource, Track, TrackMeta};
 use orange_core::Result;
 use serde::Deserialize;
+use std::sync::Arc;
+
+use crate::http_client::HttpClient;
 
 /// RadioBrowser 单个电台（API 返回）
 #[derive(Debug, Deserialize)]
@@ -35,6 +38,7 @@ pub struct WebRadioSource {
     id: SourceId,
     api_base: String,
     client: reqwest::Client,
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl WebRadioSource {
@@ -48,6 +52,29 @@ impl WebRadioSource {
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
                 .unwrap_or_default(),
+            shared_client: None,
+        }
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    async fn cached_get(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
+        if let Some(client) = &self.shared_client {
+            client.get_cached(url, headers, 300).await
+        } else {
+            self.client
+                .get(url)
+                .headers(header_map(headers))
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))
         }
     }
 
@@ -125,27 +152,22 @@ impl AudioSource for WebRadioSource {
         let kw = query.keyword.trim();
         let limit = query.page_size.min(100);
         let url = if kw.is_empty() {
-            format!("{}/json/stations/topclick/{}", self.api_base, limit)
+            format!(
+                "{}/json/stations/topclick/{}?limit={}&order=votes&reverse=true",
+                self.api_base, limit, limit
+            )
         } else {
-            format!("{}/json/stations/byname/{}", self.api_base, urlencode(kw))
+            format!(
+                "{}/json/stations/byname/{}?limit={}&order=votes&reverse=true",
+                self.api_base,
+                urlencode(kw),
+                limit
+            )
         };
 
-        let resp = self
-            .client
-            .get(&url)
-            .query(&[
-                ("limit", limit.to_string().as_str()),
-                ("order", "votes"),
-                ("reverse", "true"),
-            ])
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-
-        let stations: Vec<RadioStation> = resp
-            .json()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let body = self.cached_get(&url, &[]).await?;
+        let stations: Vec<RadioStation> = serde_json::from_str(&body)
+            .map_err(|e| orange_core::CoreError::Network(format!("JSON 解析失败: {e}")))?;
 
         let tracks: Vec<Track> = stations.iter().map(|s| self.to_track(s)).collect();
         let total = tracks.len() as u32;
@@ -164,17 +186,13 @@ impl AudioSource for WebRadioSource {
     }
 
     async fn recommendations(&self, limit: u32) -> Result<Vec<Track>> {
-        let url = format!("{}/json/stations/topclick/{}", self.api_base, limit);
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let stations: Vec<RadioStation> = resp
-            .json()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let url = format!(
+            "{}/json/stations/topclick/{}?limit={}&order=votes&reverse=true",
+            self.api_base, limit, limit
+        );
+        let body = self.cached_get(&url, &[]).await?;
+        let stations: Vec<RadioStation> = serde_json::from_str(&body)
+            .map_err(|e| orange_core::CoreError::Network(format!("JSON 解析失败: {e}")))?;
         Ok(stations.iter().map(|s| self.to_track(s)).collect())
     }
 }
@@ -196,4 +214,17 @@ fn urlencode(s: &str) -> String {
             }
         })
         .collect()
+}
+
+fn header_map(headers: &[(&str, &str)]) -> reqwest::header::HeaderMap {
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+    let mut map = HeaderMap::new();
+    for (k, v) in headers {
+        if let Ok(name) = HeaderName::from_bytes(k.as_bytes()) {
+            if let Ok(value) = HeaderValue::from_str(v) {
+                map.insert(name, value);
+            }
+        }
+    }
+    map
 }

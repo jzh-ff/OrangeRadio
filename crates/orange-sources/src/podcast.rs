@@ -15,10 +15,14 @@ use orange_core::Result;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::collections::HashMap;
+use std::sync::Arc;
+
+use crate::http_client::HttpClient;
 
 pub struct PodcastSource {
     id: SourceId,
     client: reqwest::Client,
+    shared_client: Option<Arc<HttpClient>>,
 }
 
 impl PodcastSource {
@@ -30,20 +34,35 @@ impl PodcastSource {
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
                 .unwrap_or_default(),
+            shared_client: None,
+        }
+    }
+
+    pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.shared_client = Some(client);
+        self
+    }
+
+    /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
+    async fn cached_get(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
+        if let Some(client) = &self.shared_client {
+            client.get_cached(url, headers, 300).await
+        } else {
+            self.client
+                .get(url)
+                .headers(header_map(headers))
+                .send()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
+                .text()
+                .await
+                .map_err(|e| orange_core::CoreError::Network(e.to_string()))
         }
     }
 
     /// 拉取并解析 RSS feed
     pub async fn fetch_feed(&self, url: &str) -> Result<Vec<Track>> {
-        let body = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let body = self.cached_get(url, &[]).await?;
         parse_rss(&body, self.id)
     }
 }
@@ -224,4 +243,17 @@ impl Default for PodcastSource {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn header_map(headers: &[(&str, &str)]) -> reqwest::header::HeaderMap {
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+    let mut map = HeaderMap::new();
+    for (k, v) in headers {
+        if let Ok(name) = HeaderName::from_bytes(k.as_bytes()) {
+            if let Ok(value) = HeaderValue::from_str(v) {
+                map.insert(name, value);
+            }
+        }
+    }
+    map
 }
