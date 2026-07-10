@@ -945,9 +945,7 @@
 /* ------------------------------------------------------------------------ */
 
 .library__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 20px 18px;
+  /* 由 VirtualGrid 内部处理列数计算，这里只负责外层尺寸 */
   padding: 6px 2px;
 }
 

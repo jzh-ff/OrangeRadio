@@ -4,6 +4,7 @@ import { useLibraryStore, type Track } from "../../stores/libraryStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { engineRef } from "../../App";
 import { VirtualTrackList } from "../../components/TrackRow";
+import { VirtualGrid } from "../../components/VirtualGrid";
 import { useVirtualInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import { getCoverUrl } from "../player/useCover";
 import "../../styles/library.css";
@@ -339,50 +340,71 @@ interface GridViewProps {
   onPlay: (track: Track, index: number) => void;
 }
 
-function GridView({ tracks, currentTrackId, onPlay }: GridViewProps) {
+/** 列表项：标题/时长/经典封面/品质徽章/来源徽章 + 磁带式渲染。提取到模块级以避免每次渲染重建。 */
+function TapeCard({ track, active, onPlay }: { track: Track; active: boolean; onPlay: () => void }) {
+  const q = QUALITY_BADGE[track.quality] || QUALITY_BADGE.standard;
+  const source = track.source_kind ?? "local";
+  const cover = getCoverUrl(track);
   return (
-    <div className="library__grid">
-      {tracks.map((t, i) => {
-        const q = QUALITY_BADGE[t.quality] || QUALITY_BADGE.standard;
-        const source = t.source_kind ?? "local";
-        const cover = getCoverUrl(t);
-        const isActive = t.id === currentTrackId;
-        return (
-          <div
-            key={t.id}
-            className={`lib-tape ${isActive ? "lib-tape--active" : ""}`}
-            data-source={source}
-            onDoubleClick={() => onPlay(t, i)}
-          >
-            <div className={`lib-tape__case ${cover ? "" : "lib-tape__case--empty"}`}>
-              {cover ? <img src={cover} alt="" loading="lazy" /> : null}
-              <div className="lib-tape__label">
-                <span className="lib-tape__quality">{q.label}</span>
-                <span className="lib-tape__source">{SOURCE_LABEL[source] ?? "EXT"}</span>
-              </div>
-              <div className="lib-tape__overlay">
-                <div className="lib-tape__overlay-title">{t.meta.title}</div>
-                <div className="lib-tape__overlay-artist">{t.meta.artist}</div>
-              </div>
-              <button
-                type="button"
-                className="lib-tape__play"
-                onClick={(e) => { e.stopPropagation(); onPlay(t, i); }}
-                aria-label={`播放 ${t.meta.title}`}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </button>
-            </div>
-            <div className="lib-tape__meta">
-              <span className="lib-tape__meta-title">{t.meta.title}</span>
-              <span className="lib-tape__meta-artist">{t.meta.artist || "未知艺术家"}</span>
-            </div>
-          </div>
-        );
-      })}
+    <div
+      className={`lib-tape ${active ? "lib-tape--active" : ""}`}
+      data-source={source}
+      onDoubleClick={onPlay}
+    >
+      <div className={`lib-tape__case ${cover ? "" : "lib-tape__case--empty"}`}>
+        {cover ? <img src={cover} alt="" loading="lazy" /> : null}
+        <div className="lib-tape__label">
+          <span className="lib-tape__quality">{q.label}</span>
+          <span className="lib-tape__source">{SOURCE_LABEL[source] ?? "EXT"}</span>
+        </div>
+        <div className="lib-tape__overlay">
+          <div className="lib-tape__overlay-title">{track.meta.title}</div>
+          <div className="lib-tape__overlay-artist">{track.meta.artist}</div>
+        </div>
+        <button
+          type="button"
+          className="lib-tape__play"
+          onClick={(e) => { e.stopPropagation(); onPlay(); }}
+          aria-label={`播放 ${track.meta.title}`}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </button>
+      </div>
+      <div className="lib-tape__meta">
+        <span className="lib-tape__meta-title">{track.meta.title}</span>
+        <span className="lib-tape__meta-artist">{track.meta.artist || "未知艺术家"}</span>
+      </div>
     </div>
+  );
+}
+
+const MemoTapeCard = memo(TapeCard);
+
+function GridView({ tracks, currentTrackId, onPlay }: GridViewProps) {
+  // 用 useCallback 稳定 renderItem 引用，避免每次父组件重渲染都新建函数，
+  // 否则 VirtualGrid 内部的 itemData memo 失效，所有可见卡片都会重渲染。
+  const renderItem = useCallback(
+    (t: Track, i: number) => (
+      <MemoTapeCard
+        track={t}
+        active={t.id === currentTrackId}
+        onPlay={() => onPlay(t, i)}
+      />
+    ),
+    [currentTrackId, onPlay]
+  );
+  // 二维虚拟网格：根据容器宽度自动算列数（180px 上限 8 列）
+  return (
+    <VirtualGrid
+      items={tracks}
+      columnWidth={180}
+      rowHeight={220}
+      maxColumns={8}
+      className="library__grid"
+      renderItem={renderItem}
+    />
   );
 }
 

@@ -82,6 +82,7 @@ export function Sidebar() {
   const searchKeyword = useSearchStore((s) => s.keyword);
   const setKeyword = useSearchStore((s) => s.setKeyword);
   const doSearch = useSearchStore((s) => s.doSearch);
+  const doSearchDebounced = useSearchStore((s) => s.doSearchDebounced);
 
   const onSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && searchKeyword.trim()) {
@@ -207,7 +208,10 @@ export function Sidebar() {
           className="sb-search__input"
           placeholder="搜索音乐、电台、播客…"
           value={searchKeyword}
-          onChange={(e) => setKeyword(e.target.value)}
+          onChange={(e) => {
+            setKeyword(e.target.value);
+            doSearchDebounced(e.target.value);
+          }}
           onKeyDown={onSearch}
           onFocus={() => setSubView("search")}
         />
