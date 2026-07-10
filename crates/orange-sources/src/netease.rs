@@ -16,6 +16,7 @@ use orange_core::source::*;
 use orange_core::track::{Artwork, ArtworkSource, Track, TrackMeta};
 use orange_core::Result;
 use serde::Deserialize;
+use std::error::Error as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -255,25 +256,51 @@ impl NeteaseSource {
         let cookie = format!("{}; os=pc; appver=2.10.14", user_cookie);
         let (params, enc_sec_key) = crate::weapi::encrypt(payload);
 
-        let resp = self
-            .client
-            .post(format!("{}{}?csrf_token=", BASE, path))
-            .header("Cookie", &cookie)
-            .header("Referer", BASE)
-            .header("Origin", "https://music.163.com")
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(format!(
-                "params={}&encSecKey={}",
-                urlencoding(&params),
-                urlencoding(&enc_sec_key)
-            ))
-            .send()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+        let url = format!("{}{}?csrf_token=", BASE, path);
+        let body = format!(
+            "params={}&encSecKey={}",
+            urlencoding(&params),
+            urlencoding(&enc_sec_key)
+        );
+
+        // 请求函数（抽出来便于失败后重试：连接池复用已被服务端关闭的死连接时，
+        // reqwest 会报 "error sending request"，重试一次会新建连接，通常即可成功）
+        let do_request = || {
+            self.client
+                .post(&url)
+                .header("Cookie", &cookie)
+                .header("Referer", BASE)
+                .header("Origin", "https://music.163.com")
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                )
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(body.clone())
+                .send()
+        };
+
+        let resp = match do_request().await {
+            Ok(r) => r,
+            Err(e) => {
+                // 展开错误根因链，便于定位（超时 / 连接重置 / TLS / DNS）
+                let is_timeout = e.is_timeout();
+                let mut chain = e.to_string();
+                let mut src: Option<&dyn std::error::Error> = e.source();
+                while let Some(s) = src {
+                    chain.push_str(" → ");
+                    chain.push_str(&s.to_string());
+                    src = s.source();
+                }
+                tracing::warn!("weapi {} 首次请求失败 (timeout={}): {}", path, is_timeout, chain);
+                // 重试一次
+                do_request()
+                    .await
+                    .map_err(|e2| orange_core::CoreError::Network(format!(
+                        "weapi {path} 请求失败(已重试): {e2}"
+                    )))?
+            }
+        };
 
         let text = resp
             .text()
