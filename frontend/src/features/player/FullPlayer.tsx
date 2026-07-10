@@ -49,10 +49,11 @@ interface FullPlayerProps {
   pushToast?: (msg: string, kind?: ToastKind, ttl?: number) => void;
 }
 
-/** 进度条 + 时间显示（独立 memo 组件，只订阅 position/duration） */
+/** 进度条 + 时间显示（独立 memo 组件，只订阅 position/duration/isPlaying） */
 const ProgressSection = React.memo(function ProgressSection() {
   const position = usePlayerStore((s) => s.position);
   const duration = usePlayerStore((s) => s.duration);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
   const progress = duration > 0 ? (position / duration) * 100 : 0;
   const [scrubPos, setScrubPos] = useState<number | null>(null);
   const onProgressMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -86,25 +87,13 @@ const ProgressSection = React.memo(function ProgressSection() {
       container.appendChild(note);
       setTimeout(() => note.remove(), 1500);
     };
-    let interval: number | undefined;
-    if (usePlayerStore.getState().isPlaying) {
-      interval = window.setInterval(tick, 1500);
-      tick();
-    }
-    const unsub = usePlayerStore.subscribe((s) => {
-      if (interval && !s.isPlaying) {
-        window.clearInterval(interval);
-        interval = undefined;
-      } else if (!interval && s.isPlaying) {
-        interval = window.setInterval(tick, 1500);
-        tick();
-      }
-    });
-    return () => {
-      if (interval) window.clearInterval(interval);
-      unsub();
-    };
-  }, []);
+    // 由 isPlaying 驱动 interval 启停（替代 raw subscribe 整个 store，
+    // 避免每帧 beatCam/position setState 都进回调判断）
+    if (!isPlaying) return;
+    const interval = window.setInterval(tick, 1500);
+    tick();
+    return () => window.clearInterval(interval);
+  }, [isPlaying]);
 
   return (
     <div className="fp-progress-row">
@@ -152,7 +141,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const fullPlayerOpacity = usePlayerStore((s) => s.visualParams.fullPlayerOpacity);
-  const { lyricColor, lyricColorAuto, preset } = usePlayerStore((s) => s.visualParams);
+  // 字段级订阅（替代整 visualParams 对象订阅，避免无关参数变化触发重渲染）
+  const lyricColor = usePlayerStore((s) => s.visualParams.lyricColor);
+  const lyricColorAuto = usePlayerStore((s) => s.visualParams.lyricColorAuto);
+  const preset = usePlayerStore((s) => s.visualParams.preset);
   const setVisualParams = usePlayerStore((s) => s.setVisualParams);
 
   // 切到"粒子律动"时默认用 BeatParticles（preset=1），避免和律动专辑同款 CoverParticles

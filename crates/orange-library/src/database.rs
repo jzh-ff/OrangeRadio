@@ -8,7 +8,7 @@
 
 use orange_core::source::SearchQuery;
 use orange_core::track::{ArtworkSource, Track};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,12 @@ pub const FAVORITES_PLAYLIST_ID: &str = "__favorites__";
 #[derive(Clone)]
 pub struct LibraryDb {
     tracks: Arc<RwLock<Vec<Track>>>,
+    /// 库文件路径（保留用于诊断/日志；DB 操作走 conn 长连接，不再每次 open）
+    #[allow(dead_code)]
     db_path: Option<Arc<PathBuf>>,
+    /// 长连接（复用 prepared statement 缓存，替代原先每次操作重开 + 重复建表）。
+    /// rusqlite Connection 非 Sync，用 parking_lot::Mutex 包裹。配合调用方 spawn_blocking，锁竞争极低。
+    conn: Option<Arc<Mutex<Connection>>>,
     /// 播放历史记录计数器：每记 N 条清理一次（替代原先 `now % 50` 的概率触发）
     play_history_counter: Arc<AtomicU64>,
 }
@@ -33,6 +38,7 @@ impl LibraryDb {
         Self {
             tracks: Arc::new(RwLock::new(Vec::new())),
             db_path: None,
+            conn: None,
             play_history_counter: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -44,6 +50,11 @@ impl LibraryDb {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(&path).map_err(sqlite_err)?;
+        // 开启 WAL + NORMAL 同步，提升并发读写性能（单进程场景足够）
+        conn.pragma_update(None, "journal_mode", "WAL")
+            .map_err(sqlite_err)?;
+        conn.pragma_update(None, "synchronous", "NORMAL")
+            .map_err(sqlite_err)?;
         init_schema(&conn)?;
         let tracks = load_tracks(&conn)?;
         ensure_favorites_playlist(&conn)?;
@@ -52,8 +63,16 @@ impl LibraryDb {
         Ok(Self {
             tracks: Arc::new(RwLock::new(tracks)),
             db_path: Some(Arc::new(path)),
+            conn: Some(Arc::new(Mutex::new(conn))),
             play_history_counter: Arc::new(AtomicU64::new(0)),
         })
+    }
+
+    /// 取共享长连接的锁（无持久化时返回错误）。所有 DB 操作改走这里，不再每次 open。
+    fn conn(&self) -> orange_core::Result<std::sync::Arc<Mutex<Connection>>> {
+        self.conn
+            .clone()
+            .ok_or_else(|| orange_core::CoreError::Internal("无持久化（纯内存模式）".into()))
     }
 
     /// 替换全部本地曲目（扫描后写入内存 + SQLite）
@@ -122,9 +141,9 @@ impl LibraryDb {
 
     /// 关键词搜索（标题/艺术家/专辑）
     pub fn search(&self, query: &SearchQuery) -> Vec<Track> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => {
+        let conn_arc = match self.conn() {
+            Ok(c) => c,
+            Err(_) => {
                 // 内存模式：按老逻辑过滤
                 let kw = query.keyword.to_lowercase();
                 let guard = self.tracks.read();
@@ -149,10 +168,7 @@ impl LibraryDb {
                     .collect();
             }
         };
-        let conn = match Connection::open(path) {
-            Ok(c) => c,
-            Err(_) => return Vec::new(),
-        };
+        let conn = conn_arc.lock();
         let kw = query.keyword.to_lowercase();
         let offset = ((query.page.saturating_sub(1)) as usize) * query.page_size as usize;
         let limit = query.page_size as usize;
@@ -186,9 +202,9 @@ impl LibraryDb {
 
     /// 分页查询曲目（优先走 SQLite，避免全内存克隆）
     pub fn query_paged(&self, offset: usize, limit: usize, filter: Option<&str>) -> Vec<Track> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => {
+        let conn_arc = match self.conn() {
+            Ok(c) => c,
+            Err(_) => {
                 let guard = self.tracks.read();
                 let mut tracks = guard.iter().cloned().collect::<Vec<_>>();
                 match filter {
@@ -201,10 +217,7 @@ impl LibraryDb {
                 return tracks.into_iter().skip(offset).take(limit).collect();
             }
         };
-        let conn = match Connection::open(path) {
-            Ok(c) => c,
-            Err(_) => return Vec::new(),
-        };
+        let conn = conn_arc.lock();
         let sql = match filter {
             Some("liked") => "SELECT data FROM tracks WHERE json_extract(data, '$.liked') = 1 ORDER BY rowid LIMIT ?1 OFFSET ?2",
             Some("local") => "SELECT data FROM tracks WHERE json_extract(data, '$.source_kind') = 'local' ORDER BY rowid LIMIT ?1 OFFSET ?2",
@@ -228,12 +241,8 @@ impl LibraryDb {
 
     /// 写入本地曲目到 SQLite（增量：先删本地曲目再插，保留跨源收藏）
     fn persist_local(&self, tracks: &[Track]) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p,
-            None => return Ok(()),
-        };
-        let mut conn = Connection::open(path.as_ref()).map_err(sqlite_err)?;
-        init_schema(&conn)?;
+        let conn_arc = self.conn()?;
+        let mut conn = conn_arc.lock();
         let tx = conn.transaction().map_err(sqlite_err)?;
         // 只删除本地扫描的曲目（path 以盘符/斜杠开头的），保留跨源收藏
         tx.execute(
@@ -255,12 +264,8 @@ impl LibraryDb {
 
     /// 追加单首曲目到 SQLite（跨源收藏用）
     fn persist_one(&self, track: &Track) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p,
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path.as_ref()).map_err(sqlite_err)?;
-        init_schema(&conn)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let json = serde_json::to_string(track)?;
         conn.execute(
             "INSERT OR REPLACE INTO tracks (id, path, data) VALUES (?1, ?2, ?3)",
@@ -274,12 +279,8 @@ impl LibraryDb {
 
     /// 创建歌单，返回歌单 ID
     pub fn create_playlist(&self, name: &str) -> orange_core::Result<String> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Err(orange_core::CoreError::Internal("无持久化".into())),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
-        init_schema(&conn)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -292,11 +293,8 @@ impl LibraryDb {
 
     /// 重命名歌单
     pub fn rename_playlist(&self, id: &str, name: &str) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE user_playlists SET name=?1, updated_at=?2 WHERE id=?3",
@@ -314,11 +312,8 @@ impl LibraryDb {
                 "默认“我的收藏”歌单不可删除".into(),
             ));
         }
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let mut conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let mut conn = conn_arc.lock();
         let tx = conn.transaction().map_err(sqlite_err)?;
         tx.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id=?1",
@@ -333,12 +328,8 @@ impl LibraryDb {
 
     /// 添加歌曲到歌单（跨源歌曲先存入 tracks 表，再建关联）
     pub fn add_to_playlist(&self, playlist_id: &str, track: &Track) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
-        init_schema(&conn)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         // 先确保曲目在 tracks 表（跨源收藏的关键：网易云歌曲也存进来）
         let json = serde_json::to_string(track)?;
         conn.execute(
@@ -361,11 +352,8 @@ impl LibraryDb {
         playlist_id: &str,
         track_id: &str,
     ) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id=?1 AND track_id=?2",
             params![playlist_id, track_id],
@@ -381,11 +369,8 @@ impl LibraryDb {
         offset: Option<usize>,
         limit: Option<usize>,
     ) -> orange_core::Result<Vec<Track>> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(vec![]),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let sql = match (offset, limit) {
             (Some(_), Some(_)) => {
                 "SELECT t.data FROM playlist_tracks pt JOIN tracks t ON pt.track_id=t.id \
@@ -415,11 +400,8 @@ impl LibraryDb {
 
     /// 全部用户自建歌单（不含默认“我的收藏”歌单）
     pub fn all_playlists(&self) -> orange_core::Result<Vec<UserPlaylist>> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(vec![]),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let mut stmt = conn
             .prepare("SELECT p.id, p.name, p.created_at, COUNT(pt.track_id) as cnt FROM user_playlists p LEFT JOIN playlist_tracks pt ON p.id=pt.playlist_id WHERE p.id != ?1 GROUP BY p.id ORDER BY p.created_at DESC")
             .map_err(sqlite_err)?;
@@ -464,11 +446,8 @@ impl LibraryDb {
 
     /// 获取默认“我的收藏”歌单信息
     pub fn favorites_playlist(&self) -> orange_core::Result<Option<UserPlaylist>> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(None),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let mut stmt = conn
             .prepare("SELECT p.id, p.name, p.created_at, COUNT(pt.track_id) as cnt FROM user_playlists p LEFT JOIN playlist_tracks pt ON p.id=pt.playlist_id WHERE p.id = ?1 GROUP BY p.id")
             .map_err(sqlite_err)?;
@@ -516,11 +495,8 @@ impl LibraryDb {
     /// liked=false 时：从 FAVORITES_PLAYLIST_ID 移除
     pub fn set_liked(&self, track: &Track, liked: bool) -> orange_core::Result<()> {
         let track_id = track.id.0.to_string();
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         // 更新 tracks 表中对应记录的 liked 字段（需读取 JSON→改→写回）
         let row: Option<(String,)> = conn
             .query_row(
@@ -558,11 +534,8 @@ impl LibraryDb {
 
     /// 更新曲目的 BPM（音频分析兜底后写回，DB + 内存同步）
     pub fn update_track_bpm(&self, track_id: &str, bpm: f32) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let row: Option<(String,)> = conn
             .query_row(
                 "SELECT data FROM tracks WHERE id=?1",
@@ -621,11 +594,8 @@ impl LibraryDb {
 
     /// 月度 VACUUM（可选，由调用方控制频次）
     pub fn vacuum_play_history(&self) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         conn.execute("VACUUM", []).map_err(sqlite_err)?;
         Ok(())
     }
@@ -649,11 +619,8 @@ impl LibraryDb {
         completed: bool,
         skipped: bool,
     ) -> orange_core::Result<()> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(()),
-        };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn_arc = self.conn()?;
+        let conn = conn_arc.lock();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -675,13 +642,11 @@ impl LibraryDb {
 
     /// 最近播放过的 track_id（去重，用于推荐时排除刚听过的）
     pub fn recent_track_ids(&self, limit: usize) -> Vec<String> {
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Vec::new(),
+        let conn_arc = match self.conn() {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
         };
-        let Ok(conn) = Connection::open(path) else {
-            return Vec::new();
-        };
+        let conn = conn_arc.lock();
         let Ok(mut stmt) = conn
             .prepare("SELECT DISTINCT track_id FROM play_history ORDER BY played_at DESC LIMIT ?1")
         else {
@@ -697,13 +662,11 @@ impl LibraryDb {
     /// 最近的播放反馈（skipped/liked/completed 的 track_id），驱动懂你模式实时调整
     pub fn recent_feedback(&self, limit: usize) -> orange_core::recommendation::ListenFeedback {
         let mut fb = orange_core::recommendation::ListenFeedback::default();
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return fb,
+        let conn_arc = match self.conn() {
+            Ok(c) => c,
+            Err(_) => return fb,
         };
-        let Ok(conn) = Connection::open(path) else {
-            return fb;
-        };
+        let conn = conn_arc.lock();
         if let Ok(mut stmt) = conn.prepare(
             "SELECT DISTINCT track_id FROM play_history WHERE skipped=1 ORDER BY played_at DESC LIMIT ?1",
         ) {
@@ -739,11 +702,11 @@ impl LibraryDb {
             bpm_preference: BpmPreference::default(),
             ..Default::default()
         };
-        let path = match &self.db_path {
-            Some(p) => p.as_ref(),
-            None => return Ok(profile),
+        let conn_arc = match self.conn() {
+            Ok(c) => c,
+            Err(_) => return Ok(profile),
         };
-        let conn = Connection::open(path).map_err(sqlite_err)?;
+        let conn = conn_arc.lock();
         let mut stmt = conn
             .prepare(
                 "SELECT track_id, played_at, played_secs, completed, skipped FROM play_history ORDER BY played_at DESC LIMIT 2000",
@@ -762,12 +725,26 @@ impl LibraryDb {
             .map_err(sqlite_err)?;
         let entries: Vec<(String, i64, f64, bool, bool)> = rows.filter_map(|r| r.ok()).collect();
 
-        // 内存 tracks 索引（拿 artist/genre）
-        let tracks_map: HashMap<String, Track> = {
+        // 内存 tracks 索引（只存画像计算所需的 artist/genre/bpm，不 clone 整个 Track）
+        struct TrackFeatures {
+            artist: String,
+            genre: Vec<String>,
+            bpm: Option<f32>,
+        }
+        let tracks_map: HashMap<String, TrackFeatures> = {
             let guard = self.tracks.read();
             guard
                 .iter()
-                .map(|t| (t.id.0.to_string(), t.clone()))
+                .map(|t| {
+                    (
+                        t.id.0.to_string(),
+                        TrackFeatures {
+                            artist: t.meta.artist.clone(),
+                            genre: t.meta.genre.clone(),
+                            bpm: t.meta.bpm,
+                        },
+                    )
+                })
                 .collect()
         };
 
@@ -791,7 +768,7 @@ impl LibraryDb {
                 0.5
             };
             if let Some(t) = tracks_map.get(track_id) {
-                let artist = t.meta.artist.trim();
+                let artist = t.artist.trim();
                 if !artist.is_empty() {
                     let s = artist_stat.entry(artist.to_string()).or_insert((0.0, 0, 0));
                     s.0 += weight;
@@ -802,7 +779,7 @@ impl LibraryDb {
                         s.2 += 1;
                     }
                 }
-                for g in &t.meta.genre {
+                for g in &t.genre {
                     let g = g.trim();
                     if g.is_empty() {
                         continue;
@@ -817,7 +794,7 @@ impl LibraryDb {
                     }
                 }
                 // BPM 分桶（仅当曲目有 bpm 元数据时）
-                if let Some(bpm) = t.meta.bpm {
+                if let Some(bpm) = t.bpm {
                     let idx = if bpm < 90.0 {
                         0
                     } else if bpm < 120.0 {

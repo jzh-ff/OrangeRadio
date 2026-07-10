@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useWallpaperStore } from "../stores/wallpaperStore";
 import { usePlayerStore } from "../stores/playerStore";
 
@@ -11,13 +12,14 @@ import { usePlayerStore } from "../stores/playerStore";
  */
 export function WallpaperLayer() {
   const active = useWallpaperStore((s) => s.list.find((w) => w.id === s.activeId) || null);
+  // useShallow：对象 selector 每次返回新对象字面量，需浅比较避免 store 任意变化都重渲染
   const { wallpaperOpacity, wallpaperBlur, wallpaperScale, wallpaperDim } = usePlayerStore(
-    (s) => ({
+    useShallow((s) => ({
       wallpaperOpacity: s.visualParams.wallpaperOpacity,
       wallpaperBlur: s.visualParams.wallpaperBlur,
       wallpaperScale: s.visualParams.wallpaperScale,
       wallpaperDim: s.visualParams.wallpaperDim,
-    })
+    }))
   );
 
   if (!active) return null;

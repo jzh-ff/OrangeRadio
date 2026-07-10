@@ -197,16 +197,12 @@ export function WallpaperBackground() {
     const onResize = () => resize(canvas);
     window.addEventListener("resize", onResize);
 
-    // 首次封面
+    // 首次封面（切歌时 currentTrack 引用变化 → effect 重跑 → 重新 setCover，
+    // 无需再 raw subscribe 整个 store，避免每帧 beatCam/position setState 都触发回调）
     setCover(canvas, getCoverUrl(currentTrack) || "");
-
-    const unsub = usePlayerStore.subscribe((s) => {
-      setCover(canvas, getCoverUrl(s.currentTrack) || "");
-    });
 
     return () => {
       window.removeEventListener("resize", onResize);
-      unsub();
     };
   }, [reduceMotion, currentTrack]);
 
