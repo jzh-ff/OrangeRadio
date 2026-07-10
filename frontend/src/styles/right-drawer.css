@@ -1,15 +1,12 @@
-/* ===== FullPlayer 右侧 hover 抽屉 =====
+/* ===== FullPlayer 右侧工具抽屉（点击钉住 + hover 预览）=====
    收纳四件套：布局切换 / 播放模式 / AI 译注 / 视觉控制台。
-   平时隐藏（只露竖向 grip 把手），鼠标进入右缘 30px 触发区 → 抽屉滑入。
-   触发区刻意做窄（30px），避免挡住 FullPlayer 右下角的评论区按钮。
-   高度用 bottom: var(--fp-footer-h) 让出 FullPlayer 底部 transport footer（播放/暂停/进度/音量），
-   否则抽屉会把 footer 整个盖住，footer 里的按钮和进度条都点不到。 */
+   悬浮按钮固定在屏幕最右侧垂直居中，点击切换开/关（钉住态）。
+   高度用 bottom: var(--fp-footer-h) 让出 FullPlayer 底部 transport footer。 */
 .fp-rd {
   position: fixed;
   top: 0;
   right: 0;
   bottom: var(--fp-footer-h, 110px);
-  /* 容器宽度 = 触发区(30) + 抽屉(360)，抽屉默认 translateX(100%) 隐藏 */
   width: 390px;
   z-index: 60;
   pointer-events: none;
@@ -19,44 +16,67 @@
   font-family: var(--font-body, system-ui);
 }
 
-/* 触发区：右缘 30px，全高，透明；只负责探测 hover */
-.fp-rd__trigger {
-  position: relative;
-  width: 30px;
-  flex-shrink: 0;
-  pointer-events: auto;
-  /* 占位但不可见 —— 鼠标进这里就开抽屉 */
-}
-.fp-rd__grip {
-  position: absolute;
+/* 悬浮按钮：屏幕最右侧垂直居中的胶囊，点击切换钉住 */
+.fp-rd__fab {
+  position: fixed;
   top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  right: 0;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 5px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(20, 22, 32, 0.55), rgba(10, 12, 20, 0.55));
-  border: 1px solid rgba(244, 210, 138, 0.12);
-  opacity: 0.32;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 8px;
+  border: 1px solid rgba(244, 210, 138, 0.18);
+  border-right: none;
+  border-radius: 14px 0 0 14px;
+  background: linear-gradient(180deg, rgba(14, 16, 24, 0.92), rgba(8, 10, 16, 0.92));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.4);
+  color: var(--text-2, rgba(255, 255, 255, 0.65));
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0.72;
+  /* transition 含 right，让打开时 FAB 平移到 panel 左侧（露出在 panel 之外，不遮挡内容） */
   transition: opacity 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+              border-color 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
               background 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
-              border-color 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+              color 0.22s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1)),
+              right 0.34s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+  z-index: 61;
 }
-.fp-rd:hover .fp-rd__grip,
-.fp-rd--open .fp-rd__grip {
-  opacity: 0.85;
-  background: linear-gradient(180deg, rgba(255, 107, 26, 0.18), rgba(255, 107, 26, 0.05));
-  border-color: rgba(255, 157, 69, 0.4);
+.fp-rd__fab:hover,
+.fp-rd__fab--open {
+  opacity: 1;
+  border-color: rgba(255, 157, 69, 0.5);
+  background: linear-gradient(180deg, rgba(255, 107, 26, 0.2), rgba(255, 107, 26, 0.06));
+  color: var(--orange-2, #ff9d45);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5), -8px 0 24px rgba(255, 107, 26, 0.18);
 }
-.fp-rd__grip-dot {
-  display: block;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--orange-2, #ff9d45);
-  box-shadow: 0 0 4px rgba(255, 157, 69, 0.6);
+.fp-rd__fab-arrow {
+  display: grid;
+  place-items: center;
+  transition: transform 0.28s var(--ease, cubic-bezier(0.22, 0.94, 0.4, 1));
+}
+/* 抽屉打开时箭头翻转朝右（暗示"点击收起"） */
+.fp-rd__fab--open .fp-rd__fab-arrow {
+  transform: rotate(180deg);
+}
+.fp-rd__fab-label {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-zh-serif, serif);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1;
+}
+/* 抽屉打开时 FAB 移到 panel 左边缘外，作为把手露出，不遮挡 panel 内容 */
+.fp-rd--open .fp-rd__fab {
+  right: 360px;
+  border-radius: 14px;
+  border-right: 1px solid rgba(244, 210, 138, 0.18);
 }
 
 /* 抽屉本体 */
@@ -118,8 +138,7 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 .fp-rd__section--vc {
-  flex: 1;
-  min-height: 0;
+  /* 不用 flex:1/min-height:0 —— 让控制台自然撑高，由外层 .fp-rd__panel 统一滚动 */
   padding: 14px 14px 18px;
 }
 .fp-rd__sec-head {
@@ -288,8 +307,7 @@
 
 /* ===== 视觉控制台嵌入容器 ===== */
 .fp-rd__vc-host {
-  flex: 1;
-  min-height: 0;
+  /* 不弹性伸缩 —— 控制台自然高度，外层 panel 滚动 */
   display: flex;
   flex-direction: column;
 }
@@ -319,13 +337,21 @@
 }
 .fp-rd__vc-host .vc-panel__head { padding: 0 4px 10px; }
 .fp-rd__vc-host .vc-panel--visible { opacity: 1 !important; transform: none !important; }
-.fp-rd__vc-host .vc-tab-content { flex: 1; min-height: 0; overflow-y: auto; }
+/* 单一滚动源：tab-content 不自滚（overflow:visible），解除 60vh 封顶，由外层 panel 统一滚动 */
+.fp-rd__vc-host .vc-tab-content {
+  flex: none;
+  max-height: none !important;
+  min-height: 0;
+  overflow: visible;
+}
 .fp-rd__vc-host .vc-tabs { margin-bottom: 10px; }
 
 /* 抽屉在 980px 以下也保留（FullPlayer 在小屏下也用） */
 @media (max-width: 980px) {
   .fp-rd { width: 330px; }
   .fp-rd__panel { width: 300px; }
+  /* FAB 打开态偏移同步缩窄到 panel 宽度 */
+  .fp-rd--open .fp-rd__fab { right: 300px; }
 }
 
 /* ===== 布局选择 grid（3 列自适应）=====

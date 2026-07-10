@@ -384,8 +384,11 @@ export default function App() {
     <div className="app">
       {/* 主窗口可拖拽顶条：decorations:false 时给整个窗口提供 drag 区域（高度 10px，见 global.css） */}
       <div className="app-drag-strip" data-tauri-drag-region aria-hidden="true" />
-      <WindowControls onRequestClose={() => setCloseConfirmOpen(true)} />
-      <LayoutControls />
+      {/* 右上角控制按钮统一容器：布局开关 + 窗口控制，视觉连成一体 */}
+      <div className="app-top-controls" data-tauri-drag-region={false}>
+        <LayoutControls />
+        <WindowControls onRequestClose={() => setCloseConfirmOpen(true)} />
+      </div>
       {wallpaperActive ? <WallpaperLayer /> : <WallpaperBackground />}
       <div className="app__layout">
         <Sidebar />

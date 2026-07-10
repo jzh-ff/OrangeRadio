@@ -1,27 +1,52 @@
-import { usePlayerStore, type VisualParams, type FullLayout } from "../stores/playerStore";
+import {
+  usePlayerStore, type VisualParams, type FullLayout,
+  type AppearanceParams, type ParticleParams,
+} from "../stores/playerStore";
 
 /**
  * 视觉参数存档系统（对标 MineRadio userFxArchives，index.html 20123-20567）
  *
- * 存档 = 当前 visualParams + preset + fullLayout 的 snapshot。
+ * 存档 = 整套视觉方案 snapshot：外观参数（全局）+ 每个组合的粒子参数 + preset + fullLayout。
  * 持久化到 localStorage `orangeradio-fx-archives-v1`。
  * 导入/导出用 Tauri dialog + fs（JSON 文件），不可用时降级浏览器下载。
+ *
+ * 兼容：旧版 snapshot 是扁平 VisualParams & {preset, fullLayout}，
+ * applyArchive 会自动降级处理（外观字段进全局，粒子字段注入当前组合）。
  */
 
 const STORAGE_KEY = "orangeradio-fx-archives-v1";
+
+/** v2 snapshot：整套视觉方案 */
+export interface FxSnapshot {
+  appearance: AppearanceParams;
+  particlePresets: Record<string, ParticleParams>;
+  preset: number;
+  fullLayout: FullLayout;
+}
 
 export interface FxArchive {
   id: string;
   name: string;
   createdAt: number;
   savedAt: number;
-  snapshot: VisualParams & { preset: number; fullLayout: FullLayout };
+  /** v2 结构；旧存档可能是扁平 VisualParams & {preset, fullLayout} */
+  snapshot: FxSnapshot | (VisualParams & { preset: number; fullLayout: FullLayout });
 }
 
-/** 序列化当前视觉状态为 snapshot */
-function captureSnapshot(): FxArchive["snapshot"] {
-  const vp = usePlayerStore.getState().visualParams;
-  return { ...vp, preset: vp.preset, fullLayout: usePlayerStore.getState().fullLayout };
+/** 判断 snapshot 是否为 v2 结构 */
+function isV2Snapshot(s: FxArchive["snapshot"]): s is FxSnapshot {
+  return !!s && typeof s === "object" && "appearance" in s && "particlePresets" in s;
+}
+
+/** 序列化当前视觉状态为 v2 snapshot */
+function captureSnapshot(): FxSnapshot {
+  const s = usePlayerStore.getState();
+  return {
+    appearance: s.appearance,
+    particlePresets: s.particlePresets,
+    preset: s.visualParams.preset,
+    fullLayout: s.fullLayout,
+  };
 }
 
 /** 加载所有存档 */
@@ -77,10 +102,38 @@ export function removeArchive(id: string): void {
 
 /** 应用存档（写回 playerStore） */
 export function applyArchive(arc: FxArchive): void {
-  const { preset, fullLayout, ...vp } = arc.snapshot;
-  usePlayerStore.getState().setVisualParams(vp);
-  if (typeof preset === "number") usePlayerStore.getState().setVisualParams({ preset });
-  if (fullLayout) usePlayerStore.getState().setFullLayout(fullLayout);
+  const store = usePlayerStore.getState();
+  if (isV2Snapshot(arc.snapshot)) {
+    // v2：整套视觉方案一次性恢复
+    // 先切布局（会触发 resolveVisualParams），再写外观 + 所有组合粒子 + preset
+    store.setFullLayout(arc.snapshot.fullLayout);
+    // 用 patch 直接覆盖 appearance / particlePresets，再重新解析
+    const next = {
+      ...arc.snapshot.appearance,
+      ...(arc.snapshot.particlePresets[
+        `${arc.snapshot.fullLayout}:${arc.snapshot.preset}`
+      ] ?? {}),
+      preset: arc.snapshot.preset,
+    } as VisualParams;
+    usePlayerStore.setState({
+      appearance: arc.snapshot.appearance,
+      particlePresets: arc.snapshot.particlePresets,
+      visualParams: next,
+    });
+    // 持久化
+    try {
+      localStorage.setItem(
+        "orangeradio_visual_params",
+        JSON.stringify({ v: 2, appearance: arc.snapshot.appearance, particlePresets: arc.snapshot.particlePresets, preset: arc.snapshot.preset }),
+      );
+    } catch { /* ignore */ }
+  } else {
+    // 旧版扁平 snapshot 降级：外观字段进全局，粒子字段注入当前组合，再切 preset/layout
+    const { preset, fullLayout, ...vp } = arc.snapshot;
+    store.setVisualParams(vp);
+    if (typeof preset === "number") store.setVisualParams({ preset });
+    if (fullLayout) store.setFullLayout(fullLayout);
+  }
 }
 
 /** 导出存档为 JSON 文件（Blob 下载，纯浏览器方案，不依赖 Tauri fs 插件） */

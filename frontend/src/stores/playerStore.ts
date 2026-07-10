@@ -180,6 +180,84 @@ export interface VisualParams {
   fullPlayerOpacity: number;
 }
 
+/**
+ * 粒子/动态类参数：按「排版×预设」组合独立存储。
+ * 不同渲染技术（封面粒子着色器 / 球面粒子 / 星河 / 黑胶 / DOM 排版）各自独立调校。
+ */
+export interface ParticleParams {
+  intensity: number;
+  depth: number;
+  coverResolution: number;
+  cinemaShake: number;
+  cinema: boolean;
+  bloom: boolean;
+  edge: boolean;
+  cameraShake: boolean;
+  particleCount: number;
+  pointSize: number;
+  speed: number;
+  twist: number;
+  colorTension: number;
+  scatter: number;
+  bloomStrength: number;
+}
+
+/** 外观/全局类参数：跨所有组合共享。 */
+export type AppearanceParams = Omit<VisualParams, keyof ParticleParams | "preset">;
+
+/** 粒子参数键集合（用于 setVisualParams 路由 & 迁移） */
+export const PARTICLE_KEYS: ReadonlyArray<keyof ParticleParams> = [
+  "intensity", "depth", "coverResolution", "cinemaShake", "cinema",
+  "bloom", "edge", "cameraShake", "particleCount", "pointSize",
+  "speed", "twist", "colorTension", "scatter", "bloomStrength",
+];
+
+/** 粒子参数默认值（每个组合的干净起点） */
+export const DEFAULT_PARTICLE_PARAMS: ParticleParams = {
+  intensity: 0.85,
+  depth: 1.0,
+  coverResolution: 1.0,
+  cinemaShake: 0.5,
+  cinema: true,
+  bloom: true,
+  edge: false,
+  cameraShake: true,
+  particleCount: 2200,
+  pointSize: 1.0,
+  speed: 1.0,
+  twist: 0,
+  colorTension: 1.1,
+  scatter: 0,
+  bloomStrength: 1.1,
+};
+
+/** 外观参数默认值（从 DEFAULT_VISUAL_PARAMS 派生） */
+function defaultAppearance(): AppearanceParams {
+  const { intensity, depth, coverResolution, cinemaShake, cinema, bloom, edge,
+    cameraShake, particleCount, pointSize, speed, twist, colorTension, scatter,
+    bloomStrength, preset, ...appearance } = DEFAULT_VISUAL_PARAMS;
+  void intensity; void depth; void coverResolution; void cinemaShake; void cinema;
+  void bloom; void edge; void cameraShake; void particleCount; void pointSize;
+  void speed; void twist; void colorTension; void scatter; void bloomStrength;
+  void preset;
+  return appearance;
+}
+
+/** 生成组合键（fullLayout × preset） */
+export function comboKey(layout: FullLayout, preset: number): string {
+  return `${layout}:${preset}`;
+}
+
+/**
+ * 持久化 schema v2：
+ * { v: 2, appearance: AppearanceParams, particlePresets: Record<comboKey, ParticleParams> }
+ */
+interface VisualStoreV2 {
+  v: 2;
+  appearance: AppearanceParams;
+  particlePresets: Record<string, ParticleParams>;
+}
+
 /** 全屏播放页布局模式 */
 export type FullLayout = "immersive" | "lyric-stream" | "triple" | "rhythmic-album" | "rhythmic-particles";
 
@@ -225,13 +303,107 @@ export const DEFAULT_VISUAL_PARAMS: VisualParams = {
   lyricColorAuto: true,
 };
 
-/** 从 localStorage 读取视觉参数，合并默认值（对标 MineRadio fxDefaults） */
-function loadVisualParams(): VisualParams {
+/** 从 localStorage 读取外观参数（v2），合并默认值 */
+function loadAppearance(): AppearanceParams {
   try {
     const raw = localStorage.getItem("orangeradio_visual_params");
-    if (raw) return { ...DEFAULT_VISUAL_PARAMS, ...JSON.parse(raw) };
+    if (!raw) return defaultAppearance();
+    const data = JSON.parse(raw);
+    // v2 结构：带 v 字段 + appearance
+    if (data && typeof data === "object" && data.v === 2 && data.appearance) {
+      return { ...defaultAppearance(), ...data.appearance };
+    }
+    // v1 旧扁平结构：取外观字段（非粒子非 preset）
+    const appearance: Record<string, unknown> = {};
+    for (const k of Object.keys(data)) {
+      if (!PARTICLE_KEYS.includes(k as keyof ParticleParams) && k !== "preset") {
+        appearance[k] = data[k];
+      }
+    }
+    return { ...defaultAppearance(), ...appearance };
   } catch { /* ignore */ }
-  return DEFAULT_VISUAL_PARAMS;
+  return defaultAppearance();
+}
+
+/** 从 localStorage 读取按组合存储的粒子参数（v2）；v1 旧数据迁移为所有组合的初始值 */
+function loadParticlePresets(): Record<string, ParticleParams> {
+  try {
+    const raw = localStorage.getItem("orangeradio_visual_params");
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    // v2 结构：直接返回 particlePresets
+    if (data && typeof data === "object" && data.v === 2 && data.particlePresets) {
+      return data.particlePresets as Record<string, ParticleParams>;
+    }
+    // v1 旧扁平结构：把粒子字段作为所有组合的初始值（保留用户当前调校作起点）
+    const legacy: Partial<ParticleParams> = {};
+    for (const k of PARTICLE_KEYS) {
+      if (data && data[k] !== undefined) (legacy as Record<string, unknown>)[k] = data[k];
+    }
+    // 只在有用户调校时注入；否则返回空对象，由解析时按需用 DEFAULT 填充
+    if (Object.keys(legacy).length === 0) return {};
+    const merged = { ...DEFAULT_PARTICLE_PARAMS, ...legacy };
+    return {
+      [comboKey("rhythmic-album", 0)]: merged,
+      [comboKey("rhythmic-particles", 0)]: merged,
+      [comboKey("rhythmic-particles", 1)]: merged,
+      [comboKey("rhythmic-particles", 2)]: merged,
+      [comboKey("rhythmic-particles", 3)]: merged,
+      [comboKey("immersive", 0)]: merged,
+      [comboKey("lyric-stream", 0)]: merged,
+      [comboKey("triple", 0)]: merged,
+    };
+  } catch { /* ignore */ }
+  return {};
+}
+
+/** 从 localStorage 读取初始 preset（v2 不存 preset，回退默认 0） */
+function loadPreset(): number {
+  try {
+    const raw = localStorage.getItem("orangeradio_visual_params");
+    if (!raw) return DEFAULT_VISUAL_PARAMS.preset;
+    const data = JSON.parse(raw);
+    if (data && typeof data === "object" && data.v === 2) {
+      return typeof data.preset === "number" ? data.preset : DEFAULT_VISUAL_PARAMS.preset;
+    }
+    // v1：取扁平 preset
+    return typeof data?.preset === "number" ? data.preset : DEFAULT_VISUAL_PARAMS.preset;
+  } catch { /* ignore */ }
+  return DEFAULT_VISUAL_PARAMS.preset;
+}
+
+/**
+ * 解析当前组合的完整 VisualParams（外观 ∪ 当前组合粒子 ∪ preset）。
+ * 消费端零改动：仍读 visualParams.field。
+ */
+export function resolveVisualParams(
+  appearance: AppearanceParams,
+  particlePresets: Record<string, ParticleParams>,
+  layout: FullLayout,
+  preset: number,
+): VisualParams {
+  const ck = comboKey(layout, preset);
+  const particle = particlePresets[ck] ?? DEFAULT_PARTICLE_PARAMS;
+  return {
+    ...DEFAULT_VISUAL_PARAMS,
+    ...appearance,
+    ...particle,
+    preset,
+  } as VisualParams;
+}
+
+/** 持久化 v2 结构到 localStorage */
+function persistVisualStore(
+  appearance: AppearanceParams,
+  particlePresets: Record<string, ParticleParams>,
+  preset: number,
+): void {
+  try {
+    const payload: VisualStoreV2 = { v: 2, appearance, particlePresets };
+    // preset 也一并写入，方便下次启动恢复（非核心，兼容旧读法）
+    (payload as VisualStoreV2 & { preset?: number }).preset = preset;
+    localStorage.setItem("orangeradio_visual_params", JSON.stringify(payload));
+  } catch { /* ignore */ }
 }
 
 /** 触发"重新登录"的音源 key（toast 按钮设值，view listen 后自动切到扫码 UI） */
@@ -270,6 +442,10 @@ interface PlayerState {
   beatCam: BeatCamState;
   /** 视觉参数（cinema 模式用） */
   visualParams: VisualParams;
+  /** 外观/全局参数（跨所有组合共享） */
+  appearance: AppearanceParams;
+  /** 按组合存储的粒子参数（key = comboKey(layout, preset)） */
+  particlePresets: Record<string, ParticleParams>;
   /** 当前封面主色 [r,g,b] 0~255，null 表示未提取/失败（auto 主题退回橙色默认） */
   dominantColor: [number, number, number] | null;
   /** 全屏播放页是否打开 */
@@ -332,6 +508,10 @@ interface PlayerState {
   /** 写入 BeatCam 5 通道当前帧（updateBeatCamera 每帧调用） */
   setBeatCamState: (s: BeatCamState) => void;
   setVisualParams: (p: Partial<VisualParams>) => void;
+  /** 重置当前组合的粒子参数为默认值（保留外观参数） */
+  resetParticleParams: () => void;
+  /** 重置外观参数为默认值（保留所有组合的粒子参数） */
+  resetAppearance: () => void;
   setDominantColor: (c: [number, number, number] | null) => void;
   setFullPlayer: (b: boolean) => void;
   setFullLayout: (l: FullLayout) => void;
@@ -368,7 +548,14 @@ export const usePlayerStore = create<PlayerState>()(
   beatmapIndex: 0,
   beatCamEvents: [],
   beatCam: { punch: 0, thetaKick: 0, phiKick: 0, radiusKick: 0, rollKick: 0 },
-  visualParams: loadVisualParams(),
+  visualParams: ((): VisualParams => {
+    const appearance = loadAppearance();
+    const particlePresets = loadParticlePresets();
+    const preset = loadPreset();
+    return resolveVisualParams(appearance, particlePresets, "rhythmic-album", preset);
+  })(),
+  appearance: loadAppearance(),
+  particlePresets: loadParticlePresets(),
   dominantColor: null,
   fullPlayerOpen: false,
   fullLayout: "rhythmic-album",
@@ -430,13 +617,52 @@ export const usePlayerStore = create<PlayerState>()(
   clearBeatCamEvents: () => set({ beatCamEvents: [], beatCam: { punch: 0, thetaKick: 0, phiKick: 0, radiusKick: 0, rollKick: 0 } }),
   setBeatCamState: (beatCam) => set({ beatCam }),
   setVisualParams: (p) => {
-    const next = { ...get().visualParams, ...p };
-    set({ visualParams: next });
-    try { localStorage.setItem("orangeradio_visual_params", JSON.stringify(next)); } catch { /* ignore */ }
+    const s = get();
+    // 按字段路由：粒子键 → 当前组合；外观键 → 全局；preset 单独处理
+    const appearance = { ...s.appearance } as Record<string, unknown>;
+    const particlePatch: Record<string, unknown> = {};
+    let presetChanged = s.visualParams.preset;
+    for (const [k, v] of Object.entries(p)) {
+      if (k === "preset") {
+        presetChanged = v as number;
+      } else if (PARTICLE_KEYS.includes(k as keyof ParticleParams)) {
+        particlePatch[k] = v;
+      } else {
+        appearance[k] = v;
+      }
+    }
+    const ck = comboKey(s.fullLayout, presetChanged);
+    const newParticlePresets = Object.keys(particlePatch).length > 0
+      ? { ...s.particlePresets, [ck]: { ...(s.particlePresets[ck] ?? DEFAULT_PARTICLE_PARAMS), ...particlePatch } }
+      : s.particlePresets;
+    const newAppearance = appearance as unknown as AppearanceParams;
+    const next = resolveVisualParams(newAppearance, newParticlePresets, s.fullLayout, presetChanged);
+    set({ visualParams: next, appearance: newAppearance, particlePresets: newParticlePresets });
+    persistVisualStore(newAppearance, newParticlePresets, presetChanged);
+  },
+  resetParticleParams: () => {
+    const s = get();
+    const ck = comboKey(s.fullLayout, s.visualParams.preset);
+    const newParticlePresets = { ...s.particlePresets, [ck]: { ...DEFAULT_PARTICLE_PARAMS } };
+    const next = resolveVisualParams(s.appearance, newParticlePresets, s.fullLayout, s.visualParams.preset);
+    set({ visualParams: next, particlePresets: newParticlePresets });
+    persistVisualStore(s.appearance, newParticlePresets, s.visualParams.preset);
+  },
+  resetAppearance: () => {
+    const s = get();
+    const newAppearance = defaultAppearance();
+    const next = resolveVisualParams(newAppearance, s.particlePresets, s.fullLayout, s.visualParams.preset);
+    set({ visualParams: next, appearance: newAppearance });
+    persistVisualStore(newAppearance, s.particlePresets, s.visualParams.preset);
   },
   setDominantColor: (dominantColor) => set({ dominantColor }),
   setFullPlayer: (fullPlayerOpen: boolean) => set({ fullPlayerOpen }),
-  setFullLayout: (fullLayout: FullLayout) => set({ fullLayout }),
+  setFullLayout: (fullLayout: FullLayout) => {
+    const s = get();
+    // 切换排版 → 重新解析 visualParams（用新 combo 的粒子参数）
+    const next = resolveVisualParams(s.appearance, s.particlePresets, fullLayout, s.visualParams.preset);
+    set({ fullLayout, visualParams: next });
+  },
   setSettingsOpen: (open: boolean) => set({ settingsOpen: open }),
   setProfileOpen: (profileOpen: boolean) => set({ profileOpen }),
   setImmersiveMode: (immersiveMode: boolean) => set({ immersiveMode }),
