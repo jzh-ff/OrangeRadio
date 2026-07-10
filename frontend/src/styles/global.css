@@ -615,6 +615,7 @@ textarea:focus-visible {
  * 窗口可拖拽顶条（decorations: false 时给主窗口一个 drag 区域）
  * 覆盖整个宽度；WindowControls 自带 no-drag 且浮在右上，不冲突
  * FullPlayer 打开时由其自带 .fp-header[data-tauri-drag-region] 接管
+ * ★ 加极淡的顶部高光渐变 + 底部发丝线，让用户能看到可拖动区域，但保持透明通透
  * ============================================================ */
 .app-drag-strip {
   position: fixed;
@@ -624,7 +625,33 @@ textarea:focus-visible {
   height: 10px;
   z-index: 8500; /* 高于 Wallpaper/Sidebar/PlayerBar，低于 WindowControls(9000+) */
   pointer-events: auto; /* 必须能接收 mousedown 才能拖 */
-  background: transparent; /* 视觉上不显示，仅作为命中区 */
+  background: transparent;
+  /* 极淡的顶部光带：可见但不抢眼，暗示"这里可以拖动窗口" */
+  box-shadow: inset 0 1px 0 rgba(244, 210, 138, 0.05);
+}
+
+/* ============================================================
+ * 右上角控制按钮统一容器
+ * 把 LayoutControls（侧栏/底栏开关）+ WindowControls（最小/最大/关闭）
+ * 合并到一个固定容器，视觉连成一组，共享 hover 行为
+ * ============================================================ */
+.app-top-controls {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 9000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* 两组之间的细分隔线：暗示分组但保持整体感 */
+.app-top-controls .layout-controls {
+  padding-right: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 540px) {
+  .app-top-controls { top: 4px; right: 4px; }
 }
 
 /* ============================================================

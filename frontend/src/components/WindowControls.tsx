@@ -44,8 +44,8 @@ export function WindowControls({
         title="最小化到托盘"
         aria-label="最小化"
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-          <line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
         </svg>
       </button>
       <button
@@ -56,13 +56,13 @@ export function WindowControls({
         aria-label={isMaximized ? "还原窗口" : "最大化窗口"}
       >
         {isMaximized ? (
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <rect x="2.5" y="3.5" width="6" height="6" rx="0.6" stroke="currentColor" strokeWidth="1.1" />
-            <path d="M4 3.5V2.5a1 1 0 0 1 1-1h4.5a1 1 0 0 1 1 1V7" stroke="currentColor" strokeWidth="1.1" fill="none" />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="5" y="7" width="12" height="12" rx="1.2" stroke="currentColor" strokeWidth="1.7" />
+            <path d="M8 7V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round" />
           </svg>
         ) : (
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <rect x="2" y="2" width="8" height="8" rx="0.6" stroke="currentColor" strokeWidth="1.1" />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="4" y="4" width="16" height="16" rx="1.2" stroke="currentColor" strokeWidth="1.7" />
           </svg>
         )}
       </button>
@@ -73,9 +73,9 @@ export function WindowControls({
         title="关闭（选择最小化到托盘或退出）"
         aria-label="关闭窗口"
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-          <line x1="3" y1="3" x2="9" y2="9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          <line x1="9" y1="3" x2="3" y2="9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
         </svg>
       </button>
     </div>

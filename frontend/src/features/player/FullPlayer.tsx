@@ -360,6 +360,15 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const { lines, activeIndex, activeProgress } = useLyrics(lyricData?.raw_lrc || null, lyricData?.translated_lrc);
 
   // 歌词自动居中：必须在 layout 稳定后测量，且不能用 smooth（与字号变化引起的 reflow 叠加会先「跳到底再滚回」）
+  // 依赖 fullLayout：从 rhythmic-album/particles 切到歌词类布局时，歌词 DOM 会重挂载，
+  // 此时 scrollTop 归零、当前行贴顶被封面/刊头盖住，必须重新居中。
+  //
+  // ★ lyric-stream 是纵向 column 布局，有两个坑：
+  //   1) flex:1 高度结算有时延 → clientHeight 初始为 0 → 用 ResizeObserver 兜底
+  //   2) ::before/::after 占位用 height:50% 在 flex column 父级里可能解析为 0（indefinite height），
+  //      导致 scrollHeight 不足、首行无法滚到中间。
+  //      解法：centerActiveLine 里同步设置 CSS 变量 --scroll-pad = clientHeight/2，
+  //      伪元素读取该变量获得可靠的像素占位。
   useLayoutEffect(() => {
     if (activeIndex < 0) return;
     const container = lyricScrollRef.current;
@@ -367,36 +376,55 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
 
     const centerActiveLine = () => {
       const el = lyricLineRefs.current[activeIndex];
-      if (!el) return;
-      // offsetTop 相对滚动容器内容区，比 getBoundingClientRect 在 reflow 期间更稳
-      const target = el.offsetTop - container.clientHeight / 2 + el.offsetHeight / 2;
+      if (!el) return false;
+      const ch = container.clientHeight;
+      // clientHeight 为 0 时（容器未渲染/隐藏），跳过避免算出错误偏移
+      if (ch === 0) return false;
+      // ★ 同步占位高度：让 ::before/::after 各占半个视口，首/末行才能滚到中间
+      container.style.setProperty("--scroll-pad", `${ch / 2}px`);
+      // offsetTop 相对滚动容器内容区（含 ::before 占位），比 getBoundingClientRect 在 reflow 期间更稳
+      const target = el.offsetTop - ch / 2 + el.offsetHeight / 2;
       container.scrollTo({ top: Math.max(0, target), behavior: "auto" });
+      return true;
     };
 
     // ★ 切行瞬间锁定字号/颜色过渡，避免"先滚到目标 → 字号增大 → 视觉偏位"的串扰
-    // 原因：editorial 模式 active 行字号 22→30（普通模式 22→26），CSS transition 0.4s。
-    //        useLayoutEffect 同步测量时浏览器 layout 已用最终计算样式，scrollTo 目标正确；
-    //        但 transition 启动后行高渐变，active 行"视觉中心"在动画期间漂移，
-    //        lyric-stream 容器高度只有 ~400px，8px 字号变化感知度比 triple/immersive(~700px) 强 2 倍。
-    // 解法：挂 .fp-no-lyric-fade 把 .fp-lyric-line 的 transition 全部禁用，瞬时测量 → scrollTo → 下一帧解锁，
-    //        让"切行"这种离散跳转瞬时到位，"字号渐变"留给用户拖动/网络抖动的被动重渲染。
     const root = document.documentElement;
     root.classList.add("fp-no-lyric-fade");
 
     centerActiveLine();
-    // rAF 后两件事合一：1) 在过渡仍锁定的状态下再校准一次（消除亚像素偏差） 2) 解锁过渡
-    //        解锁后浏览器才会启动 0.4s 字号过渡，此时 scrollTop 已锁在最终位置，
-    //        即使行高变化也不会再触发 scrollTo，视觉中心保持稳定。
+
+    // rAF 校准：消除亚像素偏差；居中成功才解锁过渡（clientHeight=0 时保持锁定等 RO）
     lyricCenterRafRef.current = requestAnimationFrame(() => {
-      centerActiveLine();
-      root.classList.remove("fp-no-lyric-fade");
+      const ok = centerActiveLine();
+      lyricCenterRafRef.current = requestAnimationFrame(() => {
+        if (centerActiveLine() && ok) {
+          root.classList.remove("fp-no-lyric-fade");
+        }
+      });
     });
+
+    // ★ ResizeObserver：lyric-stream 等 flex 布局的容器高度结算有延迟，
+    //   监听高度变化，稳定后重新居中 + 同步占位（解决"切布局后 clientHeight=0 → 贴顶"的根因）
+    let stableTimer = 0;
+    const ro = new ResizeObserver(() => {
+      centerActiveLine();
+      window.clearTimeout(stableTimer);
+      stableTimer = window.setTimeout(() => {
+        centerActiveLine();
+        root.classList.remove("fp-no-lyric-fade");
+        ro.disconnect();
+      }, 120);
+    });
+    ro.observe(container);
 
     return () => {
       cancelAnimationFrame(lyricCenterRafRef.current);
+      window.clearTimeout(stableTimer);
+      ro.disconnect();
       root.classList.remove("fp-no-lyric-fade");
     };
-  }, [activeIndex, lines.length]);
+  }, [activeIndex, lines.length, fullLayout]);
 
   /** 当前行平滑扫光（CSS 变量 --lyric-p 驱动渐变边界，对标 MineRadio uProgress smoothstep）
    *  不拆 span，用 background-clip:text + 渐变在 --lyric-p 位置平滑过渡，避免逐字硬切割僵硬感 */

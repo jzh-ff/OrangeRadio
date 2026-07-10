@@ -402,15 +402,15 @@
   width: 100%;
   aspect-ratio: 1;
   max-width: 300px;
-  border-radius: 18px;
-  overflow: hidden;
+  border-radius: 50%;
+  overflow: visible;
   position: relative;
 }
 .fp-cover-big .fp-cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 18px;
+  border-radius: 50%;
   transform-origin: center center;
   /* 动画常驻 .fp-cover-img：换歌时 React key 变化触发 remount 重置到 0deg；
      暂停/恢复只切 animation-play-state，不卸载动画（保持当前角度） */
@@ -490,13 +490,19 @@
   padding: 0 12px;
   scroll-behavior: auto;
   width: 100%;
+  /* ★ position: relative 让子行 .fp-lyric-line 的 offsetTop 相对于此滚动容器，
+     而非跳到更上层的 .fp-content（否则居中偏移算错，lyric-stream 下当前行贴顶） */
+  position: relative;
 }
-/* 上下各 50% 占位，保证第一行/最后一行也能滚到 viewport 中间 */
+/* 上下占位让首/末行也能滚到视口中间。
+   ★ 不用 height:50%（在 flex column 父级里包含块高度可能被判 indefinite → 解析为 0），
+     改用 JS（FullPlayer useLayoutEffect）动态设置 CSS 变量 --scroll-pad 为 clientHeight/2，
+     伪元素读取该变量。未设置时回退 40vh 保证基本可用。 */
 .fp-lyrics-scroll::before,
 .fp-lyrics-scroll::after {
   content: '';
   display: block;
-  height: 50%;
+  height: var(--scroll-pad, 40vh);
   flex-shrink: 0;
 }
 .fp-lyrics-scroll::-webkit-scrollbar { width: 6px; }
@@ -805,16 +811,21 @@
   font-size: 15px;
 }
 
-/* triple 评论区 */
+/* triple 评论区：flex 撑满父级高度（align-items:stretch 拉伸），单一滚动源 */
 .fp-comments-section {
-  width: 300px;
+  width: 320px;
   flex-shrink: 0;
-  height: 100%;
-  max-height: calc(100vh - 240px);
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-left: 20px;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(244, 210, 138, 0.18) transparent;
 }
+.fp-comments-section::-webkit-scrollbar { width: 4px; }
+.fp-comments-section::-webkit-scrollbar-thumb { background: rgba(244, 210, 138, 0.18); border-radius: 3px; }
 .fp-section-h {
   font-size: 15px;
   font-weight: 700;
@@ -1598,9 +1609,30 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 当前组合标识：说明参数按「排版×预设」组合独立保存 */
+.vc-combo-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 122, 26, 0.08);
+  border: 1px solid rgba(255, 122, 26, 0.18);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.vc-combo-badge__label {
+  font-weight: 600;
+  color: var(--orange-2, #ff9d45);
+}
+.vc-combo-badge__hint {
+  color: rgba(255, 255, 255, 0.35);
 }
 .vc-panel__title { font-size: 13px; font-weight: 700; color: #fff; }
 .vc-panel__hint { font-size: 9px; color: rgba(255, 255, 255, 0.3); }
@@ -2082,14 +2114,11 @@
   .vc-panel { width: 220px; right: 12px; top: 70px; }
 }
 
-/* ===== 真实封面图 ===== */
+/* ===== 真实封面图（基础：圆形黑胶 —— border-radius/animation 由 .fp-cover-big .fp-cover-img 统管） ===== */
 .fp-cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 50%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 8px rgba(0, 0, 0, 0.3);
-  animation: fp-spin 12s linear infinite;
 }
 .fp-cover-section.paused .fp-cover-img { animation-play-state: paused; } /* legacy：保留兼容 */
 
@@ -2154,7 +2183,9 @@
 .fp-comment-drawer > .cl-list { flex: 1; overflow-y: auto; }
 
 /* ===== 评论列表（CommentList） ===== */
-.cl-list { padding: 8px 18px; overflow-y: auto; }
+/* .cl-list 自身不滚动 —— 在 triple 评论区由 .fp-comments-section 单一滚动；
+   cinema 抽屉场景由 .fp-comment-drawer > .cl-list 独立 overflow（见上条） */
+.cl-list { padding: 8px 18px; }
 .cl-header {
   font-size: 14px;
   font-weight: 700;
@@ -2720,7 +2751,7 @@
 }
 .fp-overlay--editorial.fp-overlay--lyric-stream .fp-cover-big {
   max-width: 84px;
-  border-radius: 12px;
+  border-radius: 50%;
 }
 .fp-overlay--editorial.fp-overlay--lyric-stream .fp-track-meta {
   text-align: left;
@@ -2745,6 +2776,114 @@
   padding: 0 32px;
 }
 
+/* ===== 三种 DOM 布局的杂志感增强（沉浸黑胶 / 歌词长卷 / 杂志三栏）===== */
+
+/* 沉浸黑胶：圆形大黑胶居左（300px 聚焦），歌词流居右，发丝线 + 封面主色渗透 */
+.fp-overlay--editorial.fp-overlay--immersive .fp-content {
+  padding: 32px 64px;
+  gap: 56px;
+}
+.fp-overlay--editorial.fp-overlay--immersive .fp-cover-section {
+  width: 300px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 20px;
+}
+.fp-overlay--editorial.fp-overlay--immersive .fp-cover-big {
+  max-width: 280px;
+}
+.fp-overlay--editorial.fp-overlay--immersive .fp-track-meta {
+  text-align: center;
+}
+.fp-overlay--editorial.fp-overlay--immersive .fp-song-title {
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+.fp-overlay--editorial.fp-overlay--immersive .fp-lyrics-section {
+  border-left: 1px solid var(--champagne-soft, rgba(244, 210, 138, 0.18));
+  padding-left: 40px;
+  position: relative;
+}
+/* 沉浸黑胶歌词区刊眼 */
+.fp-overlay--editorial.fp-overlay--immersive .fp-lyrics-section::before {
+  content: "NOW PLAYING";
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--champagne);
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(244, 210, 138, 0.1);
+  margin-bottom: 8px;
+}
+
+/* 歌词长卷：顶部紧凑黑胶横条 + 下方歌词吃满高度，去掉拥挤感 */
+.fp-overlay--editorial.fp-overlay--lyric-stream .fp-content {
+  padding: 24px 48px 12px;
+  max-width: 880px;
+  margin: 0 auto;
+  width: 100%;
+  gap: 20px;
+}
+.fp-overlay--editorial.fp-overlay--lyric-stream .fp-lyrics-section {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* 杂志三栏：黑胶 + 歌词 + 评论 三栏等高，栏间香槟金发丝线 */
+.fp-overlay--editorial.fp-overlay--triple .fp-content {
+  padding: 28px 40px;
+  gap: 0;
+  align-items: stretch;
+}
+.fp-overlay--editorial.fp-overlay--triple .fp-cover-section {
+  width: 300px;
+  padding-right: 28px;
+  align-items: center;
+  gap: 16px;
+}
+.fp-overlay--editorial.fp-overlay--triple .fp-cover-big {
+  max-width: 200px;
+}
+/* 三栏左栏元数据：文字可换行不截断 */
+.fp-overlay--editorial.fp-overlay--triple .fp-track-meta {
+  max-width: 100%;
+  width: 100%;
+}
+.fp-overlay--editorial.fp-overlay--triple .fp-song-title {
+  font-size: 24px;
+  line-height: 1.15;
+  word-break: break-word;
+}
+.fp-overlay--editorial.fp-overlay--triple .fp-lyrics-section {
+  padding: 0 32px;
+  border-left: 1px solid var(--champagne-soft, rgba(244, 210, 138, 0.14));
+  border-right: 1px solid var(--champagne-soft, rgba(244, 210, 138, 0.14));
+}
+.fp-overlay--editorial.fp-overlay--triple .fp-comments-section {
+  border-left: none;
+  padding-left: 0;
+  padding-left: 28px;
+}
+/* 杂志三栏评论区刊眼（替代 cl-header 的样式，强化杂志感） */
+.fp-overlay--editorial.fp-overlay--triple .fp-comments-section::before {
+  content: "VOICES · 热评";
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--champagne);
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(244, 210, 138, 0.1);
+}
+
 /* ===== 封面区：黑胶大封面（杂志版式） ===== */
 .fp-overlay--editorial .fp-cover-frame {
   padding: 0;
@@ -2754,26 +2893,29 @@
   box-shadow: none;
   position: relative;
 }
-/* 封面容器：去掉可见的方形边框/阴影 —— 专辑自己旋转，frame 只是透明容器，
-   避免旋转时方框露馅（用户反馈"专辑旋转时方形边框还在"） */
+/* 封面容器：彻底透明的圆形容器 —— 黑胶语义，旋转的是内部图片，容器不持有任何方形描边/投影 */
 .fp-overlay--editorial .fp-cover-big {
-  border-radius: 22px;
+  border-radius: 50%;
   overflow: visible;
   position: relative;
   box-shadow: none;
+  background: none;
+  border: none;
 }
+/* 播放中的径向发光晕：挂在容器上（不旋转），纯圆形 box-shadow 对称，不随旋转变形 */
 .fp-overlay--editorial .fp-cover-big--live {
-  animation: fp-cover-pulse 4s ease-in-out infinite;
+  box-shadow: 0 0 60px rgba(255, 107, 26, 0.2), 0 30px 80px rgba(0, 0, 0, 0.5);
+  animation: fp-vinyl-glow 5s ease-in-out infinite;
 }
-@keyframes fp-cover-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(244, 210, 138, 0.16), 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 60px rgba(255, 107, 26, 0.15); }
-  50%      { box-shadow: 0 0 0 1px rgba(255, 157, 69, 0.32), 0 36px 90px rgba(0, 0, 0, 0.6),  0 0 80px rgba(255, 107, 26, 0.28); }
+@keyframes fp-vinyl-glow {
+  0%, 100% { box-shadow: 0 0 50px rgba(255, 107, 26, 0.16), 0 30px 70px rgba(0, 0, 0, 0.45); }
+  50%      { box-shadow: 0 0 80px rgba(255, 107, 26, 0.3),  0 36px 90px rgba(0, 0, 0, 0.55); }
 }
-/* 封面顶部「FOLIO」角标 */
+/* 封面顶部「FOLIO」角标 —— 黑胶模式下移到容器外上方，不干扰圆形 */
 .fp-overlay--editorial .fp-cover-big::before {
   content: "FOLIO · NO.01";
   position: absolute;
-  top: -22px;
+  top: -24px;
   left: 50%;
   transform: translateX(-50%);
   font-family: var(--font-mono);
@@ -2785,29 +2927,29 @@
   white-space: nowrap;
   z-index: 2;
 }
-/* 封面下方「02 / 02」页码 */
+/* 黑胶中心孔：挂在容器（非 img）上，圆形居中，覆盖在旋转的封面图之上 */
 .fp-overlay--editorial .fp-cover-big::after {
-  content: "02 / 02";
+  content: "";
   position: absolute;
-  bottom: -22px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: "Fraunces", "Cormorant Garamond", serif;
-  font-style: italic;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--text-4);
-  z-index: 2;
+  top: 50%; left: 50%;
+  width: 14%; height: 14%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, #050308 22%, #1a1218 24%, #0a0a0f 26%, rgba(10,10,15,0.4) 34%, transparent 40%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 4px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  z-index: 3;
 }
 
-/* 真实封面图：保持原 12s 旋转，但加上圆形黑胶处理 */
+/* 真实封面图：圆形黑胶 —— border-radius:50%，阴影跟随旋转无违和（圆形阴影旋转无违和） */
 .fp-overlay--editorial .fp-cover-big .fp-cover-img {
-  border-radius: 22px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 .fp-overlay--editorial .fp-cover-disc {
-  border-radius: 22px;
+  border-radius: 50%;
 }
 
 /* ===== 元数据排版：杂志大字 + mono 元数据 ===== */
@@ -3085,6 +3227,17 @@
   .fp-overlay--editorial .fp-time { font-size: 16px; }
   .fp-overlay--editorial.fp-overlay--lyric-stream .fp-content { padding: 16px 20px 8px; }
   .fp-overlay--editorial.fp-overlay--triple .fp-content { padding: 16px 20px; }
+  /* 三栏评论区在垂直堆叠下：去掉对父级的 100% 高度依赖，给确定滚动高度 */
+  .fp-overlay--editorial.fp-overlay--triple .fp-comments-section {
+    height: auto;
+    max-height: 40vh;
+    flex: none;
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid rgba(244, 210, 138, 0.12);
+    padding-left: 0;
+    padding-top: 16px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .fp-overlay--editorial .fp-cover-big--live,

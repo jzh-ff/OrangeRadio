@@ -1,12 +1,13 @@
 /**
  * FullPlayer 右侧工具抽屉
  *
- * 把"播放布局 / 播放模式 / AI 译注 / 视觉控制台"四件套从屏幕各处收纳到右侧 hover 抽屉：
- * - 平时完全隐藏（只露 1 个竖向 grip 把手暗示）
- * - 鼠标进入右缘 30px 触发区 → 抽屉从右滑入
- * - 鼠标离开抽屉 → 250ms 延迟后滑出（给用户从 trigger 滑入抽屉的容错）
+ * 交互模型（点击钉住为主，hover 预览为辅）：
+ * - 屏幕最右侧垂直居中的胶囊悬浮按钮，点击切换 开/关（钉住态）。
+ * - 钉住打开后，鼠标离开不会自动收回 —— 调参时不会误关。
+ * - 未钉住时，鼠标 hover 按钮区可预览展开（移出 250ms 收回），
+ *   一旦点过按钮进入 pinned 态，hover 不再影响开合。
  *
- * 不抢 z-index，position: fixed + 容器 z-index 60（在 FullPlayer 50 之上）。
+ * 收纳四件套：播放布局 / 播放模式 / AI 译注 / 视觉控制台。
  */
 import { useEffect, useRef, useState } from "react";
 import { usePlayerStore, type PlaybackMode, type FullLayout } from "../../stores/playerStore";
@@ -28,24 +29,38 @@ interface Props {
 
 export function FullPlayerRightDrawer({ onAnnotate, annotateLoading, fullLayout, setFullLayout }: Props) {
   const [open, setOpen] = useState(false);
-  const closeTimer = useRef(0);
+  /** pinned：是否被点击钉住。pinned 态下 hover 不再自动收回 */
+  const [pinned, setPinned] = useState(false);
+  const hoverTimer = useRef(0);
   const mode = usePlayerStore((s) => s.mode);
   const setMode = usePlayerStore((s) => s.setMode);
 
-  const keepOpen = () => {
-    if (closeTimer.current) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = 0;
+  /** 悬浮按钮点击：切换钉住态 */
+  const togglePinned = () => {
+    // 清掉残留的 hover 定时器，避免刚钉住就被 pending 的收回定时器关闭
+    if (hoverTimer.current) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = 0;
     }
+    const nextPinned = !pinned;
+    setPinned(nextPinned);
+    setOpen(nextPinned);
+  };
+
+  /** hover 预览：仅未钉住时生效 */
+  const onHoverEnter = () => {
+    if (pinned) return;
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
     setOpen(true);
   };
-  const scheduleClose = () => {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setOpen(false), 250);
+  const onHoverLeave = () => {
+    if (pinned) return;
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setOpen(false), 250);
   };
 
   useEffect(() => () => {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
   }, []);
 
   const cycleMode = () => {
@@ -57,22 +72,25 @@ export function FullPlayerRightDrawer({ onAnnotate, annotateLoading, fullLayout,
   return (
     <div
       className={`fp-rd ${open ? "fp-rd--open" : ""}`}
-      onMouseEnter={keepOpen}
-      onMouseLeave={scheduleClose}
+      onMouseEnter={onHoverEnter}
+      onMouseLeave={onHoverLeave}
     >
-      {/* 触发区：右缘 30px，全高，透明；仅用于 hover 探测 */}
-      <div
-        className="fp-rd__trigger"
-        onMouseEnter={keepOpen}
-        aria-hidden
+      {/* 悬浮按钮：屏幕最右侧垂直居中，点击切换钉住，箭头随开合翻转 */}
+      <button
+        type="button"
+        className={`fp-rd__fab ${open ? "fp-rd__fab--open" : ""}`}
+        onClick={togglePinned}
+        aria-label={open ? "收起工具抽屉" : "展开工具抽屉"}
+        aria-expanded={open}
+        title={open ? "收起工具抽屉" : "展开工具抽屉"}
       >
-        {/* 把手：3 个圆点竖排，hover 触发时变亮 —— 暗示"这里有抽屉" */}
-        <span className="fp-rd__grip" aria-hidden>
-          <span className="fp-rd__grip-dot" />
-          <span className="fp-rd__grip-dot" />
-          <span className="fp-rd__grip-dot" />
+        <span className="fp-rd__fab-arrow" aria-hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
         </span>
-      </div>
+        <span className="fp-rd__fab-label" aria-hidden>{"工具"}</span>
+      </button>
 
       {/* 抽屉本体：360px 宽，玻璃深色面板 */}
       <aside className="fp-rd__panel" role="complementary" aria-label="工具抽屉">

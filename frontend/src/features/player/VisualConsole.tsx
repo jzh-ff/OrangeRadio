@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from "react";
-import { usePlayerStore, type ColorTheme, DEFAULT_VISUAL_PARAMS } from "../../stores/playerStore";
+import { usePlayerStore, type ColorTheme, type ParticleParams } from "../../stores/playerStore";
 import {
   loadArchives, createArchive, saveArchive, renameArchive, removeArchive,
   applyArchive, exportArchive, importArchiveFromFile, type FxArchive,
 } from "../../lib/fxArchive";
 import { WallpaperPicker } from "../../components/WallpaperPicker";
+import {
+  comboProfile, hasParticleControls, isKeyVisible,
+} from "../../lib/comboCapabilities";
 
 /**
  * DIY 视觉控制台（对标 MineRadio #fx-panel，5 tab 垂直面板）
@@ -41,10 +44,22 @@ const PRESETS: { id: number; name: string; desc: string; icon: string }[] = [
   { id: 3, name: "唱片", desc: "唱片 · 圆形封面", icon: "◐" },
 ];
 
+/** 全屏布局中文名（与 layoutOptions.ts 对齐，用于控制台组合标识） */
+const LAYOUT_LABEL: Record<string, string> = {
+  "rhythmic-album": "律动专辑",
+  "rhythmic-particles": "粒子律动",
+  "immersive": "沉浸黑胶",
+  "lyric-stream": "歌词长卷",
+  "triple": "杂志三栏",
+};
+
 export function VisualConsole() {
   const visualParams = usePlayerStore((s) => s.visualParams);
   const setVisualParams = usePlayerStore((s) => s.setVisualParams);
+  const resetParticleParams = usePlayerStore((s) => s.resetParticleParams);
+  const resetAppearance = usePlayerStore((s) => s.resetAppearance);
   const dominantColor = usePlayerStore((s) => s.dominantColor);
+  const fullLayout = usePlayerStore((s) => s.fullLayout);
   const setSubView = usePlayerStore((s) => s.setSubView);
   const setFullPlayer = usePlayerStore((s) => s.setFullPlayer);
   const [tab, setTab] = useState<Tab>("motion");
@@ -54,6 +69,19 @@ export function VisualConsole() {
   const [archives, setArchives] = useState<FxArchive[]>(() => loadArchives());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // 当前组合（排版×预设）的能力档位：决定显示哪些粒子控件
+  const profile = comboProfile(fullLayout, visualParams.preset);
+  const showParticles = hasParticleControls(fullLayout, visualParams.preset);
+  /** 指定粒子键在当前组合下是否可见 */
+  const keyVis = (k: keyof ParticleParams) => isKeyVisible(fullLayout, visualParams.preset, k);
+
+  // 切到无粒子的组合（黑胶/DOM 排版）时，若停在动态/高级 tab 自动回退到外观
+  useEffect(() => {
+    if (!showParticles && (tab === "motion" || tab === "advanced")) {
+      setTab("appearance");
+    }
+  }, [showParticles, tab]);
 
   const refreshArchives = () => setArchives(loadArchives());
   const handleCreate = () => {
@@ -96,10 +124,17 @@ export function VisualConsole() {
     return () => window.clearTimeout(hideTimer.current);
   }, []);
 
-  const reset = () => {
-    // 恢复视觉参数到出厂默认值
-    setVisualParams({ ...DEFAULT_VISUAL_PARAMS });
+  const resetParticles = () => {
+    // 仅重置当前组合的粒子参数（保留外观）
+    resetParticleParams();
   };
+  const resetGlobal = () => {
+    // 重置外观参数（保留所有组合的粒子调校）
+    resetAppearance();
+  };
+
+  // 当前组合的可读名称（用于控制台顶部标识）
+  const comboLabel = `${LAYOUT_LABEL[fullLayout] ?? fullLayout} · ${PRESETS.find((p) => p.id === visualParams.preset)?.name ?? "自定义"}`;
 
   return (
     <div
@@ -110,8 +145,13 @@ export function VisualConsole() {
       <div className="vc-panel__head">
         <span className="vc-panel__title">视觉控制台</span>
         <div className="vc-panel__tools">
-          <button className="vc-reset-btn vc-reset-btn--head" onClick={reset} title="恢复所有视觉参数为默认值">
-            恢复默认
+          {showParticles && (
+            <button className="vc-reset-btn vc-reset-btn--head" onClick={resetParticles} title="重置当前布局的粒子参数为默认值">
+              重置粒子
+            </button>
+          )}
+          <button className="vc-reset-btn vc-reset-btn--head" onClick={resetGlobal} title="重置全局外观参数为默认值（透明度/颜色主题/壁纸等）">
+            重置外观
           </button>
           <button
             className="vc-hotkey-btn"
@@ -121,9 +161,15 @@ export function VisualConsole() {
         </div>
       </div>
 
-      {/* Tab 条 */}
+      {/* 当前组合标识：说明参数按布局独立、哪些控件被隐藏 */}
+      <div className="vc-combo-badge" title="参数按「排版×预设」组合独立保存；非粒子布局隐藏粒子控件">
+        <span className="vc-combo-badge__label">{comboLabel}</span>
+        {!showParticles && <span className="vc-combo-badge__hint">· 无粒子控件</span>}
+      </div>
+
+      {/* Tab 条：无粒子布局时隐藏「动态」「高级」tab */}
       <div className="vc-tabs">
-        {TABS.map((t) => (
+        {TABS.filter((t) => showParticles || (t.id !== "motion" && t.id !== "advanced")).map((t) => (
           <button
             key={t.id}
             className={`vc-tab ${tab === t.id ? "vc-tab--active" : ""}`}
@@ -199,25 +245,45 @@ export function VisualConsole() {
           </div>
         )}
 
-        {/* ===== 动态 tab ===== */}
-        {tab === "motion" && (
+        {/* ===== 动态 tab（按组合 profile 过滤粒子控件） ===== */}
+        {tab === "motion" && showParticles && (
           <div className="vc-section">
             <div className="vc-section__title">画面基础</div>
-            <Slider label="律动强度" value={visualParams.intensity} min={0} max={1.5} step={0.05}
-              onChange={(v) => setVisualParams({ intensity: v })} />
-            <Slider label="画面景深" value={visualParams.depth} min={0} max={2} step={0.05}
-              onChange={(v) => setVisualParams({ depth: v })} />
-            <Slider label="封面清晰度" value={visualParams.coverResolution} min={0.5} max={2} step={0.05}
-              onChange={(v) => setVisualParams({ coverResolution: v })} />
-            <Slider label="电影镜头" value={visualParams.cinemaShake} min={0} max={1} step={0.05}
-              onChange={(v) => setVisualParams({ cinemaShake: v })} />
-            <div className="vc-section__title vc-section__title--sub">镜头与叠加</div>
-            <div className="vc-toggle-grid">
-              <Toggle label="电影镜头" on={visualParams.cinema} onClick={() => setVisualParams({ cinema: !visualParams.cinema })} />
-              <Toggle label="粒子溢光" on={visualParams.bloom} onClick={() => setVisualParams({ bloom: !visualParams.bloom })} />
-              <Toggle label="轮廓高亮" on={visualParams.edge} onClick={() => setVisualParams({ edge: !visualParams.edge })} />
-              <Toggle label="镜头晃动" on={visualParams.cameraShake} onClick={() => setVisualParams({ cameraShake: !visualParams.cameraShake })} />
-            </div>
+            {keyVis("intensity") && (
+              <Slider label="律动强度" value={visualParams.intensity} min={0} max={1.5} step={0.05}
+                onChange={(v) => setVisualParams({ intensity: v })} />
+            )}
+            {keyVis("depth") && (
+              <Slider label="画面景深" value={visualParams.depth} min={0} max={2} step={0.05}
+                onChange={(v) => setVisualParams({ depth: v })} />
+            )}
+            {keyVis("coverResolution") && (
+              <Slider label="封面清晰度" value={visualParams.coverResolution} min={0.5} max={2} step={0.05}
+                onChange={(v) => setVisualParams({ coverResolution: v })} />
+            )}
+            {keyVis("cinemaShake") && (
+              <Slider label="电影镜头" value={visualParams.cinemaShake} min={0} max={1} step={0.05}
+                onChange={(v) => setVisualParams({ cinemaShake: v })} />
+            )}
+            {(keyVis("cinema") || keyVis("bloom") || keyVis("edge") || keyVis("cameraShake")) && (
+              <>
+                <div className="vc-section__title vc-section__title--sub">镜头与叠加</div>
+                <div className="vc-toggle-grid">
+                  {keyVis("cinema") && (
+                    <Toggle label="电影镜头" on={visualParams.cinema} onClick={() => setVisualParams({ cinema: !visualParams.cinema })} />
+                  )}
+                  {keyVis("bloom") && (
+                    <Toggle label="粒子溢光" on={visualParams.bloom} onClick={() => setVisualParams({ bloom: !visualParams.bloom })} />
+                  )}
+                  {keyVis("edge") && (
+                    <Toggle label="轮廓高亮" on={visualParams.edge} onClick={() => setVisualParams({ edge: !visualParams.edge })} />
+                  )}
+                  {keyVis("cameraShake") && (
+                    <Toggle label="镜头晃动" on={visualParams.cameraShake} onClick={() => setVisualParams({ cameraShake: !visualParams.cameraShake })} />
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -245,8 +311,6 @@ export function VisualConsole() {
               onChange={(v) => setVisualParams({ bgFade: v })} />
             <Slider label="节拍灵敏度" value={visualParams.sensitivity} min={0.5} max={3} step={0.1}
               onChange={(v) => setVisualParams({ sensitivity: v })} />
-            <Slider label="辉光强度" value={visualParams.bloomStrength} min={0} max={3} step={0.1}
-              onChange={(v) => setVisualParams({ bloomStrength: v })} />
             <div className="vc-section__title vc-section__title--sub">前景透明度</div>
             <Slider label="侧栏" value={visualParams.sidebarOpacity} min={0} max={1} step={0.05}
               onChange={(v) => setVisualParams({ sidebarOpacity: v })} />
@@ -308,23 +372,41 @@ export function VisualConsole() {
           </div>
         )}
 
-        {/* ===== 高级 tab ===== */}
-        {tab === "advanced" && (
+        {/* ===== 高级 tab（按组合 profile 过滤粒子控件） ===== */}
+        {tab === "advanced" && showParticles && (
           <div className="vc-section">
             <div className="vc-section__title">粒子高级参数</div>
-            <Slider label="粒子数量" value={visualParams.particleCount} min={1000} max={15000} step={500}
-              onChange={(v) => setVisualParams({ particleCount: v })} fmt={(v) => `${(v / 1000).toFixed(1)}k`} />
-            <Slider label="粒子尺寸" value={visualParams.pointSize} min={0.3} max={3} step={0.1}
-              onChange={(v) => setVisualParams({ pointSize: v })} />
-            <Slider label="运动速度" value={visualParams.speed} min={0} max={3} step={0.1}
-              onChange={(v) => setVisualParams({ speed: v })} />
-            <Slider label="粒子扭曲" value={visualParams.twist} min={0} max={2} step={0.05}
-              onChange={(v) => setVisualParams({ twist: v })} />
-            <Slider label="色彩张力" value={visualParams.colorTension} min={0} max={2} step={0.05}
-              onChange={(v) => setVisualParams({ colorTension: v })} />
-            <Slider label="离散感" value={visualParams.scatter} min={0} max={2} step={0.05}
-              onChange={(v) => setVisualParams({ scatter: v })} />
-            <button className="vc-reset-btn" onClick={reset}>恢复默认</button>
+            {keyVis("particleCount") && (
+              <Slider label="粒子数量" value={visualParams.particleCount} min={1000} max={15000} step={500}
+                onChange={(v) => setVisualParams({ particleCount: v })} fmt={(v) => `${(v / 1000).toFixed(1)}k`} />
+            )}
+            {keyVis("pointSize") && (
+              <Slider label="粒子尺寸" value={visualParams.pointSize} min={0.3} max={3} step={0.1}
+                onChange={(v) => setVisualParams({ pointSize: v })} />
+            )}
+            {keyVis("speed") && (
+              <Slider label="运动速度" value={visualParams.speed} min={0} max={3} step={0.1}
+                onChange={(v) => setVisualParams({ speed: v })} />
+            )}
+            {keyVis("twist") && (
+              <Slider label="粒子扭曲" value={visualParams.twist} min={0} max={2} step={0.05}
+                onChange={(v) => setVisualParams({ twist: v })} />
+            )}
+            {keyVis("colorTension") && (
+              <Slider label="色彩张力" value={visualParams.colorTension} min={0} max={2} step={0.05}
+                onChange={(v) => setVisualParams({ colorTension: v })} />
+            )}
+            {keyVis("scatter") && (
+              <Slider label="离散感" value={visualParams.scatter} min={0} max={2} step={0.05}
+                onChange={(v) => setVisualParams({ scatter: v })} />
+            )}
+            {keyVis("bloomStrength") && (
+              <Slider label="辉光强度" value={visualParams.bloomStrength} min={0} max={3} step={0.1}
+                onChange={(v) => setVisualParams({ bloomStrength: v })} />
+            )}
+            <button className="vc-reset-btn" onClick={resetParticles} title="重置当前布局的粒子参数为默认值">
+              重置当前粒子参数
+            </button>
           </div>
         )}
       </div>
