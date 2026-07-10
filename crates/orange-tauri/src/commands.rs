@@ -1720,8 +1720,8 @@ pub async fn analyze_beatmap(
     // 解码 + DSP 分析（CPU 密集 → spawn_blocking，避免阻塞 tokio executor）
     let path_for_task = path.clone();
     let beatmap = tokio::task::spawn_blocking(move || -> Result<orange_audio::Beatmap, String> {
-        let audio = orange_audio::decode_file(&path_for_task).map_err(|e| e.to_string())?;
-        Ok(orange_audio::analyze_beatmap(&audio))
+        let mut audio = orange_audio::decode_file(&path_for_task).map_err(|e| e.to_string())?;
+        Ok(orange_audio::analyze_beatmap(&mut audio))
     })
     .await
     .map_err(|e| format!("分析线程失败: {e}"))??;
@@ -1762,8 +1762,8 @@ pub async fn analyze_track_bpm(
     }
     // spawn_blocking 跑解码 + 节拍分析（CPU 密集）
     let bpm = tokio::task::spawn_blocking(move || -> Result<f32, String> {
-        let audio = orange_audio::decode_file(&path).map_err(|e| e.to_string())?;
-        let beatmap = orange_audio::analyze_beatmap(&audio);
+        let mut audio = orange_audio::decode_file(&path).map_err(|e| e.to_string())?;
+        let beatmap = orange_audio::analyze_beatmap(&mut audio);
         Ok(beatmap.bpm)
     })
     .await

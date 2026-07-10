@@ -46,10 +46,12 @@ pub struct Beatmap {
 }
 
 /// 分析解码后的音频，生成节拍图谱
-pub fn analyze(audio: &DecodedAudio) -> Beatmap {
+///
+/// 接收 `&mut` 以原地滤波（避免克隆整曲 PCM）。调用方 `decode_file` 后立即分析，
+/// audio 用完即弃，原地安全。
+pub fn analyze(audio: &mut DecodedAudio) -> Beatmap {
     let sr = audio.sample_rate as f32;
-    let samples = &audio.samples;
-    if samples.is_empty() {
+    if audio.samples.is_empty() {
         return Beatmap {
             hits: vec![],
             bpm: 120.0,
@@ -57,13 +59,20 @@ pub fn analyze(audio: &DecodedAudio) -> Beatmap {
         };
     }
 
-    // 1. lowpass biquad（200Hz，Q=0.707 近 Butterworth，取 kick/bass）
-    let low = biquad_lowpass(samples, 200.0, sr);
+    // 1. lowpass biquad（200Hz，Q=0.707 近 Butterworth，取 kick/bass）原地滤波，省一份等长 Vec
+    biquad_lowpass_in_place(&mut audio.samples, 200.0, sr);
 
-    // 2. 帧化 10ms RMS
-    let frame_size = (0.01 * sr).round().max(1.0) as usize;
-    let frames = frame_rms(&low, frame_size);
-    let frame_dt = frame_size as f32 / sr;
+    // 1.5 下采样：200Hz 低通后奈奎斯特频率=400Hz，降到 ~1000Hz 足以保留节拍信息，
+    //    数据量降 ~44x（44100→1000），后续帧化/onset 内存与 CPU 大幅下降。
+    let ds_sr = 1000.0_f32;
+    let step = (sr / ds_sr).round().max(1.0) as usize;
+    let down: Vec<f32> = audio.samples.iter().step_by(step).copied().collect();
+    let down_sr = sr / step as f32;
+
+    // 2. 帧化 10ms RMS（基于下采样后的数据）
+    let frame_size = (0.01 * down_sr).round().max(1.0) as usize;
+    let frames = frame_rms(&down, frame_size);
+    let frame_dt = frame_size as f32 / down_sr;
 
     // 3. onset（滑动 82 帧 ≈ 0.82s，mean + 1.66*std + 局部峰值）
     let onsets = detect_onsets(&frames, 82, frame_dt);
@@ -106,8 +115,8 @@ pub fn analyze(audio: &DecodedAudio) -> Beatmap {
     }
 }
 
-/// RBJ cookbook lowpass biquad（Q=0.707 近 Butterworth）
-fn biquad_lowpass(samples: &[f32], cutoff: f32, sr: f32) -> Vec<f32> {
+/// RBJ cookbook lowpass biquad（Q=0.707 近 Butterworth），原地写回输入 buffer，省一份等长 Vec
+fn biquad_lowpass_in_place(samples: &mut [f32], cutoff: f32, sr: f32) {
     let w0 = 2.0 * std::f32::consts::PI * cutoff / sr;
     let cosw = w0.cos();
     let sinw = w0.sin();
@@ -122,17 +131,16 @@ fn biquad_lowpass(samples: &[f32], cutoff: f32, sr: f32) -> Vec<f32> {
     // 归一化
     let (b0, b1, b2, a1, a2) = (b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0);
 
-    let mut out = Vec::with_capacity(samples.len());
     let (mut x1, mut x2, mut y1, mut y2) = (0.0f32, 0.0, 0.0, 0.0);
-    for &x in samples {
+    for s in samples.iter_mut() {
+        let x = *s;
         let y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-        out.push(y);
+        *s = y;
         x2 = x1;
         x1 = x;
         y2 = y1;
         y1 = y;
     }
-    out
 }
 
 /// 帧化 RMS
