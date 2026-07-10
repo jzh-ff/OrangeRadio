@@ -828,6 +828,7 @@ pub async fn create_playlist(
     state: tauri::State<'_, AppState>,
     name: String,
 ) -> Result<String, String> {
+    tracing::info!("create_playlist: name={}", name);
     let library = state.library.clone();
     tokio::task::spawn_blocking(move || library.create_playlist(&name))
         .await
@@ -869,6 +870,13 @@ pub async fn add_to_playlist(
     playlist_id: String,
     track: Track,
 ) -> Result<(), String> {
+    tracing::info!(
+        "add_to_playlist: playlist_id={}, track_id={}, source_kind={:?}, title={}",
+        playlist_id,
+        track.id.0,
+        track.source_kind,
+        track.meta.title
+    );
     let library = state.library.clone();
     tokio::task::spawn_blocking(move || library.add_to_playlist(&playlist_id, &track))
         .await

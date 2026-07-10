@@ -11,6 +11,9 @@ use tauri::{Emitter, Manager};
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
+/// 全局持有 non_blocking guard，防止 setup 闭包结束后 guard 被 drop 导致日志写入丢失
+static LOG_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
+
 /// 日志目录（使用应用数据目录，避免 macOS 从 Finder 启动时 CWD 为 / 导致写到根目录）
 fn log_dir(app: &tauri::AppHandle) -> PathBuf {
     let dir = app
@@ -101,7 +104,9 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            let (log_dir, _guard) = init_logging(app.handle());
+            let (log_dir, guard) = init_logging(app.handle());
+            // 把 guard 存到全局 OnceLock，防止 setup 闭包结束后被 drop 导致日志丢失
+            let _ = LOG_GUARD.set(guard);
             tracing::info!("========================================");
             tracing::info!("OrangeRadio v{} 启动中...", orange_core::VERSION);
             tracing::info!("日志目录: {}", log_dir.display());

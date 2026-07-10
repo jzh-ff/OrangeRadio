@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 音频编码格式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AudioFormat {
     /// 无损 FLAC
@@ -29,6 +29,7 @@ pub enum AudioFormat {
     /// AIFF
     Aiff,
     /// 未知 / 其他
+    #[default]
     Unknown,
 }
 
@@ -72,9 +73,14 @@ impl AudioFormat {
 }
 
 /// 音频质量等级
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// 音频质量等级
+///
+/// serde 兼容 PascalCase（`"Standard"`，后端序列化默认格式）和小写 snake_case
+/// （`"standard"`，前端部分代码使用），避免跨端反序列化失败。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Quality {
     /// 标准音质 (128 kbps)
+    #[default]
     Standard,
     /// 高品质 (320 kbps MP3)
     High,
@@ -84,6 +90,46 @@ pub enum Quality {
     HiRes,
     /// 母带级 (24bit/192kHz+ / DSD)
     Master,
+}
+
+impl Quality {
+    /// 从字符串宽松解析（兼容 PascalCase / lowercase / 中文描述）
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "standard" | "std" => Quality::Standard,
+            "high" | "hq" => Quality::High,
+            "lossless" | "sq" => Quality::Lossless,
+            "hires" | "hi-res" => Quality::HiRes,
+            "master" => Quality::Master,
+            _ => Quality::Standard,
+        }
+    }
+}
+
+// 自定义 Deserialize：兼容 PascalCase（后端序列化默认）和 lowercase（前端部分代码）
+impl<'de> serde::Deserialize<'de> for Quality {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Quality::from_str_loose(&s))
+    }
+}
+
+impl serde::Serialize for Quality {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(match self {
+            Quality::Standard => "Standard",
+            Quality::High => "High",
+            Quality::Lossless => "Lossless",
+            Quality::HiRes => "HiRes",
+            Quality::Master => "Master",
+        })
+    }
 }
 
 /// 采样位深
