@@ -38,9 +38,19 @@ export function useBeatDetector() {
   const intensityRef = useRef<number>(0);
   const HISTORY_LEN = 43; // ~1 秒（@43fps）
 
+  // 是否正在播放：驱动 RAF 启停，避免暂停时仍每帧空转 requestAnimationFrame
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+
   useEffect(() => {
     const tick = () => {
-      const { isPlaying, visualParams } = usePlayerStore.getState();
+      const { visualParams } = usePlayerStore.getState();
+
+      // 后台标签页/窗口最小化时跳过重活，仅续帧保活
+      if (document.hidden) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
       const spectrum = readSpectrum();
       const beat = readBeat();
       const sens = visualParams.sensitivity;
@@ -51,8 +61,9 @@ export function useBeatDetector() {
         return;
       }
 
-      if (!isPlaying || spectrum.length === 0) {
-        // 不播放时：能量衰减归零，清空历史
+      // isPlaying 为 false 时由外层 effect 取消 RAF，正常不会走到这里；
+      // 此分支兜底：spectrum 异常时清零历史，避免恢复播放后误判。
+      if (spectrum.length === 0) {
         if (beat.intensity > 0.001 || beat.bass > 0.001) {
           writeBeat({ isBeat: false, intensity: 0, bass: 0, mid: 0, treble: 0 });
         }
@@ -136,7 +147,9 @@ export function useBeatDetector() {
       rafRef.current = requestAnimationFrame(tick);
     };
 
+    // 仅在播放时启动 RAF；暂停/停止时由 cleanup 取消，避免空转
+    if (!isPlaying) return;
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, []);
+  }, [isPlaying]);
 }

@@ -73,6 +73,12 @@ impl HttpClient {
         }
     }
 
+    /// 共享底层 reqwest::Client（复用连接池/TLS，避免每次请求重建 client）。
+    /// 供需要自定义请求（如流式转发、Range、二进制下载）的调用方使用。
+    pub fn client(&self) -> &reqwest::Client {
+        &self.inner
+    }
+
     /// 返回一个周期性清理过期缓存的后台 future。
     ///
     /// 调用方负责把它 spawn 到合适的 runtime（Tauri 应用应使用
@@ -80,7 +86,11 @@ impl HttpClient {
     /// 直接 `tokio::spawn` 会 panic）。
     ///
     /// 每 `interval_secs` 秒清一次超过 `ttl_secs` 的条目。
-    pub fn prune_loop(self, interval_secs: u64, ttl_secs: u64) -> impl std::future::Future<Output = ()> {
+    pub fn prune_loop(
+        self,
+        interval_secs: u64,
+        ttl_secs: u64,
+    ) -> impl std::future::Future<Output = ()> {
         let interval = Duration::from_secs(interval_secs);
         async move {
             loop {

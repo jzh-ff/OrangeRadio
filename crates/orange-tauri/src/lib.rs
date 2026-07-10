@@ -15,6 +15,7 @@ use orange_sources::{
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -79,6 +80,8 @@ pub struct AppState {
     /// Arc 包裹以保留 `#[derive(Clone)]`（parking_lot::RwLock 本身不是 Clone）。
     pub we_roots: Arc<parking_lot::RwLock<Vec<PathBuf>>>,
     pub cover_cache: Arc<CoverCache>,
+    /// 封面下载计数器：每 N 次下载触发一次 prune_covers（替代每次下载都全目录扫描）
+    pub cover_download_count: Arc<AtomicU64>,
 }
 
 /// 封面缓存：内存索引 + 并发下载去重 + 磁盘 LRU 清理
@@ -203,6 +206,7 @@ impl Default for AppState {
             http_client,
             we_roots: Arc::new(parking_lot::RwLock::new(Vec::new())),
             cover_cache: Arc::new(CoverCache::new()),
+            cover_download_count: Arc::new(AtomicU64::new(0)),
         }
     }
 }

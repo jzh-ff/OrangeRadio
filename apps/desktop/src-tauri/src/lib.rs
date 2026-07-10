@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tauri::http::{Request, Response};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -33,16 +34,28 @@ fn init_logging(app: &tauri::AppHandle) -> (PathBuf, tracing_appender::non_block
     let file_appender = rolling::daily(&dir, "orangeradio.log");
     let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // 默认级别：dev 构建用 info（便于开发调试），release 用 warn（减少无效格式化开销）。
+    // 控制台层仅 dev 构建挂载（release 是 windows_subsystem，控制台输出无人看，纯属浪费）。
+    let default_level = if cfg!(debug_assertions) {
+        "info"
+    } else {
+        "warn"
+    };
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
-    // 控制台层 + 文件层
-    let console_layer = fmt::layer().with_target(true).with_filter(filter.clone());
-
+    // 文件层（始终启用，日志落盘供排查）
     let file_layer = fmt::layer()
         .with_writer(file_writer)
         .with_ansi(false) // 文件里不要 ANSI 颜色码
         .with_target(true)
-        .with_filter(filter);
+        .with_filter(filter.clone());
+
+    // 控制台层：仅 dev 构建挂载，避免 release 下每条日志格式化写两次
+    #[cfg(debug_assertions)]
+    let console_layer = Some(fmt::layer().with_target(true).with_filter(filter));
+    #[cfg(not(debug_assertions))]
+    let console_layer: Option<fmt::Layer<_>> = None;
 
     tracing_subscriber::registry()
         .with(console_layer)
@@ -195,6 +208,22 @@ async fn handle_orangeradio_protocol(
     }
 }
 
+/// QQ 流转发专用 reqwest::Client 单例（全局复用连接池/TLS）。
+///
+/// `orangeradio://qqstream` 的 URI scheme handler 注册在 setup 之前、拿不到 AppState，
+/// 故用模块级 OnceLock 单例。与 HttpClient 内部 client 配置一致（30s 超时、连接池）。
+fn qqstream_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(20)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
 async fn handle_qq_stream(
     request: &Request<Vec<u8>>,
     query: &HashMap<String, String>,
@@ -215,10 +244,9 @@ async fn handle_qq_stream(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36".to_string()
         });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_default();
+    // 复用单例 client（连接池/TLS 会话复用），避免每次 Range 请求重建 client。
+    // <audio> 拖动进度条会对同一 URL 发多次 Range 请求，复用 client 可省 TLS 握手。
+    let client = qqstream_client();
 
     let mut fwd = client
         .get(&target_url)
@@ -270,11 +298,10 @@ async fn handle_qq_stream(
 }
 
 fn bad_request(msg: String) -> Response<Cow<'static, [u8]>> {
-    let body: &'static [u8] = Box::leak(msg.into_boxed_str()).as_bytes();
     Response::builder()
         .status(502)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Cow::Borrowed(body))
+        .body(Cow::Owned(msg.into_bytes()))
         .unwrap()
 }
 
