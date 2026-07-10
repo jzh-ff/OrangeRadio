@@ -4,6 +4,7 @@ use crate::AppState;
 use orange_core::source::{AudioSource, SearchQuery};
 use orange_core::track::{Track, TrackMeta};
 use orange_library::{LibraryScanner, ScanOptions};
+use orange_sources::gequbao;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -238,6 +239,29 @@ pub async fn gequbao_popular(
         .map_err(|e| e.to_string())
 }
 
+/// 获取歌曲宝歌词（通过详情页提取 LRC 歌词）
+///
+/// `song_path` 是 Track.source_track_id（形如 `music/39466`）。
+/// 歌曲宝的歌词在详情页 `appData` JSON 的 `mp3_lrc` 字段里，无翻译。
+#[tauri::command]
+pub async fn gequbao_lyric(
+    state: tauri::State<'_, AppState>,
+    song_path: String,
+) -> Result<serde_json::Value, String> {
+    use orange_core::source::AudioSource;
+    // 构造最小 Track，enrich_track_detail 会把歌词写入 meta.lyrics
+    let mut track = Track::new(
+        state.gequbao.id(),
+        song_path,
+        orange_core::track::TrackMeta::default(),
+    );
+    gequbao::enrich_track_detail(&state.gequbao, &mut track)
+        .await
+        .map_err(|e| e.to_string())?;
+    let lrc = track.meta.lyrics.unwrap_or_default();
+    Ok(serde_json::json!({ "raw_lrc": lrc, "translated_lrc": null }))
+}
+
 // ===== 酷我音乐命令（第三方公开接口，无需登录） =====
 
 /// 搜索酷我音乐（支持分页，page 默认 1）
@@ -319,6 +343,38 @@ pub async fn kuwo_lyric(
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
     Ok(serde_json::json!({ "raw_lrc": raw, "translated_lrc": null }))
+}
+
+/// 设置酷我音质档位（standard / high / lossless）
+#[tauri::command]
+pub async fn kuwo_set_quality(
+    state: tauri::State<'_, AppState>,
+    quality: String,
+) -> Result<(), String> {
+    let q = match quality.as_str() {
+        "standard" => orange_sources::KuwoQuality::Standard,
+        "high" => orange_sources::KuwoQuality::High,
+        "lossless" => orange_sources::KuwoQuality::Lossless,
+        _ => {
+            return Err(format!(
+                "未知音质档位: {}（可选: standard / high / lossless）",
+                quality
+            ))
+        }
+    };
+    state.kuwo.set_quality(q);
+    Ok(())
+}
+
+/// 获取酷我当前音质档位
+#[tauri::command]
+pub async fn kuwo_get_quality(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    Ok(match state.kuwo.quality() {
+        orange_sources::KuwoQuality::Standard => "standard",
+        orange_sources::KuwoQuality::High => "high",
+        orange_sources::KuwoQuality::Lossless => "lossless",
+    }
+    .into())
 }
 
 // ===== 网易云音乐命令 =====
@@ -1367,7 +1423,72 @@ pub async fn spotify_search(
     Ok(result.tracks)
 }
 
-// ===== 鉴权状态总览（settings 页用） =====
+/// Spotify 歌词（跨源匹配）
+///
+/// Spotify 官方 API 已移除歌词端点，这里通过曲名+歌手在酷我/网易云中搜索，
+/// 取第一条匹配结果的歌词作为跨源歌词。无翻译。
+#[tauri::command]
+pub async fn spotify_lyric(
+    state: tauri::State<'_, AppState>,
+    title: String,
+    artist: String,
+) -> Result<serde_json::Value, String> {
+    // 构造搜索关键词：曲名 + 歌手
+    let keyword = if artist.is_empty() {
+        title.clone()
+    } else {
+        format!("{} {}", title, artist)
+    };
+
+    // 优先在酷我搜索（曲库大，公开接口无需登录）
+    let query = SearchQuery {
+        keyword: keyword.clone(),
+        page: 1,
+        page_size: 5,
+        ..Default::default()
+    };
+
+    // 尝试酷我
+    if let Ok(result) = state.kuwo.search(&query).await {
+        if let Some(track) = result.tracks.first() {
+            let rid = &track.source_track_id;
+            if let Ok(Some(lrc)) = state.kuwo.song_lyric(rid).await {
+                if !lrc.is_empty() {
+                    return Ok(serde_json::json!({ "raw_lrc": lrc, "translated_lrc": null }));
+                }
+            }
+        }
+    }
+
+    // 尝试网易云
+    if let Ok(result) = state.netease.search(&query).await {
+        if let Some(track) = result.tracks.first() {
+            let song_id = &track.source_track_id;
+            if let Ok((raw_lrc, translated_lrc)) = state.netease.song_lyric(song_id).await {
+                if !raw_lrc.is_empty() {
+                    return Ok(
+                        serde_json::json!({ "raw_lrc": raw_lrc, "translated_lrc": translated_lrc }),
+                    );
+                }
+            }
+        }
+    }
+
+    // 尝试酷狗
+    if let Ok(result) = state.kugou.search(&query).await {
+        if let Some(track) = result.tracks.first() {
+            let hash = track.source_track_id.clone();
+            if let Ok(Some(lrc)) = state.kugou.song_lyric(&hash, None).await {
+                if !lrc.is_empty() {
+                    return Ok(serde_json::json!({ "raw_lrc": lrc, "translated_lrc": null }));
+                }
+            }
+        }
+    }
+
+    // 所有源都未找到歌词
+    Ok(serde_json::json!({ "raw_lrc": null, "translated_lrc": null }))
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthStatusItem {
@@ -2158,6 +2279,30 @@ pub async fn studio_generate_lyrics(
     serde_json::to_value(&draft).map_err(|e| e.to_string())
 }
 
+/// AI 修改歌词（基于当前歌词 + 用户修改意见，迭代修改）
+///
+/// 接收当前歌词文本（MiniMax [Verse]/[Chorus] 格式）和用户的自然语言修改指令，
+/// 返回修改后的歌词文本 + AI 的简短说明。
+#[tauri::command]
+pub async fn studio_revise_lyrics(
+    current_lyrics: String,
+    instruction: String,
+    api_base: String,
+    api_key: String,
+    model: String,
+) -> Result<serde_json::Value, String> {
+    use orange_studio::LyricsGenerator;
+    if api_key.is_empty() {
+        return Err("未配置 MiniMax API Key，请先在设置中填写".into());
+    }
+    let generator = LyricsGenerator::new(api_base, api_key, model);
+    let (lyrics, note) = generator
+        .revise(&current_lyrics, &instruction)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "lyrics": lyrics, "note": note }))
+}
+
 /// 音乐生成 → 本地 mp3 路径 + 歌词
 ///
 /// 调用 MiniMax music_generation（同步接口，约 30-90 秒）。
@@ -2233,7 +2378,7 @@ pub async fn studio_generate_music(
 
     let provider = MiniMaxProvider::new(api_key, api_base, model);
     let request = GenerationRequest {
-        style_prompt: prompt,
+        style_prompt: prompt.clone(),
         duration_secs: None,
         need_stems: false,
         lyrics: final_lyrics.clone(),
@@ -2269,11 +2414,32 @@ pub async fn studio_generate_music(
         }
     }
 
+    // 构造 Track 对象，让前端能把生成结果推入播放队列并在播放详情页播放
+    // source_kind = Local，source_track_id = 本地文件路径
+    // 播放时 App.tsx 取流分发的默认分支会直接用 source_track_id 作为 playUrl
+    let track_title = if is_instrumental {
+        format!("{} (伴奏)", prompt.chars().take(30).collect::<String>())
+    } else {
+        prompt.chars().take(40).collect::<String>()
+    };
+    let studio_track = Track::new(
+        orange_core::source::SourceId(uuid::Uuid::new_v4()),
+        audio_path.clone(),
+        TrackMeta {
+            title: track_title,
+            artist: "OrangeStudio".into(),
+            album: Some("AI 创作".into()),
+            lyrics: final_lyrics.clone(),
+            ..Default::default()
+        },
+    );
+
     Ok(serde_json::json!({
         "audio_path": audio_path,
         "task_id": result.task_id,
         "lyrics": final_lyrics,
         "lyrics_note": auto_lyrics_note,
+        "track": studio_track,
     }))
 }
 
@@ -2509,11 +2675,14 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             gequbao_search,
             gequbao_stream,
             gequbao_popular,
+            gequbao_lyric,
             kuwo_search,
             kuwo_stream,
             kuwo_popular,
             kuwo_chart_detail,
             kuwo_lyric,
+            kuwo_set_quality,
+            kuwo_get_quality,
             netease_login,
             netease_login_with_webview,
             netease_logout,
@@ -2573,6 +2742,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             spotify_status,
             spotify_search,
             spotify_logout,
+            spotify_lyric,
             auth_overview,
             record_playback,
             get_user_profile,
@@ -2589,6 +2759,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             lyric_annotate,
             emotion_analyze,
             studio_generate_lyrics,
+            studio_revise_lyrics,
             studio_generate_music,
             studio_separate_vocal,
             studio_project_save,

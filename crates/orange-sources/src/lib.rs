@@ -34,7 +34,7 @@ pub use auth_store::{AuthStore, StoredAuth};
 pub use gequbao::GequbaoSource;
 pub use http_client::HttpClient;
 pub use kugou::KugouSource;
-pub use kuwo::KuwoSource;
+pub use kuwo::{KuwoQuality, KuwoSource};
 pub use netease::NeteaseSource;
 pub use podcast::PodcastSource;
 pub use qishui::QishuiSource;

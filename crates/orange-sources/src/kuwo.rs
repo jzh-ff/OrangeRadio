@@ -1,15 +1,15 @@
 //! 酷我音乐音源（kuwo.cn）
 //!
-//! 第三方公开接口聚合，曲库庞大（千万级），支持标准/高品音质试听。
+//! 第三方公开接口聚合，曲库庞大（千万级），支持标准/高品/无损音质试听。
 //! 无需登录或 API Key。
 //!
 //! ## 接入流程
 //! 1. 搜索：`GET http://search.kuwo.cn/r.s?all={关键词}&ft=music&...` → JSON
 //!    （`abslist[]` 含 `SONGNAME`/`ARTIST`/`DC_TARGETID` 即 rid）
-//! 2. 取流：`GET https://antiserver.kuwo.cn/anti.s?responseType=url&rid=MUSIC_{rid}&format=mp3`
-//!    → 302 重定向到真实 mp3 直链（免 cookie，回退方案）
-//!    或 `http://www.kuwo.cn/api/v1/www/music/playUrl?mid={rid}&type=music&br={码率}`
-//!    → JSON `{data:{url}}`（需 cookie，主方案）
+//! 2. 取流（三档回退）：
+//!    - 主方案 `playUrl` JSON 接口（按音质选 br：320kmp3 / 2000kflac）
+//!    - 回退 1 `antiserver` 302 重定向（免 cookie）
+//!    - 回退 2 镜像站 `https://flac.music.hi.cn`（带 anti-cc JS 防护，尽力尝试）
 //!
 //! ## 合规说明
 //! 仅供学习研究，用户需自行承担使用风险。商业用途请获取正版授权。
@@ -20,8 +20,59 @@ use orange_core::source::*;
 use orange_core::track::{Artwork, ArtworkSource, Track, TrackMeta};
 use orange_core::Result;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use crate::http_client::HttpClient;
+
+/// 酷我音质档位
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KuwoQuality {
+    /// 标准 128k mp3
+    Standard,
+    /// 高品 320k mp3
+    #[default]
+    High,
+    /// 无损 FLAC
+    Lossless,
+}
+
+impl KuwoQuality {
+    /// playUrl 接口的 br 参数值
+    fn br_param(self) -> &'static str {
+        match self {
+            KuwoQuality::Standard => "128kmp3",
+            KuwoQuality::High => "320kmp3",
+            KuwoQuality::Lossless => "2000kflac",
+        }
+    }
+
+    /// antiserver 回退接口的 format 参数（仅 mp3 可用，flac 回退到 320k）
+    fn anti_format(self) -> &'static str {
+        match self {
+            KuwoQuality::Standard => "mp3",
+            _ => "mp3",
+        }
+    }
+
+    /// 对应的 Track quality 字段
+    #[allow(dead_code)]
+    fn track_quality(self) -> Quality {
+        match self {
+            KuwoQuality::Standard => Quality::Standard,
+            KuwoQuality::High => Quality::High,
+            KuwoQuality::Lossless => Quality::Lossless,
+        }
+    }
+
+    /// 对应的 AudioFormat
+    #[allow(dead_code)]
+    fn audio_format(self) -> AudioFormat {
+        match self {
+            KuwoQuality::Lossless => AudioFormat::Flac,
+            _ => AudioFormat::Mp3,
+        }
+    }
+}
 
 /// 酷我音乐音源
 pub struct KuwoSource {
@@ -29,6 +80,10 @@ pub struct KuwoSource {
     search_base: String,
     play_base: String,
     anti_base: String,
+    /// 镜像站基址（flac.music.hi.cn，作为取流末档回退）
+    mirror_base: String,
+    /// 当前音质档位（可通过 set_quality 切换）
+    quality: RwLock<KuwoQuality>,
     client: reqwest::Client,
     shared_client: Option<Arc<HttpClient>>,
 }
@@ -46,6 +101,8 @@ impl KuwoSource {
             search_base: "http://search.kuwo.cn".into(),
             play_base: "http://www.kuwo.cn".into(),
             anti_base: "https://antiserver.kuwo.cn".into(),
+            mirror_base: "https://flac.music.hi.cn".into(),
+            quality: RwLock::new(KuwoQuality::default()),
             client: reqwest::Client::builder()
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36")
                 .timeout(std::time::Duration::from_secs(15))
@@ -60,6 +117,18 @@ impl KuwoSource {
     pub fn with_client(mut self, client: Arc<HttpClient>) -> Self {
         self.shared_client = Some(client);
         self
+    }
+
+    /// 设置音质档位（影响后续 resolve_stream 的码率选择）
+    pub fn set_quality(&self, q: KuwoQuality) {
+        if let Ok(mut guard) = self.quality.write() {
+            *guard = q;
+        }
+    }
+
+    /// 获取当前音质档位
+    pub fn quality(&self) -> KuwoQuality {
+        self.quality.read().map(|g| *g).unwrap_or_default()
     }
 
     /// 优先使用共享 HttpClient 的 TTL 缓存 GET；未注入时回退到私有 client。
@@ -119,13 +188,17 @@ impl KuwoSource {
             .to_string()
     }
 
-    /// 尝试取流：优先 playUrl 接口，失败回退 antiserver 302
+    /// 尝试取流：优先 playUrl 接口（按音质选码率），失败回退 antiserver 302，再失败尝试镜像站
     async fn fetch_stream_url(&self, rid: &str) -> Result<String> {
+        let quality = self.quality();
+        let br = quality.br_param();
+
         // 主方案：playUrl JSON 接口（带 Hm cookie 模拟）
         let play_url = format!(
-            "{}/api/v1/www/music/playUrl?mid={}&type=music&br=320kmp3",
+            "{}/api/v1/www/music/playUrl?mid={}&type=music&br={}",
             self.play_base.trim_end_matches('/'),
-            rid
+            rid,
+            br
         );
         if let Ok(resp) = self
             .client
@@ -150,32 +223,133 @@ impl KuwoSource {
                 }
             }
         }
-        // 回退：antiserver 302 重定向（responseType=url 直接返回直链文本）
+
+        // 回退 1：antiserver 302 重定向（responseType=url 直接返回直链文本）
+        // 注意：antiserver 仅支持 mp3 格式，无损请求回退到 mp3
         let anti_url = format!(
-            "{}/anti.s?responseType=url&rid=MUSIC_{}&format=mp3&type=convert_url3",
+            "{}/anti.s?responseType=url&rid=MUSIC_{}&format={}&type=convert_url3",
             self.anti_base.trim_end_matches('/'),
-            rid
+            rid,
+            quality.anti_format()
         );
-        let resp = self
+        if let Ok(resp) = self
             .client
             .get(&anti_url)
             .header("Referer", "http://www.kuwo.cn/")
             .send()
             .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
-        let url = resp
-            .text()
-            .await
-            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?
-            .trim()
-            .to_string();
-        if url.is_empty() || !url.starts_with("http") {
-            return Err(orange_core::CoreError::Network(format!(
-                "酷我取流失败：rid={} 返回非 URL",
-                rid
-            )));
+        {
+            if let Ok(text) = resp.text().await {
+                let url = text.trim().to_string();
+                if url.starts_with("http") {
+                    return Ok(url);
+                }
+            }
         }
-        Ok(url)
+
+        // 回退 2：镜像站 flac.music.hi.cn（对接酷我接口，带 anti-cc JS 防护）
+        // 尽力尝试，失败则报错
+        if let Ok(url) = self.fetch_from_mirror(rid, quality).await {
+            return Ok(url);
+        }
+
+        Err(orange_core::CoreError::Network(format!(
+            "酷我取流失败：rid={} 所有方案均失败（可能需要 VIP 或曲目不可用）",
+            rid
+        )))
+    }
+
+    /// 通过镜像站 flac.music.hi.cn 取流
+    ///
+    /// 该站对接酷我接口，带 anti-cc JS 跳转防护。策略：
+    /// 1. 先请求播放页，解析 anti-cc JS 中的 token 拼出真实 URL
+    /// 2. 带 cookie 重试获取真实播放地址
+    ///
+    /// 这是"尽力尝试"方案——如果 anti-cc 策略变化导致失败，不影响主流程。
+    async fn fetch_from_mirror(&self, rid: &str, quality: KuwoQuality) -> Result<String> {
+        let base = self.mirror_base.trim_end_matches('/');
+        // 镜像站的播放接口路径（基于酷我接口封装）
+        // 尝试直接获取播放 URL
+        let play_url = format!(
+            "{}/api/music/play?mid={}&type=music&br={}",
+            base,
+            rid,
+            quality.br_param()
+        );
+
+        // 先尝试直接请求
+        if let Ok(resp) = self
+            .client
+            .get(&play_url)
+            .header("Referer", base)
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            )
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(text) = resp.text().await {
+                    // 检查是否是 anti-cc 跳转页
+                    if text.contains("anticc_redirect") {
+                        // 解析 anti-cc token 并重试
+                        if let Some(token_url) = parse_anticc_token(&text, base) {
+                            if let Ok(resp2) = self
+                                .client
+                                .get(&token_url)
+                                .header("Referer", base)
+                                .header(
+                                    "User-Agent",
+                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                )
+                                .send()
+                                .await
+                            {
+                                if resp2.status().is_success() {
+                                    if let Ok(text2) = resp2.text().await {
+                                        if let Some(url) = extract_play_url(&text2) {
+                                            return Ok(url);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(url) = extract_play_url(&text) {
+                        return Ok(url);
+                    }
+                }
+            }
+        }
+
+        // 回退：尝试镜像站的下载页接口
+        let download_url = format!("{}/api/music/url?rid={}", base, rid);
+        if let Ok(resp) = self
+            .client
+            .get(&download_url)
+            .header("Referer", base)
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            )
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(text) = resp.text().await {
+                    if !text.contains("anticc_redirect") {
+                        if let Some(url) = extract_play_url(&text) {
+                            return Ok(url);
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(orange_core::CoreError::Network(format!(
+            "镜像站取流失败：rid={}",
+            rid
+        )))
     }
 }
 
@@ -509,4 +683,149 @@ fn urlencode(s: &str) -> String {
         }
     }
     out
+}
+
+/// 解析 anti-cc JS 跳转页中的 token，拼出真实 URL
+///
+/// anti-cc 页面格式：
+/// ```html
+/// <html id='anticc_redirect'><body><script>
+/// var cbk_var='';
+/// cbk_var='31'+cbk_var; cbk_var='240'+cbk_var; ...
+/// cbk_var='/?__CBK=39'+cbk_var; ...
+/// window.location=cbk_defender_xxx=cbk_var;
+/// </script></body></html>
+/// ```
+/// 需要从右到左拼接所有字符串片段，得到最终的重定向 URL。
+fn parse_anticc_token(html: &str, base: &str) -> Option<String> {
+    // 提取所有 cbk_var='...' 赋值中的字符串（按出现顺序）
+    // 然后从右到左拼接（因为每次赋值都是 prepend）
+    let mut fragments: Vec<&str> = Vec::new();
+    for line in html.lines() {
+        // 匹配 cbk_var='...' 或 cbk_var="..."
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("cbk_var=") {
+            // 去掉分号
+            let rest = rest.trim_end_matches(';').trim();
+            // 提取引号内容
+            if (rest.starts_with('\'') && rest.ends_with('\'') && rest.len() >= 2)
+                || (rest.starts_with('"') && rest.ends_with('"') && rest.len() >= 2)
+            {
+                let inner = &rest[1..rest.len() - 1];
+                fragments.push(inner);
+            }
+        }
+    }
+
+    if fragments.is_empty() {
+        return None;
+    }
+
+    // 从右到左拼接（最后赋值的在 cbk_var 最前面，所以倒序拼接）
+    let mut url_path = String::new();
+    for frag in fragments.iter().rev() {
+        url_path = format!("{}{}", frag, url_path);
+    }
+
+    // 拼接出完整 URL
+    if url_path.starts_with("http") {
+        Some(url_path)
+    } else if url_path.starts_with('/') {
+        Some(format!("{}{}", base, url_path))
+    } else {
+        Some(format!("{}/{}", base, url_path))
+    }
+}
+
+/// 从响应文本中提取播放 URL
+///
+/// 支持两种格式：
+/// 1. JSON：`{"data":{"url":"https://..."}}` 或 `{"url":"https://..."}`
+/// 2. 纯文本 URL（antiserver 风格）
+fn extract_play_url(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+
+    // 尝试 JSON 解析
+    if trimmed.starts_with('{') {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            // 尝试 data.url
+            if let Some(url) = v
+                .get("data")
+                .and_then(|d| d.get("url"))
+                .and_then(|u| u.as_str())
+                .filter(|s| s.starts_with("http") && !s.is_empty())
+            {
+                return Some(url.to_string());
+            }
+            // 尝试顶层 url
+            if let Some(url) = v
+                .get("url")
+                .and_then(|u| u.as_str())
+                .filter(|s| s.starts_with("http") && !s.is_empty())
+            {
+                return Some(url.to_string());
+            }
+            // 尝试 data（直接是 URL 字符串）
+            if let Some(url) = v
+                .get("data")
+                .and_then(|d| d.as_str())
+                .filter(|s| s.starts_with("http") && !s.is_empty())
+            {
+                return Some(url.to_string());
+            }
+        }
+    }
+
+    // 纯文本 URL
+    if trimmed.starts_with("http") && !trimmed.contains(' ') && !trimmed.contains('<') {
+        return Some(trimmed.to_string());
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_anticc_token() {
+        let html = r#"<html id='anticc_redirect'><body><script language='javascript'>var cbk_var='';cbk_var='31'+cbk_var;cbk_var='240'+cbk_var;cbk_var='84553_'+cbk_var;cbk_var='/test?__CBK=39'+cbk_var;cbk_var='/?__C'+cbk_var;;cbk_defender_1783640168=cbk_var;cbk_var='';window.location=cbk_defender_1783640168;</script></body></html>"#;
+        let url = parse_anticc_token(html, "https://flac.music.hi.cn");
+        assert!(url.is_some());
+        let url = url.unwrap();
+        assert!(url.contains("__CBK="));
+        assert!(url.starts_with("https://flac.music.hi.cn"));
+    }
+
+    #[test]
+    fn test_extract_play_url_json() {
+        let json = r#"{"data":{"url":"https://example.com/song.mp3"}}"#;
+        assert_eq!(
+            extract_play_url(json),
+            Some("https://example.com/song.mp3".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_play_url_text() {
+        let text = "https://example.com/song.mp3";
+        assert_eq!(
+            extract_play_url(text),
+            Some("https://example.com/song.mp3".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_play_url_invalid() {
+        assert_eq!(extract_play_url("not a url"), None);
+        assert_eq!(extract_play_url("<html>error</html>"), None);
+    }
+
+    #[test]
+    fn test_kuwo_quality_br() {
+        assert_eq!(KuwoQuality::Standard.br_param(), "128kmp3");
+        assert_eq!(KuwoQuality::High.br_param(), "320kmp3");
+        assert_eq!(KuwoQuality::Lossless.br_param(), "2000kflac");
+    }
 }

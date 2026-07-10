@@ -1,6 +1,8 @@
 //! 汽水音乐音源（实验性，接口待验证）
 //!
-//! 当前为占位实现，后续将接入汽水音乐/抖音系接口。
+//! 汽水音乐（抖音系）无公开 API，其 web 端需要复杂的签名加密和设备指纹，
+//! 无法稳定接入。当前为占位实现，`is_ready()` 返回 `false`，
+//! 前端会展示"接口开发中"提示。后续如发现可用接口再补全。
 
 use async_trait::async_trait;
 use orange_core::source::*;
@@ -38,12 +40,15 @@ impl AudioSource for QishuiSource {
         "汽水音乐"
     }
 
+    /// 汽水音乐接口尚未接入，标记为未就绪（search_all 会跳过此源）
+    fn is_ready(&self) -> bool {
+        false
+    }
+
     async fn search(&self, _query: &SearchQuery) -> Result<SearchResult> {
-        Ok(SearchResult {
-            tracks: vec![],
-            total: 0,
-            has_more: false,
-        })
+        Err(orange_core::CoreError::Unsupported(
+            "汽水音乐接口尚未接入，敬请期待".into(),
+        ))
     }
 
     async fn resolve_stream(&self, _track: &Track) -> Result<StreamLocation> {

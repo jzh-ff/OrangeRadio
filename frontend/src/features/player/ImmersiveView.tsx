@@ -49,7 +49,7 @@ export function ImmersiveView() {
   const [showHeader, setShowHeader] = useState(true);
   const headerTimer = useRef<number>(0);
 
-  // 拉歌词（网易云 / QQ / 本地内嵌）
+  // 拉歌词（网易云 / QQ / 酷狗 / 酷我 / 歌曲宝 / Spotify跨源 / 本地内嵌）
   useEffect(() => {
     if (!immersiveMode || !currentTrack) { setLyricData(null); return; }
     const tid = (currentTrack as { source_track_id?: string }).source_track_id || currentTrack.id;
@@ -58,6 +58,8 @@ export function ImmersiveView() {
       : kind === "qq_music" ? "qqmusic_lyric"
       : kind === "kugou" ? "kugou_lyric"
       : kind === "kuwo" ? "kuwo_lyric"
+      : kind === "gequbao" ? "gequbao_lyric"
+      : kind === "spotify" ? "spotify_lyric"
       : null;
     if (!cmd) {
       const lrc = (currentTrack as { meta?: { lyrics?: string | null } }).meta?.lyrics;
@@ -65,7 +67,11 @@ export function ImmersiveView() {
       return;
     }
     setLoading(true);
-    invoke<LyricData>(cmd, { songId: tid })
+    // Spotify 走跨源歌词匹配，需要 title + artist
+    const params = kind === "spotify"
+      ? { title: currentTrack.meta?.title || "", artist: currentTrack.meta?.artist || "" }
+      : { songId: tid };
+    invoke<LyricData>(cmd, params)
       .then(setLyricData)
       .catch(() => setLyricData(null))
       .finally(() => setLoading(false));

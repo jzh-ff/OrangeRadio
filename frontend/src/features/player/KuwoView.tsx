@@ -34,10 +34,25 @@ export function KuwoView() {
   const [hasMore, setHasMore] = useState(false);
   const [view, setView] = useState<View>("search");
   const [chartId, setChartId] = useState(CHARTS[0].id);
+  const [quality, setQuality] = useState<string>("high");
 
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const setQueue = usePlayerStore((s) => s.setQueue);
+
+  // 启动时读取当前音质设置
+  useState(() => {
+    invoke<string>("kuwo_get_quality")
+      .then(setQuality)
+      .catch(() => {});
+  });
+
+  const onQualityChange = async (q: string) => {
+    setQuality(q);
+    try {
+      await invoke("kuwo_set_quality", { quality: q });
+    } catch { /* 静默 */ }
+  };
 
   const doSearch = async () => {
     if (!keyword.trim()) return;
@@ -138,6 +153,26 @@ export function KuwoView() {
         <span className="section-title__sub">
           {view === "search" ? "搜索" : view === "popular" ? "推荐" : "榜单"}
         </span>
+      </div>
+
+      {/* 音质选择 */}
+      <div className="kuwo-quality" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 12, opacity: 0.6 }}>音质：</span>
+        {[
+          { v: "standard", label: "标准" },
+          { v: "high", label: "高品" },
+          { v: "lossless", label: "无损 FLAC" },
+        ].map((opt) => (
+          <button
+            key={opt.v}
+            type="button"
+            className={`search-tabs__tab ${quality === opt.v ? "search-tabs__tab--active" : ""}`}
+            style={{ padding: "2px 10px", fontSize: 12 }}
+            onClick={() => onQualityChange(opt.v)}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       <div className="search-tabs" role="tablist" aria-label="酷我视图">

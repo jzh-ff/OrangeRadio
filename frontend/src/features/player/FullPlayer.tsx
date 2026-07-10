@@ -320,6 +320,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
         ? "kugou_lyric"
         : kind === "kuwo"
         ? "kuwo_lyric"
+        : kind === "gequbao"
+        ? "gequbao_lyric"
+        : kind === "spotify"
+        ? "spotify_lyric"
         : null;
     if (!cmd) {
       // 本地曲目 / 内置 demo 曲：用元数据里塞进来的 LRC 歌词
@@ -329,7 +333,15 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
       return;
     }
     setLoading(true);
-    invoke<LyricData>(cmd, { songId: tid })
+    // Spotify 走跨源歌词匹配，需要 title + artist 而非 songId
+    const invokeParams =
+      kind === "spotify"
+        ? {
+            title: currentTrack.meta?.title || "",
+            artist: currentTrack.meta?.artist || "",
+          }
+        : { songId: tid };
+    invoke<LyricData>(cmd, invokeParams)
       .then((d) => {
         setLyricData(d);
         // 有歌词时自动分析情绪，驱动懂你模式 mood 与视觉主题
@@ -428,6 +440,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const artist = currentTrack?.meta.artist || "";
   const coverUrl = getCoverUrl(currentTrack);
   const songId = currentTrack?.source_track_id || "";
+  const sourceKind = (currentTrack as { source_kind?: string }).source_kind;
 
   const activeLayout = LAYOUT_OPTIONS.find((o) => o.id === fullLayout)!;
 
@@ -569,7 +582,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                   </svg>
                 </button>
               </div>
-              <CommentList songId={songId} compact />
+              <CommentList songId={songId} compact sourceKind={sourceKind} />
             </div>
           )}
         </div>
@@ -683,7 +696,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           {/* triple 模式：右侧评论 */}
           {fullLayout === "triple" && (
             <section className="fp-comments-section">
-              <CommentList songId={songId} />
+              <CommentList songId={songId} sourceKind={sourceKind} />
             </section>
           )}
         </div>

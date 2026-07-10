@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Track } from "../stores/libraryStore";
 
 /** 歌曲段落类型（与 Rust SongSection 对齐，snake_case） */
 export type SongSectionKind =
@@ -27,12 +28,22 @@ export interface MusicGenerationResult {
   lyrics?: string | null;
   /** 自动写词降级提示（如 "自动写词失败…已改用 MiniMax 自动补词"），正常时为 null */
   lyrics_note?: string | null;
+  /** 可推入播放队列的 Track 对象（source_kind=local, source_track_id=audio_path） */
+  track?: Track;
 }
 
 /** 人声/伴奏分轨结果 */
 export interface SeparateVocalResult {
   vocals_path: string;
   instrumental_path: string;
+}
+
+/** 歌词修改结果 */
+export interface ReviseLyricsResult {
+  /** 修改后的歌词文本（MiniMax [Verse]/[Chorus] 格式） */
+  lyrics: string;
+  /** AI 对修改的简短说明 */
+  note: string;
 }
 
 /**
@@ -114,6 +125,20 @@ export async function separateVocal(params: {
     apiKey,
     model: musicModel,
     outputDir: params.outputDir ?? outputDir,
+  });
+}
+
+/** AI 修改歌词（基于当前歌词 + 用户修改意见，迭代修改） */
+export async function reviseLyrics(params: {
+  currentLyrics: string;
+  instruction: string;
+}): Promise<ReviseLyricsResult> {
+  const { apiKey, llmBase, llmModel } = getStudioConfig();
+  return invoke<ReviseLyricsResult>("studio_revise_lyrics", {
+    ...params,
+    apiBase: llmBase,
+    apiKey,
+    model: llmModel,
   });
 }
 
