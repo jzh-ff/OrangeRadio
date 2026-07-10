@@ -73,16 +73,21 @@ impl HttpClient {
         }
     }
 
-    /// 启动后台定时清理过期缓存（每 `interval_secs` 秒清一次超过 `ttl_secs` 的条目）。
-    /// 应在 Tauri setup 钩子里调用一次，防止缓存随运行时间无界增长。
-    pub fn spawn_prune_task(self, interval_secs: u64, ttl_secs: u64) {
-        tokio::spawn(async move {
-            let interval = Duration::from_secs(interval_secs);
+    /// 返回一个周期性清理过期缓存的后台 future。
+    ///
+    /// 调用方负责把它 spawn 到合适的 runtime（Tauri 应用应使用
+    /// `tauri::async_runtime::spawn`，因为 setup 闭包是同步上下文，
+    /// 直接 `tokio::spawn` 会 panic）。
+    ///
+    /// 每 `interval_secs` 秒清一次超过 `ttl_secs` 的条目。
+    pub fn prune_loop(self, interval_secs: u64, ttl_secs: u64) -> impl std::future::Future<Output = ()> {
+        let interval = Duration::from_secs(interval_secs);
+        async move {
             loop {
                 tokio::time::sleep(interval).await;
                 self.prune_cache(ttl_secs);
             }
-        });
+        }
     }
 
     /// 不缓存的 GET 请求。
@@ -224,7 +229,7 @@ impl HttpClient {
             .map_err(|e| orange_core::CoreError::Network(e.to_string()))
     }
 
-    /// 后台清理过期缓存（可选，也可用 spawn_prune_task 自动定时调用）。
+    /// 后台清理过期缓存（可由 `prune_loop` 周期调用）。
     pub fn prune_cache(&self, ttl_secs: u64) {
         let now = Instant::now();
         let ttl = Duration::from_secs(ttl_secs);

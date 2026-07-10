@@ -2626,10 +2626,15 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
 
             // 5. 启动共享 HTTP 客户端的缓存定时清理（每 10 分钟清一次超过 10 分钟的条目）
             //    防止 search/lyrics/toplist 缓存随运行时间无界增长。
-            http_client_for_prune
-                .as_ref()
-                .clone()
-                .spawn_prune_task(600, 600);
+            //    ⚠️ 必须用 tauri::async_runtime::spawn，setup 闭包是同步上下文，
+            //    直接 tokio::spawn 会 panic（与上方 netease/qqmusic/spotify 的 spawn 同理）。
+            rt::spawn(async move {
+                http_client_for_prune
+                    .as_ref()
+                    .clone()
+                    .prune_loop(600, 600)
+                    .await;
+            });
 
             Ok(())
         })
