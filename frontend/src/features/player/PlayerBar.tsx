@@ -376,21 +376,26 @@ export function PlayerBar() {
             className={`pb-btn pb-like-btn ${currentTrack.liked ? "pb-like-btn--active" : ""}`}
             onClick={async () => {
               const track = currentTrack;
+              // 防重复点击：如果正在处理中，忽略
+              if ((window as unknown as Record<string, boolean>).__liking) return;
+              (window as unknown as Record<string, boolean>).__liking = true;
               const next = !track.liked;
+              // 乐观更新：立即更新 UI
+              usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
               try {
                 if (next) {
                   await invoke("add_to_favorites", { track });
                 } else {
                   await invoke("remove_from_favorites", { track });
                 }
-                usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
                 await useLibraryStore.getState().refreshTracks();
-                // 通知侧栏刷新（收藏变化可能影响"我的收藏"歌单计数）
                 window.dispatchEvent(new CustomEvent("playlists-changed"));
               } catch (e) {
+                // 失败：回滚
+                usePlayerStore.setState({ currentTrack: { ...track, liked: !next } });
                 console.error("[收藏] 失败:", e);
-                const msg = typeof e === "string" ? e : (e as { message?: string })?.message || "收藏失败";
-                alert("[收藏失败]\n\n" + msg);
+              } finally {
+                (window as unknown as Record<string, boolean>).__liking = false;
               }
             }}
             title={currentTrack.liked ? "取消收藏" : "收藏"}
