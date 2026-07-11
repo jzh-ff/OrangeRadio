@@ -44,7 +44,7 @@ export function TrackActions({ track, size = 15, showLike = true, showPlayNext =
       if (cur && cur.id === track.id) {
         usePlayerStore.setState({ currentTrack: { ...cur, liked: next } });
       }
-      window.dispatchEvent(new CustomEvent("playlists-changed"));
+      // 注意：收藏不触发 playlists-changed（会导致侧栏重新渲染闪烁）
     } catch (err) {
       // 失败静默
     } finally {

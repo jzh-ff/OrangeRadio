@@ -388,8 +388,7 @@ export function PlayerBar() {
                 } else {
                   await invoke("remove_from_favorites", { track });
                 }
-                // 不刷新整个列表（会导致屏幕闪烁），只通知侧栏更新歌单计数
-                window.dispatchEvent(new CustomEvent("playlists-changed"));
+                // 不刷新整个列表（会导致屏幕闪烁），收藏不触发侧栏更新
               } catch (e) {
                 // 失败：回滚
                 usePlayerStore.setState({ currentTrack: { ...track, liked: !next } });
