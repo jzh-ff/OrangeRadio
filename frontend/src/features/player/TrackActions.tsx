@@ -30,7 +30,20 @@ export function TrackActions({ track, size = 15, showLike = true, showPlayNext =
       }
       setLiked(next);
       track.liked = next;
-      await useLibraryStore.getState().refreshTracks();
+      // 局部更新 libraryStore 中对应 track 的 liked 状态（不刷新整个列表，避免闪烁）
+      const libState = useLibraryStore.getState();
+      const tracks = libState.tracks;
+      const idx = tracks.findIndex((t) => t.id === track.id);
+      if (idx >= 0) {
+        const newTracks = [...tracks];
+        newTracks[idx] = { ...newTracks[idx], liked: next };
+        useLibraryStore.setState({ tracks: newTracks });
+      }
+      // 同步更新 playerStore 的 currentTrack
+      const cur = usePlayerStore.getState().currentTrack;
+      if (cur && cur.id === track.id) {
+        usePlayerStore.setState({ currentTrack: { ...cur, liked: next } });
+      }
       window.dispatchEvent(new CustomEvent("playlists-changed"));
     } catch (err) {
       // 失败静默
