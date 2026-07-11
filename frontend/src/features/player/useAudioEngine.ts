@@ -194,12 +194,18 @@ export function useAudioEngine(autoNext?: () => void) {
       const myToken = ++playTokenRef.current;
       // 网络 URL / 自定义协议（orangeradio://）/ 本地路径 统一在此归类
       const url = toWebviewUrl(filePath);
+      // 先暂停并清空旧 src，确保旧音频立即停止（防止慢取流回来后覆盖）
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load(); // 强制丢弃之前的加载队列
+      // 设置新 src 并播放
       audio.src = url;
       try {
         await audio.play();
         // 竞态检查：如果 play() 期间有新的 playPath 被调用，放弃这次
         if (myToken !== playTokenRef.current) {
           console.log("[audio] 放弃过期播放 token=", myToken, "当前=", playTokenRef.current);
+          audio.pause();
           return;
         }
         usePlayerStore.setState({ isPlaying: true });
