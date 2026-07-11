@@ -522,7 +522,10 @@ impl LibraryDb {
         // 同步默认"我的收藏"歌单(直接执行 SQL，不调 add_to_playlist 以避免递归锁死锁)
         if liked {
             // 确保曲目在 tracks 表(跨源收藏的关键)
-            let json = serde_json::to_string(track)?;
+            // 注意：用 track 的副本并强制设置 liked=true，避免前端传来的旧 track.liked=false 覆盖
+            let mut track_copy = track.clone();
+            track_copy.liked = true;
+            let json = serde_json::to_string(&track_copy)?;
             conn.execute(
                 "INSERT OR REPLACE INTO tracks (id, path, data) VALUES (?1, ?2, ?3)",
                 params![track_id, &track.source_track_id, json],

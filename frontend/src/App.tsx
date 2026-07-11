@@ -268,6 +268,7 @@ export default function App() {
       // 分配请求序号，防止快速切歌时旧的异步取流覆盖新的
       const mySeq = ++playRequestSeq;
       const kind = track.source_kind || "local";
+      console.log("[播放] 开始取流 seq=", mySeq, "kind=", kind, "track=", track.meta?.title);
       let playUrl: string | null = null;
 
       try {
@@ -298,9 +299,10 @@ export default function App() {
 
       // 竞态检查：如果这期间用户又切了歌，放弃这次播放
       if (mySeq !== playRequestSeq) {
-        console.log("[播放] 放弃过期请求 seq=", mySeq);
+        console.log("[播放] 放弃过期请求 seq=", mySeq, "当前 seq=", playRequestSeq, "track=", track.meta?.title);
         return;
       }
+      console.log("[播放] 取流成功，开始播放 seq=", mySeq, "track=", track.meta?.title);
       engine.playPath(playUrl!);
     };
   }, [engine]);
