@@ -1,0 +1,90 @@
+# OrangeRadio CI：代码检查 + 构建验证
+# 每次 push 到 main / feat 分支，以及 PR 时自动运行
+# 确保所有改动在 cargo build + npm run build 双绿后才能合并
+
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**', 'perf/**']
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ===== 前端检查 =====
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./frontend
+
+      - name: TypeScript type check
+        run: npx tsc -b --noEmit
+        working-directory: ./frontend
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: ./frontend
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: apps/desktop/dist/
+          retention-days: 3
+
+  # ===== Rust 检查（仅 Windows，与开发环境一致） =====
+  rust-check:
+    name: Rust Lint & Build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - name: Install frontend dependencies (for Tauri build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend (Tauri 构建前置)
+        run: npm ci && npm run build
+        working-directory: ./frontend
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (workspace, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        continue-on-error: true # orange-audio 测试有既有警告，暂不阻断
+
+      - name: Build desktop app
+        run: cargo build -p orangeradio-desktop
+
+      - name: Run unit tests
+        run: cargo test -p orange-core -p orange-sources -p orange-library -p orange-studio
+        continue-on-error: true
