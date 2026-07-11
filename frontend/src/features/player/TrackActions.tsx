@@ -2,7 +2,6 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Track } from "../../stores/libraryStore";
 import { usePlayerStore } from "../../stores/playerStore";
-import { useLibraryStore } from "../../stores/libraryStore";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
 /**
@@ -30,21 +29,12 @@ export function TrackActions({ track, size = 15, showLike = true, showPlayNext =
       }
       setLiked(next);
       track.liked = next;
-      // 局部更新 libraryStore 中对应 track 的 liked 状态（不刷新整个列表，避免闪烁）
-      const libState = useLibraryStore.getState();
-      const tracks = libState.tracks;
-      const idx = tracks.findIndex((t) => t.id === track.id);
-      if (idx >= 0) {
-        const newTracks = [...tracks];
-        newTracks[idx] = { ...newTracks[idx], liked: next };
-        useLibraryStore.setState({ tracks: newTracks });
-      }
-      // 同步更新 playerStore 的 currentTrack
+      // 只同步更新 playerStore 的 currentTrack（如果正在播放这首歌）
       const cur = usePlayerStore.getState().currentTrack;
       if (cur && cur.id === track.id) {
         usePlayerStore.setState({ currentTrack: { ...cur, liked: next } });
       }
-      // 注意：收藏不触发 playlists-changed（会导致侧栏重新渲染闪烁）
+      // 不更新 libraryStore.tracks（会导致整个列表重渲染闪屏）
     } catch (err) {
       // 失败静默
     } finally {
