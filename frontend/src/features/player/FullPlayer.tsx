@@ -744,16 +744,19 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                 onClick={async () => {
                   const track = currentTrack;
                   const next = !track.liked;
+                  // 乐观更新
+                  usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
                   try {
                     if (next) {
                       await invoke("add_to_favorites", { track });
                     } else {
                       await invoke("remove_from_favorites", { track });
                     }
-                    usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
-                    await useLibraryStore.getState().refreshTracks();
+                    // 不刷新整个列表（闪烁），只通知侧栏更新歌单计数
                     window.dispatchEvent(new CustomEvent("playlists-changed"));
                   } catch (e) {
+                    // 失败回滚
+                    usePlayerStore.setState({ currentTrack: { ...track, liked: !next } });
                     console.error("[收藏] 失败:", e);
                   }
                 }}

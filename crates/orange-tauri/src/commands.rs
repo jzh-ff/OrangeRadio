@@ -220,10 +220,11 @@ pub async fn gequbao_stream(
     song_path: String,
 ) -> Result<String, String> {
     use orange_core::source::AudioSource;
+    tracing::info!("[stream] gequbao_stream 开始: song_path={}", song_path);
     // 构造最小 Track 供 resolve_stream 使用(只需 source_track_id + source_id)
     let track = Track::new(
         state.gequbao.id(),
-        song_path,
+        song_path.clone(),
         orange_core::track::TrackMeta::default(),
     );
     match state
@@ -232,7 +233,10 @@ pub async fn gequbao_stream(
         .await
         .map_err(|e| e.to_string())?
     {
-        orange_core::source::StreamLocation::Url { url, .. } => Ok(url),
+        orange_core::source::StreamLocation::Url { url, .. } => {
+            tracing::info!("[stream] gequbao_stream 完成: song_path={}", song_path);
+            Ok(url)
+        }
         _ => Err("歌曲宝返回了非 URL 流地址".into()),
     }
 }
@@ -615,9 +619,10 @@ pub async fn netease_stream(
     track_id: String,
 ) -> Result<String, String> {
     use orange_core::AudioSource;
+    tracing::info!("[stream] netease_stream 开始: track_id={}", track_id);
     let track = Track::new(
         state.netease.id(),
-        track_id,
+        track_id.clone(),
         orange_core::track::TrackMeta::default(),
     );
     let loc = state
@@ -626,12 +631,13 @@ pub async fn netease_stream(
         .await
         .map_err(|e| e.to_string())?;
     match loc {
-        orange_core::StreamLocation::Url { url, .. } => Ok(url),
+        orange_core::StreamLocation::Url { url, .. } => {
+            tracing::info!("[stream] netease_stream 完成: track_id={}", track_id);
+            Ok(url)
+        }
         _ => Err("不支持的流类型".into()),
     }
 }
-
-/// 网易云获取用户歌单
 #[tauri::command]
 pub async fn netease_playlists(
     state: tauri::State<'_, AppState>,
