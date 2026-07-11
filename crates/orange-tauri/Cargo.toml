@@ -23,6 +23,7 @@ tracing.workspace = true
 reqwest.workspace = true
 parking_lot.workspace = true
 chrono.workspace = true
+uuid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

@@ -1,9 +1,10 @@
-//! Tauri 命令（暴露给前端）
+//! Tauri 命令(暴露给前端)
 
 use crate::AppState;
 use orange_core::source::{AudioSource, SearchQuery};
 use orange_core::track::{Track, TrackMeta};
 use orange_library::{LibraryScanner, ScanOptions};
+use orange_sources::gequbao;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -46,14 +47,14 @@ pub async fn library_scan(
         root_dirs,
         ..Default::default()
     };
-    // 封面提取目录走 app.path().app_data_dir()（macOS 落 ~/Library/Application Support/...），
+    // 封面提取目录走 app.path().app_data_dir()(macOS 落 ~/Library/Application Support/...)，
     // 避免 macOS release 模式下从 CWD 兜底失败。
     let covers_dir = crate::app_data_subdir(&app, "covers")?;
     let scanner = LibraryScanner::with_covers_dir(covers_dir);
     let tracks = scanner.scan(&options).await.map_err(|e| e.to_string())?;
     let count = tracks.len() as u32;
-    // SQLite 持久化（persist_local 逐条 INSERT）是同步阻塞 IO，
-    // 放进 spawn_blocking 避免占住 tokio worker（大库 + 慢盘时尤为关键）
+    // SQLite 持久化(persist_local 逐条 INSERT)是同步阻塞 IO，
+    // 放进 spawn_blocking 避免占住 tokio worker(大库 + 慢盘时尤为关键)
     let library = state.library.clone();
     tokio::task::spawn_blocking(move || library.replace_all(tracks))
         .await
@@ -78,7 +79,7 @@ pub struct QrStatusInfo {
     pub message: String,
 }
 
-/// 获取本地库全部曲目（支持分页：不传参返回全量；传 offset+limit 则分页）
+/// 获取本地库全部曲目(支持分页：不传参返回全量；传 offset+limit 则分页)
 /// filter 可选："liked" 只返回收藏，"local" 只返回本地来源。
 #[tauri::command]
 pub async fn library_tracks(
@@ -87,10 +88,11 @@ pub async fn library_tracks(
     limit: Option<usize>,
     filter: Option<String>,
 ) -> Result<Vec<Track>, String> {
-    match (offset, limit) {
-        (Some(o), Some(l)) => Ok(state.library.query_paged(o, l, filter.as_deref())),
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || match (offset, limit) {
+        (Some(o), Some(l)) => Ok(library.query_paged(o, l, filter.as_deref())),
         _ => {
-            let mut tracks = state.library.all();
+            let mut tracks = library.all();
             match filter.as_deref() {
                 Some("liked") => tracks.retain(|t| t.liked),
                 Some("local") => {
@@ -100,40 +102,50 @@ pub async fn library_tracks(
             }
             Ok(tracks)
         }
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 本地库数量
 #[tauri::command]
 pub async fn library_count(state: tauri::State<'_, AppState>) -> Result<usize, String> {
-    Ok(state.library.count())
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || Ok(library.count()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
-/// 搜索（本地库，支持分页，page 默认 1）
+/// 搜索(本地库，支持分页，page 默认 1)
 #[tauri::command]
 pub async fn search(
     state: tauri::State<'_, AppState>,
     keyword: String,
     page: Option<u32>,
 ) -> Result<Vec<Track>, String> {
-    let query = SearchQuery {
-        keyword,
-        page: page.unwrap_or(1),
-        page_size: 100,
-        ..Default::default()
-    };
-    Ok(state.library.search(&query))
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || {
+        let query = SearchQuery {
+            keyword,
+            page: page.unwrap_or(1),
+            page_size: 100,
+            ..Default::default()
+        };
+        Ok(library.search(&query))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-// ===== 播放器命令（v0.2 由前端 Web Audio 实际播放，这里返回流地址）=====
+// ===== 播放器命令(v0.2 由前端 Web Audio 实际播放，这里返回流地址)=====
 
-/// 解析曲目的可播放流地址（本地文件 → asset 协议 URL）
+/// 解析曲目的可播放流地址(本地文件 → asset 协议 URL)
 #[tauri::command]
 pub async fn resolve_stream(_track_path: String) -> Result<String, String> {
     Ok(_track_path)
 }
 
-/// 获取日志文件目录路径（供前端显示/打开日志）
+/// 获取日志文件目录路径(供前端显示/打开日志)
 #[tauri::command]
 pub fn log_path(app: tauri::AppHandle) -> Result<String, String> {
     let dir = crate::app_data_subdir(&app, "logs")?;
@@ -142,7 +154,7 @@ pub fn log_path(app: tauri::AppHandle) -> Result<String, String> {
 
 // ===== 网络电台命令 =====
 
-/// 搜索网络电台（RadioBrowser，支持分页，page 默认 1）
+/// 搜索网络电台(RadioBrowser，支持分页，page 默认 1)
 #[tauri::command]
 pub async fn radio_search(
     state: tauri::State<'_, AppState>,
@@ -176,9 +188,9 @@ pub async fn radio_popular(
         .map_err(|e| e.to_string())
 }
 
-// ===== 歌曲宝命令（第三方聚合音源，无需登录） =====
+// ===== 歌曲宝命令(第三方聚合音源，无需登录) =====
 
-/// 搜索歌曲宝（支持分页，page 默认 1）
+/// 搜索歌曲宝(支持分页，page 默认 1)
 #[tauri::command]
 pub async fn gequbao_search(
     state: tauri::State<'_, AppState>,
@@ -199,19 +211,20 @@ pub async fn gequbao_search(
     Ok(result.tracks)
 }
 
-/// 获取歌曲宝真实播放 URL（两步：详情页取 play_id → 换 mp3 直链）
+/// 获取歌曲宝真实播放 URL(两步：详情页取 play_id → 换 mp3 直链)
 ///
-/// `song_path` 是 Track.source_track_id（形如 `music/39466`）。
+/// `song_path` 是 Track.source_track_id(形如 `music/39466`)。
 #[tauri::command]
 pub async fn gequbao_stream(
     state: tauri::State<'_, AppState>,
     song_path: String,
 ) -> Result<String, String> {
     use orange_core::source::AudioSource;
-    // 构造最小 Track 供 resolve_stream 使用（只需 source_track_id + source_id）
+    tracing::info!("[stream] gequbao_stream 开始: song_path={}", song_path);
+    // 构造最小 Track 供 resolve_stream 使用(只需 source_track_id + source_id)
     let track = Track::new(
         state.gequbao.id(),
-        song_path,
+        song_path.clone(),
         orange_core::track::TrackMeta::default(),
     );
     match state
@@ -220,12 +233,15 @@ pub async fn gequbao_stream(
         .await
         .map_err(|e| e.to_string())?
     {
-        orange_core::source::StreamLocation::Url { url, .. } => Ok(url),
+        orange_core::source::StreamLocation::Url { url, .. } => {
+            tracing::info!("[stream] gequbao_stream 完成: song_path={}", song_path);
+            Ok(url)
+        }
         _ => Err("歌曲宝返回了非 URL 流地址".into()),
     }
 }
 
-/// 获取歌曲宝推荐（首页 /hot-music）
+/// 获取歌曲宝推荐(首页 /hot-music)
 #[tauri::command]
 pub async fn gequbao_popular(
     state: tauri::State<'_, AppState>,
@@ -238,9 +254,32 @@ pub async fn gequbao_popular(
         .map_err(|e| e.to_string())
 }
 
-// ===== 酷我音乐命令（第三方公开接口，无需登录） =====
+/// 获取歌曲宝歌词(通过详情页提取 LRC 歌词)
+///
+/// `song_path` 是 Track.source_track_id(形如 `music/39466`)。
+/// 歌曲宝的歌词在详情页 `appData` JSON 的 `mp3_lrc` 字段里，无翻译。
+#[tauri::command]
+pub async fn gequbao_lyric(
+    state: tauri::State<'_, AppState>,
+    song_path: String,
+) -> Result<serde_json::Value, String> {
+    use orange_core::source::AudioSource;
+    // 构造最小 Track，enrich_track_detail 会把歌词写入 meta.lyrics
+    let mut track = Track::new(
+        state.gequbao.id(),
+        song_path,
+        orange_core::track::TrackMeta::default(),
+    );
+    gequbao::enrich_track_detail(&state.gequbao, &mut track)
+        .await
+        .map_err(|e| e.to_string())?;
+    let lrc = track.meta.lyrics.unwrap_or_default();
+    Ok(serde_json::json!({ "raw_lrc": lrc, "translated_lrc": null }))
+}
 
-/// 搜索酷我音乐（支持分页，page 默认 1）
+// ===== 酷我音乐命令(第三方公开接口，无需登录) =====
+
+/// 搜索酷我音乐(支持分页，page 默认 1)
 #[tauri::command]
 pub async fn kuwo_search(
     state: tauri::State<'_, AppState>,
@@ -259,7 +298,7 @@ pub async fn kuwo_search(
 
 /// 获取酷我音乐真实播放 URL
 ///
-/// `rid` 是 Track.source_track_id（酷我歌曲 ID）。
+/// `rid` 是 Track.source_track_id(酷我歌曲 ID)。
 #[tauri::command]
 pub async fn kuwo_stream(state: tauri::State<'_, AppState>, rid: String) -> Result<String, String> {
     use orange_core::source::AudioSource;
@@ -319,6 +358,38 @@ pub async fn kuwo_lyric(
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
     Ok(serde_json::json!({ "raw_lrc": raw, "translated_lrc": null }))
+}
+
+/// 设置酷我音质档位(standard / high / lossless)
+#[tauri::command]
+pub async fn kuwo_set_quality(
+    state: tauri::State<'_, AppState>,
+    quality: String,
+) -> Result<(), String> {
+    let q = match quality.as_str() {
+        "standard" => orange_sources::KuwoQuality::Standard,
+        "high" => orange_sources::KuwoQuality::High,
+        "lossless" => orange_sources::KuwoQuality::Lossless,
+        _ => {
+            return Err(format!(
+                "未知音质档位: {}(可选: standard / high / lossless)",
+                quality
+            ))
+        }
+    };
+    state.kuwo.set_quality(q);
+    Ok(())
+}
+
+/// 获取酷我当前音质档位
+#[tauri::command]
+pub async fn kuwo_get_quality(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    Ok(match state.kuwo.quality() {
+        orange_sources::KuwoQuality::Standard => "standard",
+        orange_sources::KuwoQuality::High => "high",
+        orange_sources::KuwoQuality::Lossless => "lossless",
+    }
+    .into())
 }
 
 // ===== 网易云音乐命令 =====
@@ -407,7 +478,7 @@ pub async fn netease_login_with_webview(
     .map_err(|e| e.to_string())?;
 
     // 后台轮询 cookie：Tauri 的 WebviewWindow::cookies() 能读取包括 HttpOnly 在内的全部 cookie
-    // Windows 上必须在独立线程（spawn_blocking）调用，否则可能死锁
+    // Windows 上必须在独立线程(spawn_blocking)调用，否则可能死锁
     let window_poll = window.clone();
     let state_poll = state.netease.clone();
     let tx_poll = tx.clone();
@@ -519,7 +590,7 @@ pub async fn netease_set_quality(
     Ok(())
 }
 
-/// 网易云搜索（支持分页，page 默认 1）
+/// 网易云搜索(支持分页，page 默认 1)
 #[tauri::command]
 pub async fn netease_search(
     state: tauri::State<'_, AppState>,
@@ -548,9 +619,10 @@ pub async fn netease_stream(
     track_id: String,
 ) -> Result<String, String> {
     use orange_core::AudioSource;
+    tracing::info!("[stream] netease_stream 开始: track_id={}", track_id);
     let track = Track::new(
         state.netease.id(),
-        track_id,
+        track_id.clone(),
         orange_core::track::TrackMeta::default(),
     );
     let loc = state
@@ -559,12 +631,13 @@ pub async fn netease_stream(
         .await
         .map_err(|e| e.to_string())?;
     match loc {
-        orange_core::StreamLocation::Url { url, .. } => Ok(url),
+        orange_core::StreamLocation::Url { url, .. } => {
+            tracing::info!("[stream] netease_stream 完成: track_id={}", track_id);
+            Ok(url)
+        }
         _ => Err("不支持的流类型".into()),
     }
 }
-
-/// 网易云获取用户歌单
 #[tauri::command]
 pub async fn netease_playlists(
     state: tauri::State<'_, AppState>,
@@ -598,7 +671,7 @@ pub async fn netease_toplists(
     state.netease.toplists().await.map_err(|e| e.to_string())
 }
 
-/// 网易云排行榜详情（歌曲列表）
+/// 网易云排行榜详情(歌曲列表)
 #[tauri::command]
 pub async fn netease_toplist_detail(
     state: tauri::State<'_, AppState>,
@@ -624,7 +697,7 @@ pub async fn netease_playlist_detail(
         .map_err(|e| e.to_string())
 }
 
-/// 网易云获取歌词（原文 + 翻译）
+/// 网易云获取歌词(原文 + 翻译)
 #[tauri::command]
 pub async fn netease_lyric(
     state: tauri::State<'_, AppState>,
@@ -678,7 +751,7 @@ pub async fn netease_like_track(
         .map_err(|e| e.to_string())
 }
 
-/// 网易云添加歌曲到任意用户歌单（自建/收藏的远端歌单，不含「我喜欢的音乐」）
+/// 网易云添加歌曲到任意用户歌单(自建/收藏的远端歌单，不含「我喜欢的音乐」)
 #[tauri::command]
 pub async fn netease_add_track_to_playlist(
     state: tauri::State<'_, AppState>,
@@ -708,40 +781,59 @@ pub async fn toggle_liked(
         .map_err(|e| e.to_string())
 }
 
-/// 添加到默认“我的收藏”歌单
+/// 添加到默认"我的收藏"歌单
 #[tauri::command]
 pub async fn add_to_favorites(
     state: tauri::State<'_, AppState>,
     track: Track,
 ) -> Result<(), String> {
+    tracing::info!(
+        "add_to_favorites 开始: title={}, source_kind={:?}",
+        track.meta.title,
+        track.source_kind
+    );
     let source_track_id = track.source_track_id.clone();
     let source_kind = track.source_kind;
     let library = state.library.clone();
-    tokio::task::spawn_blocking(move || {
-        library.add_to_playlist(orange_library::FAVORITES_PLAYLIST_ID, &track)?;
-        library.set_liked(&track, true)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    // set_liked(true) 内部会同时写入 tracks 表 + FAVORITES 歌单关联
+    // 不需要单独调 add_to_playlist(会导致递归锁死锁)
+    tokio::task::spawn_blocking(move || library.set_liked(&track, true))
+        .await
+    .map_err(|e| {
+        tracing::error!("add_to_favorites spawn_blocking 失败: {}", e);
+        e.to_string()
+    })?
+    .map_err(|e| {
+        tracing::error!("add_to_favorites 数据库错误: {}", e);
+        e.to_string()
+    })?;
+    tracing::info!("add_to_favorites 本地收藏成功");
 
-    // 网易云曲目额外同步到远端“我喜欢的音乐”
+    // 网易云曲目额外同步到远端"我喜欢的音乐"
     if source_kind == orange_core::source::SourceKind::NeteaseCloudMusic {
-        state
-            .netease
-            .like_track(&source_track_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        tracing::info!("add_to_favorites 网易云远端同步开始...");
+        match state.netease.like_track(&source_track_id).await {
+            Ok(_) => tracing::info!("add_to_favorites 网易云远端同步成功"),
+            Err(e) => {
+                tracing::warn!("add_to_favorites 网易云远端同步失败(不阻断): {}", e);
+                // 远端同步失败不阻断本地收藏
+            }
+        }
     }
+    tracing::info!("add_to_favorites 完成");
     Ok(())
 }
 
-/// 从默认“我的收藏”歌单移除
+/// 从默认"我的收藏"歌单移除
 #[tauri::command]
 pub async fn remove_from_favorites(
     state: tauri::State<'_, AppState>,
     track: Track,
 ) -> Result<(), String> {
+    tracing::info!(
+        "remove_from_favorites 开始: title={}",
+        track.meta.title
+    );
     let library = state.library.clone();
     tokio::task::spawn_blocking(move || library.set_liked(&track, false))
         .await
@@ -749,21 +841,24 @@ pub async fn remove_from_favorites(
         .map_err(|e| e.to_string())
 }
 
-/// 获取默认“我的收藏”歌单信息
+/// 获取默认"我的收藏"歌单信息
 #[tauri::command]
 pub async fn favorites_playlist(
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<orange_library::UserPlaylist>, String> {
-    state
-        .library
-        .favorites_playlist()
-        .map_err(|e| e.to_string())
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || library.favorites_playlist().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 喜欢的歌曲列表
 #[tauri::command]
 pub async fn liked_tracks(state: tauri::State<'_, AppState>) -> Result<Vec<Track>, String> {
-    Ok(state.library.liked_tracks())
+    let library = state.library.clone();
+    tokio::task::spawn_blocking(move || Ok(library.liked_tracks()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 创建歌单
@@ -772,11 +867,24 @@ pub async fn create_playlist(
     state: tauri::State<'_, AppState>,
     name: String,
 ) -> Result<String, String> {
+    tracing::info!("create_playlist 开始: name={}", name);
     let library = state.library.clone();
-    tokio::task::spawn_blocking(move || library.create_playlist(&name))
+    let result = tokio::task::spawn_blocking(move || library.create_playlist(&name))
         .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            tracing::error!("create_playlist spawn_blocking 失败: {}", e);
+            e.to_string()
+        })?;
+    match result {
+        Ok(id) => {
+            tracing::info!("create_playlist 成功: id={}", id);
+            Ok(id)
+        }
+        Err(e) => {
+            tracing::error!("create_playlist 数据库错误: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 /// 重命名歌单
@@ -806,18 +914,35 @@ pub async fn delete_playlist(
         .map_err(|e| e.to_string())
 }
 
-/// 添加歌曲到歌单（支持跨源：网易云歌曲也能加入）
+/// 添加歌曲到歌单(支持跨源：网易云歌曲也能加入)
 #[tauri::command]
 pub async fn add_to_playlist(
     state: tauri::State<'_, AppState>,
     playlist_id: String,
     track: Track,
 ) -> Result<(), String> {
+    tracing::info!(
+        "add_to_playlist 开始: playlist_id={}, title={}",
+        playlist_id,
+        track.meta.title
+    );
     let library = state.library.clone();
-    tokio::task::spawn_blocking(move || library.add_to_playlist(&playlist_id, &track))
+    let result = tokio::task::spawn_blocking(move || library.add_to_playlist(&playlist_id, &track))
         .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            tracing::error!("add_to_playlist spawn_blocking 失败: {}", e);
+            e.to_string()
+        })?;
+    match result {
+        Ok(()) => {
+            tracing::info!("add_to_playlist 成功");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("add_to_playlist 数据库错误: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 /// 从歌单移除歌曲
@@ -834,7 +959,7 @@ pub async fn remove_from_playlist(
         .map_err(|e| e.to_string())
 }
 
-/// 歌单曲目列表（支持分页：不传参返回全量；传 offset+limit 则分页）
+/// 歌单曲目列表(支持分页：不传参返回全量；传 offset+limit 则分页)
 #[tauri::command]
 pub async fn playlist_tracks(
     state: tauri::State<'_, AppState>,
@@ -905,7 +1030,7 @@ pub async fn netease_qrcode_check(
 
 // ===== 播客 RSS 命令 =====
 
-/// 订阅播客 RSS（输入 URL，返回 episode 列表）
+/// 订阅播客 RSS(输入 URL，返回 episode 列表)
 #[tauri::command]
 pub async fn podcast_fetch(
     state: tauri::State<'_, AppState>,
@@ -1265,7 +1390,7 @@ pub async fn qishui_status(state: tauri::State<'_, AppState>) -> Result<bool, St
 
 // ===== 聚合搜索 =====
 
-/// 多源聚合搜索（遍历源注册表，并发查询所有已就绪音源，支持分页，page 默认 1）
+/// 多源聚合搜索(遍历源注册表，并发查询所有已就绪音源，支持分页，page 默认 1)
 #[tauri::command]
 pub async fn search_all(
     state: tauri::State<'_, AppState>,
@@ -1280,7 +1405,7 @@ pub async fn search_all(
         page_size: 50,
     });
 
-    // 本地库（同步 DB 查询，放 spawn_blocking）
+    // 本地库(同步 DB 查询，放 spawn_blocking)
     let lib = state.library.clone();
     let q_local = (*query).clone();
     let local_task = tokio::task::spawn_blocking(move || lib.search(&q_local));
@@ -1303,7 +1428,7 @@ pub async fn search_all(
 
     // 并发执行所有网络源 + 本地库
     let mut all = local_task.await.unwrap_or_default();
-    // 用 tokio JoinSet 并发跑所有网络源搜索（避免引入 futures crate 依赖）
+    // 用 tokio JoinSet 并发跑所有网络源搜索(避免引入 futures crate 依赖)
     let mut set = tokio::task::JoinSet::new();
     for f in futures {
         set.spawn(f);
@@ -1367,7 +1492,72 @@ pub async fn spotify_search(
     Ok(result.tracks)
 }
 
-// ===== 鉴权状态总览（settings 页用） =====
+/// Spotify 歌词(跨源匹配)
+///
+/// Spotify 官方 API 已移除歌词端点，这里通过曲名+歌手在酷我/网易云中搜索，
+/// 取第一条匹配结果的歌词作为跨源歌词。无翻译。
+#[tauri::command]
+pub async fn spotify_lyric(
+    state: tauri::State<'_, AppState>,
+    title: String,
+    artist: String,
+) -> Result<serde_json::Value, String> {
+    // 构造搜索关键词：曲名 + 歌手
+    let keyword = if artist.is_empty() {
+        title.clone()
+    } else {
+        format!("{} {}", title, artist)
+    };
+
+    // 优先在酷我搜索(曲库大，公开接口无需登录)
+    let query = SearchQuery {
+        keyword: keyword.clone(),
+        page: 1,
+        page_size: 5,
+        ..Default::default()
+    };
+
+    // 尝试酷我
+    if let Ok(result) = state.kuwo.search(&query).await {
+        if let Some(track) = result.tracks.first() {
+            let rid = &track.source_track_id;
+            if let Ok(Some(lrc)) = state.kuwo.song_lyric(rid).await {
+                if !lrc.is_empty() {
+                    return Ok(serde_json::json!({ "raw_lrc": lrc, "translated_lrc": null }));
+                }
+            }
+        }
+    }
+
+    // 尝试网易云
+    if let Ok(result) = state.netease.search(&query).await {
+        if let Some(track) = result.tracks.first() {
+            let song_id = &track.source_track_id;
+            if let Ok((raw_lrc, translated_lrc)) = state.netease.song_lyric(song_id).await {
+                if !raw_lrc.is_empty() {
+                    return Ok(
+                        serde_json::json!({ "raw_lrc": raw_lrc, "translated_lrc": translated_lrc }),
+                    );
+                }
+            }
+        }
+    }
+
+    // 尝试酷狗
+    if let Ok(result) = state.kugou.search(&query).await {
+        if let Some(track) = result.tracks.first() {
+            let hash = track.source_track_id.clone();
+            if let Ok(Some(lrc)) = state.kugou.song_lyric(&hash, None).await {
+                if !lrc.is_empty() {
+                    return Ok(serde_json::json!({ "raw_lrc": lrc, "translated_lrc": null }));
+                }
+            }
+        }
+    }
+
+    // 所有源都未找到歌词
+    Ok(serde_json::json!({ "raw_lrc": null, "translated_lrc": null }))
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthStatusItem {
@@ -1375,7 +1565,7 @@ pub struct AuthStatusItem {
     pub source_name: String,
     /// 是否已登录 / 配置
     pub configured: bool,
-    /// 上次保存 / 刷新时间（Unix 秒）
+    /// 上次保存 / 刷新时间(Unix 秒)
     pub saved_at: i64,
 }
 
@@ -1384,7 +1574,7 @@ pub struct AuthOverview {
     pub items: Vec<AuthStatusItem>,
 }
 
-/// 返回所有音源的鉴权状态总览（settings 页 + UI 角标用）
+/// 返回所有音源的鉴权状态总览(settings 页 + UI 角标用)
 #[tauri::command]
 pub async fn auth_overview(state: tauri::State<'_, AppState>) -> Result<AuthOverview, String> {
     use orange_core::AudioSource;
@@ -1464,15 +1654,15 @@ pub async fn auth_overview(state: tauri::State<'_, AppState>) -> Result<AuthOver
     Ok(AuthOverview { items })
 }
 
-/// Spotify 登出（清掉 Client Credentials）
+/// Spotify 登出(清掉 Client Credentials)
 #[tauri::command]
 pub async fn spotify_logout(state: tauri::State<'_, AppState>) -> Result<(), String> {
     state.spotify.logout().await.map_err(|e| e.to_string())
 }
 
-// ===== 推荐 / 懂你模式（v0.5） =====
+// ===== 推荐 / 懂你模式(v0.5) =====
 
-/// 记录一次播放行为（前端切歌 / 播完时调用，驱动用户画像）
+/// 记录一次播放行为(前端切歌 / 播完时调用，驱动用户画像)
 #[tauri::command]
 pub async fn record_playback(
     state: tauri::State<'_, AppState>,
@@ -1491,7 +1681,7 @@ pub async fn record_playback(
     .map_err(|e| e.to_string())
 }
 
-/// 获取用户画像（settings / 调试用）
+/// 获取用户画像(settings / 调试用)
 #[tauri::command]
 pub async fn get_user_profile(
     state: tauri::State<'_, AppState>,
@@ -1505,7 +1695,7 @@ pub async fn get_user_profile(
     serde_json::to_value(profile).map_err(|e| e.to_string())
 }
 
-/// 懂你模式推荐下一首（排除最近播放 + 跳过反馈；候选池不足时自动跨源补充）
+/// 懂你模式推荐下一首(排除最近播放 + 跳过反馈；候选池不足时自动跨源补充)
 #[tauri::command]
 pub async fn recommend_next(
     state: tauri::State<'_, AppState>,
@@ -1577,7 +1767,7 @@ pub async fn recommend_next(
             }
         }
     }
-    // 最终兜底：网络源也没有时，用热门电台填充（保证空库也能「懂你」）
+    // 最终兜底：网络源也没有时，用热门电台填充(保证空库也能「懂你」)
     if candidates.is_empty() {
         if let Ok(radio) = state.web_radio.recommendations(30).await {
             candidates.extend(radio);
@@ -1600,7 +1790,7 @@ pub async fn recommend_next(
     });
     let n = limit.unwrap_or(1).max(1);
 
-    // 时段推导场景（0-6/22+ = Sleep，7-9 = Commute，9-18 = Work，18-22 = Relax）
+    // 时段推导场景(0-6/22+ = Sleep，7-9 = Commute，9-18 = Work，18-22 = Relax)
     let now = chrono::Utc::now();
     let hour = now.format("%H").to_string().parse::<u32>().unwrap_or(12);
     let scene = match hour {
@@ -1609,7 +1799,7 @@ pub async fn recommend_next(
         10..=18 => Some(Scene::Work),
         _ => Some(Scene::Relax),
     };
-    // 情绪字符串 → Mood enum（前端传 "energetic" 等 snake_case）
+    // 情绪字符串 → Mood enum(前端传 "energetic" 等 snake_case)
     let mood = mood
         .as_deref()
         .and_then(|s| match s.to_lowercase().as_str() {
@@ -1634,7 +1824,7 @@ pub async fn recommend_next(
         candidates,
     };
 
-    // 若前端传了 llm_config，临时构造带 LLM 的 recommender（覆盖默认 local 引擎）
+    // 若前端传了 llm_config，临时构造带 LLM 的 recommender(覆盖默认 local 引擎)
     let recommender: std::sync::Arc<dyn orange_core::recommendation::RecommendationEngine> =
         if let Some(cfg) = llm_config {
             if !cfg.api_key.is_empty() {
@@ -1673,7 +1863,7 @@ pub async fn recommend_next(
     }
 }
 
-/// LLM 配置（前端从 localStorage 读取后传入 recommend_next）
+/// LLM 配置(前端从 localStorage 读取后传入 recommend_next)
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct LlmConfig {
     pub provider: Option<String>,
@@ -1682,9 +1872,9 @@ pub struct LlmConfig {
     pub model: String,
 }
 
-/// 分析本地音频文件的节拍图谱（驱动电影运镜预计算）。
+/// 分析本地音频文件的节拍图谱(驱动电影运镜预计算)。
 /// 缓存到 `<app_data_dir>/beatmaps/<key>.json`，键 = fnv(path)+mtime+size。
-/// 非本地文件（云曲）直接报错跳过。
+/// 非本地文件(云曲)直接报错跳过。
 #[tauri::command]
 pub async fn analyze_beatmap(
     app: tauri::AppHandle,
@@ -1717,7 +1907,7 @@ pub async fn analyze_beatmap(
         }
     }
 
-    // 解码 + DSP 分析（CPU 密集 → spawn_blocking，避免阻塞 tokio executor）
+    // 解码 + DSP 分析(CPU 密集 → spawn_blocking，避免阻塞 tokio executor)
     let path_for_task = path.clone();
     let beatmap = tokio::task::spawn_blocking(move || -> Result<orange_audio::Beatmap, String> {
         let mut audio = orange_audio::decode_file(&path_for_task).map_err(|e| e.to_string())?;
@@ -1738,7 +1928,7 @@ pub async fn analyze_beatmap(
     Ok(json)
 }
 
-/// 分析单首曲目的 BPM 并写回库（标签缺失时音频分析兜底，延迟填充用）
+/// 分析单首曲目的 BPM 并写回库(标签缺失时音频分析兜底，延迟填充用)
 ///
 /// 流程：取 track → 已有 bpm 则秒返 → 否则 spawn_blocking 解码 + 节拍分析 → update_track_bpm
 #[tauri::command]
@@ -1746,7 +1936,7 @@ pub async fn analyze_track_bpm(
     state: tauri::State<'_, AppState>,
     track_id: String,
 ) -> Result<f32, String> {
-    // 查曲目（按 id 直接定位，避免 all() 全库 clone）
+    // 查曲目(按 id 直接定位，避免 all() 全库 clone)
     let track = state
         .library
         .find_by_id_str(&track_id)
@@ -1760,7 +1950,7 @@ pub async fn analyze_track_bpm(
     if !path.is_file() {
         return Err("非本地文件，无法分析 BPM".into());
     }
-    // spawn_blocking 跑解码 + 节拍分析（CPU 密集）
+    // spawn_blocking 跑解码 + 节拍分析(CPU 密集)
     let bpm = tokio::task::spawn_blocking(move || -> Result<f32, String> {
         let mut audio = orange_audio::decode_file(&path).map_err(|e| e.to_string())?;
         let beatmap = orange_audio::analyze_beatmap(&mut audio);
@@ -1768,7 +1958,7 @@ pub async fn analyze_track_bpm(
     })
     .await
     .map_err(|e| format!("BPM 分析线程失败: {e}"))??;
-    // 写回库（DB + 内存）
+    // 写回库(DB + 内存)
     state
         .library
         .update_track_bpm(&track_id, bpm)
@@ -1777,7 +1967,7 @@ pub async fn analyze_track_bpm(
     Ok(bpm)
 }
 
-/// FNV-1a 64bit（缓存键用，刻意不引新依赖）
+/// FNV-1a 64bit(缓存键用，刻意不引新依赖)
 fn fnv_hash(s: &str) -> u64 {
     let mut h = 0xcbf29ce484222325u64;
     for b in s.bytes() {
@@ -1787,14 +1977,14 @@ fn fnv_hash(s: &str) -> u64 {
     h
 }
 
-/// 远端封面代理下载到本地（绕开浏览器 CORS，驱动 cinema 模式 CoverParticles）
+/// 远端封面代理下载到本地(绕开浏览器 CORS，驱动 cinema 模式 CoverParticles)
 ///
-/// 输入是网易云/QQ 返回的封面 URL（不带 CORS 头），下载到
+/// 输入是网易云/QQ 返回的封面 URL(不带 CORS 头)，下载到
 /// `<app_data_dir>/covers/<fnv(url)>.jpg` 后返回本地路径，前端用 `convertFileSrc` 喂给 WebView。
 ///
-/// 命中缓存（URL 不变）秒返；并发相同 URL 共享一次下载。
+/// 命中缓存(URL 不变)秒返；并发相同 URL 共享一次下载。
 /// 限制单文件 8MB，磁盘缓存总大小超过 256MB 时清理最旧的 20%。
-/// 失败返回 Err，前端 fallback 到 hasCover=false（粒子层用默认色渐变）。
+/// 失败返回 Err，前端 fallback 到 hasCover=false(粒子层用默认色渐变)。
 #[tauri::command]
 pub async fn cover_proxy(
     app: tauri::AppHandle,
@@ -1808,7 +1998,7 @@ pub async fn cover_proxy(
     let cache_dir = crate::app_data_subdir(&app, "covers")?;
 
     let key = fnv_hash(&url);
-    // 用 URL 后缀推断扩展名（默认 jpg）
+    // 用 URL 后缀推断扩展名(默认 jpg)
     let ext = std::path::Path::new(&url)
         .extension()
         .and_then(|e| e.to_str())
@@ -1819,7 +2009,7 @@ pub async fn cover_proxy(
 
     // 命中缓存直接返回
     if cache_file.is_file() {
-        // 更新 atime 用于 LRU 清理（只读打开即可）
+        // 更新 atime 用于 LRU 清理(只读打开即可)
         let _ = std::fs::OpenOptions::new()
             .read(true)
             .open(&cache_file)
@@ -1840,7 +2030,7 @@ pub async fn cover_proxy(
         return Ok(path.clone());
     }
 
-    // 下载（复用 AppState 共享 client，连接池/TLS 复用；带 UA + Referer 绕 CDN 拦截）
+    // 下载(复用 AppState 共享 client，连接池/TLS 复用；带 UA + Referer 绕 CDN 拦截)
     let resp = state
         .http_client
         .client()
@@ -1870,7 +2060,7 @@ pub async fn cover_proxy(
 
     std::fs::write(&cache_file, &bytes).map_err(|e| format!("写封面缓存失败: {e}"))?;
 
-    // 磁盘缓存 LRU 清理：每 32 次下载清一次（避免每次下载都全目录 read_dir + stat + 排序）
+    // 磁盘缓存 LRU 清理：每 32 次下载清一次(避免每次下载都全目录 read_dir + stat + 排序)
     let dl_count = state.cover_download_count.fetch_add(1, Ordering::Relaxed) + 1;
     if dl_count.is_multiple_of(32) {
         prune_covers(&cache_dir, 256 * 1024 * 1024, 0.2);
@@ -1922,9 +2112,9 @@ fn prune_covers(dir: &std::path::Path, max_total_bytes: u64, ratio: f64) {
     }
 }
 
-// ===== Hue 灯光联动（v0.8 MVP） =====
+// ===== Hue 灯光联动(v0.8 MVP) =====
 
-/// 发现局域网内的 Hue Bridge（nupnp）
+/// 发现局域网内的 Hue Bridge(nupnp)
 #[tauri::command]
 pub async fn hue_discover() -> Result<Vec<serde_json::Value>, String> {
     let mgr = orange_hue::HueManager::new();
@@ -1935,14 +2125,14 @@ pub async fn hue_discover() -> Result<Vec<serde_json::Value>, String> {
         .collect())
 }
 
-/// 配对 Hue Bridge（需先按 Bridge 顶部 link button）→ 返回 username token
+/// 配对 Hue Bridge(需先按 Bridge 顶部 link button)→ 返回 username token
 #[tauri::command]
 pub async fn hue_pair(ip: String) -> Result<String, String> {
     let mgr = orange_hue::HueManager::new();
     mgr.pair(&ip).await.map_err(|e| e.to_string())
 }
 
-/// 设置 Hue 灯状态（on/bri/hue/sat）
+/// 设置 Hue 灯状态(on/bri/hue/sat)
 #[tauri::command]
 pub async fn hue_set_state(
     ip: String,
@@ -1969,7 +2159,7 @@ pub async fn hue_set_state(
     .map_err(|e| e.to_string())
 }
 
-// ===== 壁纸持久化（v0.4 P12，自定义命令避免引入 tauri-plugin-fs） =====
+// ===== 壁纸持久化(v0.4 P12，自定义命令避免引入 tauri-plugin-fs) =====
 
 /// 把用户选择的壁纸文件复制到 {app_data_dir}/wallpapers/{timestamp}-{name}，返回目标路径。
 /// 前端用 convertFileSrc(返回路径) 转成 webview 可访问的 URL。
@@ -2012,7 +2202,7 @@ pub fn wallpaper_save(
     Ok(dest.to_string_lossy().into_owned())
 }
 
-/// 删除已保存的壁纸文件（用户从壁纸库移除时调用）
+/// 删除已保存的壁纸文件(用户从壁纸库移除时调用)
 #[tauri::command]
 pub fn wallpaper_remove(path: String) -> Result<(), String> {
     std::fs::remove_file(&path).map_err(|e| format!("删除壁纸文件失败: {e}"))
@@ -2020,7 +2210,7 @@ pub fn wallpaper_remove(path: String) -> Result<(), String> {
 
 /// 扫描本地 Wallpaper Engine 壁纸。
 ///
-/// `dirs=Some` 用前端配置目录；`None` 自动发现（注册表 + libraryfolders.vdf）。
+/// `dirs=Some` 用前端配置目录；`None` 自动发现(注册表 + libraryfolders.vdf)。
 /// 扫描完成后把发现的 Workshop 根目录登记到 AppState.we_roots，供 orangeradio://wefile 安全校验。
 #[tauri::command]
 pub async fn wallpaper_engine_scan(
@@ -2042,9 +2232,9 @@ pub async fn wallpaper_engine_scan(
     Ok(result)
 }
 
-// ===== AI 歌词译注（v0.5，用 MiniMax LLM） =====
+// ===== AI 歌词译注(v0.5，用 MiniMax LLM) =====
 
-/// 用 MiniMax LLM 翻译并注解歌词（base/key/model 由前端配置传入，存 localStorage）
+/// 用 MiniMax LLM 翻译并注解歌词(base/key/model 由前端配置传入，存 localStorage)
 #[tauri::command]
 pub async fn lyric_annotate(
     lyrics: String,
@@ -2065,7 +2255,7 @@ pub async fn lyric_annotate(
     serde_json::to_value(&annotated).map_err(|e| e.to_string())
 }
 
-/// 分析歌词情绪（MiniMax LLM）→ {mood, reason}，可用于推荐/视觉配色
+/// 分析歌词情绪(MiniMax LLM)→ {mood, reason}，可用于推荐/视觉配色
 #[tauri::command]
 pub async fn emotion_analyze(
     lyrics: String,
@@ -2094,9 +2284,9 @@ pub async fn emotion_analyze(
     serde_json::from_str::<serde_json::Value>(&json).map_err(|e| e.to_string())
 }
 
-// ===== OrangeStudio AI 创作工作站（v0.6，MiniMax） =====
+// ===== OrangeStudio AI 创作工作站(v0.6，MiniMax) =====
 
-/// 工作室输出目录：优先使用用户在设置里配置的 `custom` 目录（非空时），
+/// 工作室输出目录：优先使用用户在设置里配置的 `custom` 目录(非空时)，
 /// 否则回退到 `{app_data_dir}/studio/`。用于存放生成的音频、分轨、歌词、工程文件。
 ///
 /// `custom` 为空字符串或全空白时视作未配置。目录不存在会自动创建。
@@ -2107,7 +2297,7 @@ fn studio_output_dir(
     if let Some(dir) = custom.map(str::trim).filter(|s| !s.is_empty()) {
         let path = std::path::PathBuf::from(dir);
         std::fs::create_dir_all(&path)
-            .map_err(|e| format!("创建输出目录失败（{}）: {e}", path.display()))?;
+            .map_err(|e| format!("创建输出目录失败({}): {e}", path.display()))?;
         return Ok(path);
     }
     let data_dir = app
@@ -2119,7 +2309,7 @@ fn studio_output_dir(
     Ok(dir)
 }
 
-/// 兼容旧调用点的薄包装（固定用默认 app_data_dir/studio）。
+/// 兼容旧调用点的薄包装(固定用默认 app_data_dir/studio)。
 #[allow(dead_code)]
 fn studio_cache_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     studio_output_dir(app, None)
@@ -2127,8 +2317,8 @@ fn studio_cache_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String
 
 /// AI 写词 → 结构化歌词草稿
 ///
-/// `api_base` / `api_key` / `model` 对应 LLM 端点（Anthropic 兼容），
-/// 通常和「歌词译注」用同一套配置（`orangeradio_minimax_*`）。
+/// `api_base` / `api_key` / `model` 对应 LLM 端点(Anthropic 兼容)，
+/// 通常和「歌词译注」用同一套配置(`orangeradio_minimax_*`)。
 #[tauri::command]
 pub async fn studio_generate_lyrics(
     theme: String,
@@ -2158,24 +2348,48 @@ pub async fn studio_generate_lyrics(
     serde_json::to_value(&draft).map_err(|e| e.to_string())
 }
 
+/// AI 修改歌词(基于当前歌词 + 用户修改意见，迭代修改)
+///
+/// 接收当前歌词文本(MiniMax [Verse]/[Chorus] 格式)和用户的自然语言修改指令，
+/// 返回修改后的歌词文本 + AI 的简短说明。
+#[tauri::command]
+pub async fn studio_revise_lyrics(
+    current_lyrics: String,
+    instruction: String,
+    api_base: String,
+    api_key: String,
+    model: String,
+) -> Result<serde_json::Value, String> {
+    use orange_studio::LyricsGenerator;
+    if api_key.is_empty() {
+        return Err("未配置 MiniMax API Key，请先在设置中填写".into());
+    }
+    let generator = LyricsGenerator::new(api_base, api_key, model);
+    let (lyrics, note) = generator
+        .revise(&current_lyrics, &instruction)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "lyrics": lyrics, "note": note }))
+}
+
 /// 音乐生成 → 本地 mp3 路径 + 歌词
 ///
-/// 调用 MiniMax music_generation（同步接口，约 30-90 秒）。
+/// 调用 MiniMax music_generation(同步接口，约 30-90 秒)。
 /// 返回的 `audio_path` 是本地缓存文件路径，前端用 `convertFileSrc` 播放。
 ///
-/// ## 自动写词（`auto_lyrics`）
-/// MiniMax `music_generation` 响应**不返回歌词**（官方文档确认），请求里传的词或
+/// ## 自动写词(`auto_lyrics`)
+/// MiniMax `music_generation` 响应**不返回歌词**(官方文档确认)，请求里传的词或
 /// `lyrics_optimizer` 自动写的词都拿不回来。为让用户能"听到 = 看到"，当：
-///   - 用户没传歌词（`lyrics` 为空），且
+///   - 用户没传歌词(`lyrics` 为空)，且
 ///   - `auto_lyrics = true`，且
-///   - 非纯伴奏模式（`is_instrumental != true`）
-/// 时，本命令会**先**调一次 LLM（`lyrics_api_*` 配置，复用写词端点）生成一版
+///   - 非纯伴奏模式(`is_instrumental != true`)
+/// 时，本命令会**先**调一次 LLM(`lyrics_api_*` 配置，复用写词端点)生成一版
 /// 结构化歌词，再把它同时用于：① 塞进 `GenerationRequest.lyrics` 喂给 MiniMax
 /// 演唱；② 写进返回 JSON 的 `lyrics` 字段回传前端展示。
 /// 写词失败不阻断音乐生成 —— 降级为让 MiniMax 自己 `lyrics_optimizer` 盲写
-/// （此时返回的 `lyrics` 为 null，前端歌词区为空）。
+/// (此时返回的 `lyrics` 为 null，前端歌词区为空)。
 ///
-/// ## 输出目录（`output_dir`）
+/// ## 输出目录(`output_dir`)
 /// 用户可在设置里配置创作输出目录；为空时回退 `{app_data_dir}/studio/`。
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri 命令需把前端各项配置作为独立参数接收
@@ -2203,7 +2417,7 @@ pub async fn studio_generate_music(
 
     // —— 自动写词：用户没给词 + 开启 auto_lyrics + 非纯伴奏 ——
     // 用 LLM 写一版结构化歌词，渲染成 MiniMax 格式，同时用于演唱和回传。
-    // 写词失败降级为 None（让 MiniMax 自己 lyrics_optimizer 盲写），不阻断。
+    // 写词失败降级为 None(让 MiniMax 自己 lyrics_optimizer 盲写)，不阻断。
     let mut final_lyrics = lyrics;
     let mut auto_lyrics_note: Option<String> = None;
     let want_auto = auto_lyrics.unwrap_or(true) && !is_instrumental && user_lyrics_empty;
@@ -2219,21 +2433,21 @@ pub async fn studio_generate_music(
         {
             Ok(text) => {
                 tracing::info!(
-                    "自动写词成功（{} 字符），将用于 MiniMax 演唱并回传",
+                    "自动写词成功({} 字符)，将用于 MiniMax 演唱并回传",
                     text.len()
                 );
                 final_lyrics = Some(text);
             }
             Err(e) => {
                 tracing::warn!("自动写词失败，降级为 MiniMax lyrics_optimizer 盲写: {e}");
-                auto_lyrics_note = Some(format!("自动写词失败（{e}），已改用 MiniMax 自动补词"));
+                auto_lyrics_note = Some(format!("自动写词失败({e})，已改用 MiniMax 自动补词"));
             }
         }
     }
 
     let provider = MiniMaxProvider::new(api_key, api_base, model);
     let request = GenerationRequest {
-        style_prompt: prompt,
+        style_prompt: prompt.clone(),
         duration_secs: None,
         need_stems: false,
         lyrics: final_lyrics.clone(),
@@ -2248,7 +2462,7 @@ pub async fn studio_generate_music(
         .audio_url
         .ok_or_else(|| "MiniMax 未返回音频".to_string())?;
 
-    // 落盘到输出目录（用户配置或默认 app_data_dir/studio）
+    // 落盘到输出目录(用户配置或默认 app_data_dir/studio)
     let out_dir = studio_output_dir(&app, output_dir.as_deref())?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2261,25 +2475,46 @@ pub async fn studio_generate_music(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 同步把歌词存成 .txt（与音频同名），方便用户在输出目录里翻看
+    // 同步把歌词存成 .txt(与音频同名)，方便用户在输出目录里翻看
     if let Some(ref text) = final_lyrics {
         let ldest = out_dir.join(format!("{ts}-{task_id}.txt", task_id = result.task_id));
         if let Err(e) = std::fs::write(&ldest, text.as_bytes()) {
-            tracing::warn!("写入歌词文件失败（{}）: {e}", ldest.display());
+            tracing::warn!("写入歌词文件失败({}): {e}", ldest.display());
         }
     }
+
+    // 构造 Track 对象，让前端能把生成结果推入播放队列并在播放详情页播放
+    // source_kind = Local，source_track_id = 本地文件路径
+    // 播放时 App.tsx 取流分发的默认分支会直接用 source_track_id 作为 playUrl
+    let track_title = if is_instrumental {
+        format!("{} (伴奏)", prompt.chars().take(30).collect::<String>())
+    } else {
+        prompt.chars().take(40).collect::<String>()
+    };
+    let studio_track = Track::new(
+        orange_core::source::SourceId(uuid::Uuid::new_v4()),
+        audio_path.clone(),
+        TrackMeta {
+            title: track_title,
+            artist: "OrangeStudio".into(),
+            album: Some("AI 创作".into()),
+            lyrics: final_lyrics.clone(),
+            ..Default::default()
+        },
+    );
 
     Ok(serde_json::json!({
         "audio_path": audio_path,
         "task_id": result.task_id,
         "lyrics": final_lyrics,
         "lyrics_note": auto_lyrics_note,
+        "track": studio_track,
     }))
 }
 
 /// 解析自动写词的 LLM 配置：优先用前端显式传入的 `lyrics_api_*`，
-/// 缺失时回退到与 music 端点相同的 `api_key`（但 base/model 仍需前端给，
-/// 因为写词走 Anthropic 兼容端点，默认与 music 端点不同）。
+/// 缺失时回退到与 music 端点相同的 `api_key`(但 base/model 仍需前端给，
+/// 因为写词走 Anthropic 兼容端点，默认与 music 端点不同)。
 async fn resolve_auto_lyrics(
     prompt: &str,
     lyrics_api_base: Option<&str>,
@@ -2312,14 +2547,14 @@ async fn resolve_auto_lyrics(
         .generate(&request)
         .await
         .map_err(|e| e.to_string())?;
-    // 渲染成 MiniMax 格式（[Verse]\n... 形式），既喂 MiniMax 又回传前端
+    // 渲染成 MiniMax 格式([Verse]\n... 形式)，既喂 MiniMax 又回传前端
     Ok(draft.to_minimax_lyrics())
 }
 
 /// 人声/伴奏分轨 → 两个本地 mp3 路径
 ///
-/// **注意**：此命令会调用 MiniMax **两次**（带唱 + 纯伴奏），消耗双倍额度。
-/// 两次生成基于同一 prompt，但旋律/编曲会有随机差异（适合试听，非精确分离）。
+/// **注意**：此命令会调用 MiniMax **两次**(带唱 + 纯伴奏)，消耗双倍额度。
+/// 两次生成基于同一 prompt，但旋律/编曲会有随机差异(适合试听，非精确分离)。
 #[tauri::command]
 pub async fn studio_separate_vocal(
     app: tauri::AppHandle,
@@ -2341,14 +2576,14 @@ pub async fn studio_separate_vocal(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 下载两轨到输出目录（provider 在 separator 内部已 drop，这里单独构造仅用于下载）
+    // 下载两轨到输出目录(provider 在 separator 内部已 drop，这里单独构造仅用于下载)
     let out_dir = studio_output_dir(&app, output_dir.as_deref())?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let downloader = MiniMaxProvider::new("", "", "");
-    // provider 返回的引用可能是 http(s) URL（URL 模式）或 file://（hex 模式落 temp）
+    // provider 返回的引用可能是 http(s) URL(URL 模式)或 file://(hex 模式落 temp)
     let is_remote_like = |s: &str| s.starts_with("http") || s.starts_with("file:");
     let vocals_path = match stems.vocals.as_deref() {
         Some(url) if is_remote_like(url) => {
@@ -2384,7 +2619,7 @@ pub async fn studio_separate_vocal(
 /// 保存创作工程到 `.orp` 文件
 ///
 /// `project_json` 是前端序列化的完整 StudioProject JSON。
-/// `name` 用于生成文件名（安全过滤）。
+/// `name` 用于生成文件名(安全过滤)。
 /// `output_dir` 为用户配置的输出目录，为空则回退默认 `{app_data_dir}/studio/`。
 /// 返回保存的文件绝对路径。
 #[tauri::command]
@@ -2428,11 +2663,11 @@ pub fn studio_project_load(path: String) -> Result<serde_json::Value, String> {
     serde_json::to_value(&project).map_err(|e| e.to_string())
 }
 
-/// 内置 demo 曲元信息（首启自动播放用）
+/// 内置 demo 曲元信息(首启自动播放用)
 ///
 /// 从打包到安装包中的 `resources/demo/track.mp3` 直接读 ID3：
 /// - title / artist / album / duration_secs 由 lofty 解析
-/// - 专辑封面抽取到 `app_data_dir/covers/` 缓存（用 FNV-1a 哈希命名防重复）
+/// - 专辑封面抽取到 `app_data_dir/covers/` 缓存(用 FNV-1a 哈希命名防重复)
 /// - 歌词优先用 ID3 内嵌 USLT；如果没有，回退读 `resources/demo/track.lrc`
 #[tauri::command]
 pub async fn builtin_track_meta(app: AppHandle) -> Result<TrackMeta, String> {
@@ -2445,7 +2680,7 @@ pub async fn builtin_track_meta(app: AppHandle) -> Result<TrackMeta, String> {
         .resolve("resources/demo/track.lrc", BaseDirectory::Resource)
         .ok();
 
-    // 封面缓存目录：app_data_dir/covers/（dev 模式走 cwd/.orangeradio/covers）
+    // 封面缓存目录：app_data_dir/covers/(dev 模式走 cwd/.orangeradio/covers)
     let covers_dir = app.path().app_data_dir().ok().map(|d| d.join("covers"));
 
     let mut meta = orange_library::metadata::read_track_meta(&mp3_path, covers_dir.as_deref());
@@ -2463,7 +2698,7 @@ pub async fn builtin_track_meta(app: AppHandle) -> Result<TrackMeta, String> {
     Ok(meta)
 }
 
-/// 内置 demo 曲音频文件绝对路径（前端 convertFileSrc 用）
+/// 内置 demo 曲音频文件绝对路径(前端 convertFileSrc 用)
 #[tauri::command]
 pub async fn builtin_stream(app: AppHandle) -> Result<String, String> {
     let p = app
@@ -2473,7 +2708,7 @@ pub async fn builtin_stream(app: AppHandle) -> Result<String, String> {
     Ok(p.to_string_lossy().into_owned())
 }
 
-/// 真正退出应用（不经过窗口关闭拦截）。
+/// 真正退出应用(不经过窗口关闭拦截)。
 /// 由前端"关闭确认 Modal"的"退出应用"按钮调用——
 /// 托盘菜单的"退出 OrangeRadio"走原 `on_menu_event` → `app.exit(0)`，不经过这里。
 #[tauri::command]
@@ -2486,7 +2721,7 @@ pub fn app_exit(app: AppHandle) {
 pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     let state = AppState::default();
     // 取出要延迟启动的引用 —— AppState::default() 同步上下文没有 tokio runtime，
-    // 后台 spawn 必须在 Tauri runtime 起来后才能调（见 .setup()）
+    // 后台 spawn 必须在 Tauri runtime 起来后才能调(见 .setup())
     let auth_sink = state.auth_sink.clone();
     let netease_for_loop = state.netease.clone();
     let qqmusic_for_loop = state.qqmusic.clone();
@@ -2509,11 +2744,14 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             gequbao_search,
             gequbao_stream,
             gequbao_popular,
+            gequbao_lyric,
             kuwo_search,
             kuwo_stream,
             kuwo_popular,
             kuwo_chart_detail,
             kuwo_lyric,
+            kuwo_set_quality,
+            kuwo_get_quality,
             netease_login,
             netease_login_with_webview,
             netease_logout,
@@ -2573,6 +2811,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             spotify_status,
             spotify_search,
             spotify_logout,
+            spotify_lyric,
             auth_overview,
             record_playback,
             get_user_profile,
@@ -2589,6 +2828,7 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
             lyric_annotate,
             emotion_analyze,
             studio_generate_lyrics,
+            studio_revise_lyrics,
             studio_generate_music,
             studio_separate_vocal,
             studio_project_save,
@@ -2599,35 +2839,35 @@ pub fn register_all(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri
         ])
         .setup(move |app| {
             // ⚠️ Tauri 2 的 setup 闭包本身是**同步上下文**——`tokio::spawn` 会 panic。
-            // 必须用 `tauri::async_runtime::spawn`（内部 `RUNTIME.get_or_init(default_runtime)`），
+            // 必须用 `tauri::async_runtime::spawn`(内部 `RUNTIME.get_or_init(default_runtime)`)，
             // 它能保证有 tokio runtime 可用。
             use tauri::async_runtime as rt;
 
-            // 1. 注入 AppHandle 到 auth 过期事件 sink（同步操作 OK）
+            // 1. 注入 AppHandle 到 auth 过期事件 sink(同步操作 OK)
             auth_sink.set_handle(app.handle().clone());
 
-            // 2. 启动网易云后台健康检查（每 6h 验证 cookie）
+            // 2. 启动网易云后台健康检查(每 6h 验证 cookie)
             //    run_health_loop 本身是 async，整个 loop 在 worker 上跑
             rt::spawn(async move {
                 netease_for_loop.run_health_loop().await;
             });
 
-            // 3. 启动 QQ 音乐后台自动续期（每 12h 刷 musickey）
+            // 3. 启动 QQ 音乐后台自动续期(每 12h 刷 musickey)
             rt::spawn(async move {
                 qqmusic_for_loop.run_refresh_loop().await;
             });
 
-            // 4. 启动 Spotify 凭据恢复（如果 AuthStore 有 Client ID/Secret，自动拿 token）
+            // 4. 启动 Spotify 凭据恢复(如果 AuthStore 有 Client ID/Secret，自动拿 token)
             rt::spawn(async move {
                 if let Err(e) = spotify_for_resume.resume_from_store().await {
                     tracing::warn!("Spotify 凭据恢复失败: {}", e);
                 }
             });
 
-            // 5. 启动共享 HTTP 客户端的缓存定时清理（每 10 分钟清一次超过 10 分钟的条目）
+            // 5. 启动共享 HTTP 客户端的缓存定时清理(每 10 分钟清一次超过 10 分钟的条目)
             //    防止 search/lyrics/toplist 缓存随运行时间无界增长。
             //    ⚠️ 必须用 tauri::async_runtime::spawn，setup 闭包是同步上下文，
-            //    直接 tokio::spawn 会 panic（与上方 netease/qqmusic/spotify 的 spawn 同理）。
+            //    直接 tokio::spawn 会 panic(与上方 netease/qqmusic/spotify 的 spawn 同理)。
             rt::spawn(async move {
                 http_client_for_prune
                     .as_ref()

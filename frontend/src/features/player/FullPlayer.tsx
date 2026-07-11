@@ -136,6 +136,8 @@ const ProgressSection = React.memo(function ProgressSection() {
 
 export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
+  // 收藏按钮的 local 重渲染触发器（不经过 playerStore，避免其他组件闪屏）
+  const [, forceLikeUpdate] = useState(0);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const fullLayout = usePlayerStore((s) => s.fullLayout);
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
@@ -320,6 +322,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
         ? "kugou_lyric"
         : kind === "kuwo"
         ? "kuwo_lyric"
+        : kind === "gequbao"
+        ? "gequbao_lyric"
+        : kind === "spotify"
+        ? "spotify_lyric"
         : null;
     if (!cmd) {
       // 本地曲目 / 内置 demo 曲：用元数据里塞进来的 LRC 歌词
@@ -329,7 +335,15 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
       return;
     }
     setLoading(true);
-    invoke<LyricData>(cmd, { songId: tid })
+    // Spotify 走跨源歌词匹配，需要 title + artist 而非 songId
+    const invokeParams =
+      kind === "spotify"
+        ? {
+            title: currentTrack.meta?.title || "",
+            artist: currentTrack.meta?.artist || "",
+          }
+        : { songId: tid };
+    invoke<LyricData>(cmd, invokeParams)
       .then((d) => {
         setLyricData(d);
         // 有歌词时自动分析情绪，驱动懂你模式 mood 与视觉主题
@@ -428,6 +442,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const artist = currentTrack?.meta.artist || "";
   const coverUrl = getCoverUrl(currentTrack);
   const songId = currentTrack?.source_track_id || "";
+  const sourceKind = (currentTrack as { source_kind?: string }).source_kind;
 
   const activeLayout = LAYOUT_OPTIONS.find((o) => o.id === fullLayout)!;
 
@@ -569,7 +584,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                   </svg>
                 </button>
               </div>
-              <CommentList songId={songId} compact />
+              <CommentList songId={songId} compact sourceKind={sourceKind} />
             </div>
           )}
         </div>
@@ -683,7 +698,7 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
           {/* triple 模式：右侧评论 */}
           {fullLayout === "triple" && (
             <section className="fp-comments-section">
-              <CommentList songId={songId} />
+              <CommentList songId={songId} sourceKind={sourceKind} />
             </section>
           )}
         </div>
@@ -731,15 +746,20 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                 onClick={async () => {
                   const track = currentTrack;
                   const next = !track.liked;
+                  // 直接 mutate（不创建新对象引用，避免触发其他组件重渲染闪屏）
+                  track.liked = next;
+                  forceLikeUpdate((t) => t + 1);
                   try {
                     if (next) {
                       await invoke("add_to_favorites", { track });
                     } else {
                       await invoke("remove_from_favorites", { track });
                     }
-                    usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
-                    await useLibraryStore.getState().refreshTracks();
-                  } catch {}
+                  } catch (e) {
+                    track.liked = !next;
+                    forceLikeUpdate((t) => t + 1);
+                    console.error("[收藏] 失败:", e);
+                  }
                 }}
                 title={currentTrack.liked ? "取消收藏" : "收藏"}
                 aria-label={currentTrack.liked ? "取消收藏" : "收藏"}

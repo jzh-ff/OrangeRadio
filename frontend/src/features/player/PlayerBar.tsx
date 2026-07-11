@@ -140,6 +140,8 @@ export function PlayerBar() {
   const duration = usePlayerStore((s) => s.duration);
   const volume = usePlayerStore((s) => s.volume);
   const playerBarOpacity = usePlayerStore((s) => s.visualParams.playerBarOpacity);
+  // 收藏按钮的 local 重渲染触发器（不经过 playerStore，避免其他组件闪屏）
+  const [, setLikeTick] = useState(0);
 
   const progress = duration > 0 ? (position / duration) * 100 : 0;
   const volPct = Math.round(volume * 100);
@@ -376,16 +378,27 @@ export function PlayerBar() {
             className={`pb-btn pb-like-btn ${currentTrack.liked ? "pb-like-btn--active" : ""}`}
             onClick={async () => {
               const track = currentTrack;
+              if ((window as unknown as Record<string, boolean>).__liking) return;
+              (window as unknown as Record<string, boolean>).__liking = true;
               const next = !track.liked;
+              // 直接 mutate currentTrack.liked（不创建新对象引用，避免触发其他组件重渲染闪屏）
+              track.liked = next;
+              // 用 local setState 触发 PlayerBar 自身重渲染（爱心变色）
+              setLikeTick((t) => t + 1);
               try {
                 if (next) {
                   await invoke("add_to_favorites", { track });
                 } else {
                   await invoke("remove_from_favorites", { track });
                 }
-                usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
-                await useLibraryStore.getState().refreshTracks();
-              } catch {}
+              } catch (e) {
+                // 失败：回滚
+                track.liked = !next;
+                setLikeTick((t) => t + 1);
+                console.error("[收藏] 失败:", e);
+              } finally {
+                (window as unknown as Record<string, boolean>).__liking = false;
+              }
             }}
             title={currentTrack.liked ? "取消收藏" : "收藏"}
           >

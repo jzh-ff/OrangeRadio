@@ -295,6 +295,105 @@ impl LyricsGenerator {
             rhyme_scheme,
         })
     }
+
+    /// 基于当前歌词 + 用户修改意见，让 AI 迭代修改歌词
+    ///
+    /// 与 `generate` 不同，此方法接收的是已渲染的 MiniMax 格式歌词文本（含 [Verse]/[Chorus] 标签），
+    /// 以及用户的自然语言修改指令（如"副歌改得更激昂"）。
+    /// 返回修改后的完整歌词文本（保持 MiniMax 格式）+ AI 的简短说明。
+    pub async fn revise(
+        &self,
+        current_lyrics: &str,
+        instruction: &str,
+    ) -> orange_core::Result<(String, String)> {
+        let prompt = format!(
+            "你是专业作词人。请根据用户的修改意见，修改以下歌词。\n\n\
+             ## 当前歌词\n\
+             {current_lyrics}\n\n\
+             ## 修改意见\n\
+             {instruction}\n\n\
+             ## 要求\n\
+             - 保持 [Verse]/[Chorus]/[Bridge]/[Pre-Chorus]/[Intro]/[Outro] 段落标签格式\n\
+             - 每段 2-4 句，注意押韵\n\
+             - 只修改用户要求的部分，保持其他部分不变\n\
+             - 严格只输出 JSON，格式如下：\n\
+             {{\n\
+               \"lyrics\": \"修改后的完整歌词（含段落标签，用 \\n 换行）\",\n\
+               \"note\": \"简短说明你做了哪些修改（一两句话）\"\n\
+             }}"
+        );
+
+        let url = format!("{}/v1/messages", self.llm_api_base.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "model": self.llm_model,
+            "max_tokens": 4096,
+            "system": "你是专业音乐作词人，精通歌词修改与润色。输出必须是合法 JSON。",
+            "messages": [{"role": "user", "content": prompt}],
+        });
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("x-api-key", &self.llm_api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| orange_core::CoreError::Network(e.to_string()))?;
+
+        if !status.is_success() {
+            return Err(orange_core::CoreError::AiService(format!(
+                "AI 修改歌词 HTTP {}: {}",
+                status,
+                &text[..text.len().min(300)]
+            )));
+        }
+
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            orange_core::CoreError::AiService(format!("解析 AI 修改歌词响应失败: {e}"))
+        })?;
+
+        // Anthropic content 数组 → 文本
+        let content = v
+            .get("content")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| {
+                arr.iter()
+                    .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
+                    .next()
+            })
+            .unwrap_or("");
+
+        let json_str = extract_json_object(content);
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            orange_core::CoreError::AiService(format!("解析修改歌词 JSON 失败: {e}"))
+        })?;
+
+        let lyrics = parsed
+            .get("lyrics")
+            .and_then(|l| l.as_str())
+            .unwrap_or("")
+            .to_string();
+        let note = parsed
+            .get("note")
+            .and_then(|n| n.as_str())
+            .unwrap_or("歌词已修改")
+            .to_string();
+
+        if lyrics.is_empty() {
+            return Err(orange_core::CoreError::AiService(
+                "AI 修改歌词返回空内容，请重试".into(),
+            ));
+        }
+
+        Ok((lyrics, note))
+    }
 }
 
 /// 从 LLM 输出中抠出第一个 {...} JSON 对象（兼容 ```json 包裹）

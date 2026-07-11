@@ -68,6 +68,7 @@ pub struct TrackMeta {
 pub struct Track {
     pub id: TrackId,
     /// 来自哪个音源
+    #[serde(default)]
     pub source_id: crate::source::SourceId,
     /// 在音源中的原始 ID（本地=文件路径；网易云/QQ=歌曲ID）
     pub source_track_id: String,
@@ -76,19 +77,24 @@ pub struct Track {
     pub source_kind: crate::source::SourceKind,
     pub meta: TrackMeta,
     /// 音频格式
+    #[serde(default)]
     pub format: AudioFormat,
     /// 质量等级
+    #[serde(default)]
     pub quality: Quality,
     pub sample_rate: Option<SampleRate>,
     pub bit_depth: Option<BitDepth>,
     pub bitrate_kbps: Option<u32>,
     /// 添加到库的时间
+    #[serde(default = "Utc::now")]
     pub added_at: DateTime<Utc>,
     /// 最后播放时间
     pub last_played_at: Option<DateTime<Utc>>,
     /// 播放次数
+    #[serde(default)]
     pub play_count: u32,
     /// 是否喜欢
+    #[serde(default)]
     pub liked: bool,
 }
 

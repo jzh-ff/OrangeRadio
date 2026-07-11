@@ -89,10 +89,13 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
     try {
       await invoke("add_to_playlist", { playlistId, track });
       setMsg("已添加到本地歌单");
+      // 通知侧栏刷新歌单列表
+      window.dispatchEvent(new CustomEvent("playlists-changed"));
       setTimeout(onClose, 700);
     } catch (e: unknown) {
-      const err = e as { message?: string };
-      setMsg(err?.message || "添加失败");
+      const errMsg = typeof e === "string" ? e : (e as { message?: string })?.message || "添加失败";
+      alert("[添加到歌单失败]\n\n" + errMsg);
+      setMsg(errMsg);
     } finally {
       setLoading(false);
     }
@@ -106,10 +109,14 @@ export function AddToPlaylistDialog({ track, onClose }: Props) {
       const id = await invoke<string>("create_playlist", { name });
       await invoke("add_to_playlist", { playlistId: id, track });
       setMsg("已创建并添加");
+      // 通知侧栏刷新歌单列表
+      window.dispatchEvent(new CustomEvent("playlists-changed"));
       setTimeout(onClose, 700);
     } catch (e: unknown) {
-      const err = e as { message?: string };
-      setMsg(err?.message || "创建失败");
+      // 用 alert 弹窗显示完整错误（Tauri DevTools 不可靠时的兜底方案）
+      const errMsg = typeof e === "string" ? e : (e as { message?: string })?.message || JSON.stringify(e);
+      alert("[创建歌单失败]\n\n" + errMsg);
+      setMsg(errMsg);
     } finally {
       setLoading(false);
     }

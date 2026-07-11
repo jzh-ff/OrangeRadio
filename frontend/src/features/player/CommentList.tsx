@@ -20,25 +20,48 @@ function fmtCount(n: number): string {
 }
 
 /**
- * 网易云热门评论列表
+ * 热门评论列表（多源支持：网易云 / QQ 音乐）
+ *
+ * 根据 sourceKind 分发到对应音源的评论命令。两源在 IPC 层返回同构 shape：
+ * `{ total, hot_comments: [{ content, nickname, avatar_url, liked_count }] }`
  */
-export function CommentList({ songId, compact }: { songId: string; compact?: boolean }) {
+export function CommentList({
+  songId,
+  compact,
+  sourceKind,
+}: {
+  songId: string;
+  compact?: boolean;
+  sourceKind?: string;
+}) {
   const [data, setData] = useState<CommentData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!songId || !/^\d+$/.test(songId)) {
+    if (!songId) {
+      setData(null);
+      return;
+    }
+    // 按音源分发评论命令
+    const cmd =
+      sourceKind === "netease_cloud_music"
+        ? "netease_comments"
+        : sourceKind === "qq_music"
+        ? "qqmusic_comments"
+        : null;
+    if (!cmd) {
+      // 该音源暂不支持评论（酷我/酷狗/歌曲宝等）
       setData(null);
       return;
     }
     setLoading(true);
     setError("");
-    invoke<CommentData>("netease_comments", { songId, limit: 20 })
+    invoke<CommentData>(cmd, { songId, limit: 20 })
       .then((d) => setData(d))
       .catch((e) => setError(e?.message || "评论加载失败"))
       .finally(() => setLoading(false));
-  }, [songId]);
+  }, [songId, sourceKind]);
 
   if (loading) {
     return (

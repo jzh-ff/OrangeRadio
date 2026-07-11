@@ -267,7 +267,10 @@ export default function App() {
       }
       // 分配请求序号，防止快速切歌时旧的异步取流覆盖新的
       const mySeq = ++playRequestSeq;
+      // 记录本次请求的唯一标识（用于 playPath 最终检查）
+      const requestTrackId = track.id;
       const kind = track.source_kind || "local";
+      console.log("[播放] 开始取流 seq=", mySeq, "kind=", kind, "track=", track.meta?.title);
       let playUrl: string | null = null;
 
       try {
@@ -291,16 +294,27 @@ export default function App() {
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("[播放] 取流失败:", e);
-        // 弹可见提示：QQ 取流常见 104003（版权/VIP），网易云可能 VIP 曲目或 cookie 失效
-        pushToastRef.current(`取流失败：${msg}（可能需要 VIP 或登录已失效）`, "warning", 8000);
+        // 取流失败不弹 toast（避免切歌时旧请求失败打扰用户），只在控制台记录
+        // 除非这是最新的请求
+        if (mySeq === playRequestSeq) {
+          pushToastRef.current?.(`取流失败：${msg}（可能需要 VIP 或登录已失效）`, "warning", 8000);
+        }
         return;
       }
 
-      // 竞态检查：如果这期间用户又切了歌，放弃这次播放
+      // 双重竞态检查：
+      // 1. seq 检查：如果期间用户又切了歌，放弃
+      // 2. currentTrack 检查：确保当前 UI 上显示的还是这首歌
+      const currentNow = usePlayerStore.getState().currentTrack;
       if (mySeq !== playRequestSeq) {
-        console.log("[播放] 放弃过期请求 seq=", mySeq);
+        console.log("[播放] 放弃过期请求(seq) seq=", mySeq, "当前=", playRequestSeq, "track=", track.meta?.title);
         return;
       }
+      if (currentNow && (currentNow as any).id !== requestTrackId) {
+        console.log("[播放] 放弃过期请求(track) 请求=", track.meta?.title, "当前=", currentNow.meta?.title);
+        return;
+      }
+      console.log("[播放] 取流成功，开始播放 seq=", mySeq, "track=", track.meta?.title);
       engine.playPath(playUrl!);
     };
   }, [engine]);

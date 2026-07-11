@@ -3,9 +3,12 @@ import {
   generateLyrics,
   generateMusic,
   separateVocal,
+  reviseLyrics,
   getStudioConfig,
   type LyricsDraft,
 } from "../lib/studio";
+import type { Track } from "./libraryStore";
+import { usePlayerStore } from "./playerStore";
 
 /**
  * 从 invoke reject 出来的错误对象里提取可读文案。
@@ -22,6 +25,12 @@ function extractError(e: unknown): string {
   return String(e);
 }
 
+/** AI 对话消息 */
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface StudioState {
   /** 用户输入的创作提示词 */
   prompt: string;
@@ -31,23 +40,34 @@ interface StudioState {
   lyricsText: string;
   /** 生成的完整歌曲本地路径 */
   audioPath: string | null;
+  /** 生成结果对应的 Track（可推入播放队列） */
+  generatedTrack: Track | null;
   /** 分轨结果 */
   stems: { vocals: string; instrumental: string } | null;
+  /** 歌词 AI 对话历史 */
+  chatHistory: ChatMessage[];
 
   /** 各阶段 loading */
   generatingLyrics: boolean;
   generatingMusic: boolean;
   separating: boolean;
+  revising: boolean;
+  /** 工程名（保存/加载用） */
+  projectName: string;
   /** 最近一次错误（用于 Toast 展示） */
   error: string | null;
 
   setPrompt: (p: string) => void;
   setLyricsText: (t: string) => void;
+  setProjectName: (n: string) => void;
   clearError: () => void;
 
   doGenerateLyrics: () => Promise<void>;
   doGenerateMusic: (instrumental?: boolean) => Promise<void>;
   doSeparateVocal: () => Promise<void>;
+  doReviseLyrics: (instruction: string) => Promise<void>;
+  /** 把生成的曲目推入主播放器队列并切换到播放器视图 */
+  playInPlayer: () => void;
   reset: () => void;
 }
 
@@ -56,14 +76,19 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   lyrics: null,
   lyricsText: "",
   audioPath: null,
+  generatedTrack: null,
   stems: null,
+  chatHistory: [],
   generatingLyrics: false,
   generatingMusic: false,
   separating: false,
+  revising: false,
+  projectName: "",
   error: null,
 
   setPrompt: (prompt) => set({ prompt }),
   setLyricsText: (lyricsText) => set({ lyricsText }),
+  setProjectName: (projectName) => set({ projectName }),
   clearError: () => set({ error: null }),
 
   doGenerateLyrics: async () => {
@@ -87,7 +112,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       });
       // 渲染成 MiniMax 歌词文本，便于用户编辑
       const text = draftToText(draft);
-      set({ lyrics: draft, lyricsText: text });
+      set({ lyrics: draft, lyricsText: text, chatHistory: [] });
     } catch (e) {
       set({ error: extractError(e) });
     } finally {
@@ -106,7 +131,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       set({ error: "请先输入创作提示词" });
       return;
     }
-    set({ generatingMusic: true, error: null, audioPath: null, stems: null });
+    set({ generatingMusic: true, error: null, audioPath: null, stems: null, generatedTrack: null });
     try {
       // 优先使用用户编辑后的歌词文本；为空时让后端自动写词（autoLyrics 默认开启）
       const userLyrics = get().lyricsText.trim() || null;
@@ -120,7 +145,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       if (result.lyrics && !get().lyricsText.trim()) {
         set({ lyricsText: result.lyrics });
       }
-      set({ audioPath: result.audio_path });
+      set({
+        audioPath: result.audio_path,
+        generatedTrack: result.track || null,
+      });
       // 自动写词降级提示透传到 error（用 Toast 展示，但不阻断播放）
       if (result.lyrics_note) {
         set({ error: result.lyrics_note });
@@ -160,14 +188,64 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     }
   },
 
+  doReviseLyrics: async (instruction: string) => {
+    const { apiKey } = getStudioConfig();
+    if (!apiKey) {
+      set({ error: "未配置 MiniMax API Key，请先在设置中填写" });
+      return;
+    }
+    const currentLyrics = get().lyricsText.trim();
+    if (!currentLyrics) {
+      set({ error: "请先生成或输入歌词再修改" });
+      return;
+    }
+    const inst = instruction.trim();
+    if (!inst) {
+      set({ error: "请输入修改意见" });
+      return;
+    }
+    set({ revising: true, error: null });
+    // 先把用户消息加入对话历史
+    set((s) => ({ chatHistory: [...s.chatHistory, { role: "user", content: inst }] }));
+    try {
+      const result = await reviseLyrics({ currentLyrics, instruction: inst });
+      // 更新歌词文本
+      set({ lyricsText: result.lyrics });
+      // 把 AI 回复加入对话历史
+      set((s) => ({
+        chatHistory: [...s.chatHistory, { role: "assistant", content: result.note }],
+      }));
+    } catch (e) {
+      set({ error: extractError(e) });
+    } finally {
+      set({ revising: false });
+    }
+  },
+
+  playInPlayer: () => {
+    const track = get().generatedTrack;
+    if (!track) {
+      set({ error: "还没有生成可播放的曲目" });
+      return;
+    }
+    const playerStore = usePlayerStore.getState();
+    playerStore.setQueue([track as Track]);
+    playerStore.setCurrent(track as Track, 0);
+    playerStore.setView("player");
+    playerStore.setFullPlayer(true);
+  },
+
   reset: () =>
     set({
       prompt: "",
       lyrics: null,
       lyricsText: "",
       audioPath: null,
+      generatedTrack: null,
       stems: null,
+      chatHistory: [],
       error: null,
+      projectName: "",
     }),
 }));
 

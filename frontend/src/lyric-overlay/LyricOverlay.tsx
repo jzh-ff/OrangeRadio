@@ -23,7 +23,7 @@ interface LyricState {
   beatIntensity?: number;
 }
 
-/** 拉歌词，按 source_kind 分发网易云 / QQ；无匹配音源或失败 → 置空 */
+/** 拉歌词，按 source_kind 分发网易云 / QQ / 酷狗 / 酷我 / 歌曲宝 / Spotify跨源；无匹配音源或失败 → 置空 */
 async function fetchLyric(
   track: Track,
   setRaw: (s: string | null) => void,
@@ -33,14 +33,21 @@ async function fetchLyric(
   const tid = track.source_track_id;
   try {
     let data: { raw_lrc: string | null; translated_lrc: string | null } | null = null;
-    if (kind === "netease_cloud_music") {
-      data = await invoke<{ raw_lrc: string; translated_lrc: string | null }>("netease_lyric", {
-        songId: tid,
-      });
-    } else if (kind === "qq_music") {
-      data = await invoke<{ raw_lrc: string; translated_lrc: string | null }>("qqmusic_lyric", {
-        songId: tid,
-      });
+    // 按音源分发歌词命令，所有命令返回同构 shape { raw_lrc, translated_lrc }
+    const cmd =
+      kind === "netease_cloud_music" ? "netease_lyric"
+      : kind === "qq_music" ? "qqmusic_lyric"
+      : kind === "kugou" ? "kugou_lyric"
+      : kind === "kuwo" ? "kuwo_lyric"
+      : kind === "gequbao" ? "gequbao_lyric"
+      : kind === "spotify" ? "spotify_lyric"
+      : null;
+    if (cmd) {
+      // Spotify 走跨源匹配，需要 title + artist 而非 songId
+      const params = kind === "spotify"
+        ? { title: track.meta?.title || "", artist: track.meta?.artist || "" }
+        : { songId: tid };
+      data = await invoke<{ raw_lrc: string; translated_lrc: string | null }>(cmd, params);
     } else if ((track.meta as { lyrics?: string | null } | undefined)?.lyrics) {
       data = { raw_lrc: (track.meta as { lyrics?: string | null }).lyrics!, translated_lrc: null };
     }

@@ -110,17 +110,31 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (filter) set({ filter });
     const currentFilter = get().filter;
     const PAGE_SIZE = 200;
-    const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE, filter: currentFilter });
-    set({ tracks, page: 1, hasMore: tracks.length === PAGE_SIZE, searching: false });
-    usePlayerStore.getState().setQueue(tracks);
+    set({ loading: true });
+    try {
+      const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE, filter: currentFilter });
+      set({ tracks, page: 1, hasMore: tracks.length === PAGE_SIZE, searching: false });
+      usePlayerStore.getState().setQueue(tracks);
+    } catch (e) {
+      console.error("[library] loadTracks 失败:", e);
+    } finally {
+      set({ loading: false });
+    }
   },
 
   refreshTracks: async () => {
     const currentFilter = get().filter;
     const PAGE_SIZE = 200;
-    const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE, filter: currentFilter });
-    set({ tracks, page: 1, hasMore: tracks.length === PAGE_SIZE, searching: false });
-    // 不重置播放队列，避免打断当前播放
+    set({ loading: true });
+    try {
+      const tracks = await invoke<Track[]>("library_tracks", { offset: 0, limit: PAGE_SIZE, filter: currentFilter });
+      set({ tracks, page: 1, hasMore: tracks.length === PAGE_SIZE, searching: false });
+      // 不重置播放队列，避免打断当前播放
+    } catch (e) {
+      console.error("[library] refreshTracks 失败:", e);
+    } finally {
+      set({ loading: false });
+    }
   },
 
   loadMore: async () => {
