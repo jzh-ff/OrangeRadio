@@ -385,7 +385,13 @@ export function PlayerBar() {
                 }
                 usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
                 await useLibraryStore.getState().refreshTracks();
-              } catch {}
+                // 通知侧栏刷新（收藏变化可能影响"我的收藏"歌单计数）
+                window.dispatchEvent(new CustomEvent("playlists-changed"));
+              } catch (e) {
+                console.error("[收藏] 失败:", e);
+                const msg = typeof e === "string" ? e : (e as { message?: string })?.message || "收藏失败";
+                alert("[收藏失败]\n\n" + msg);
+              }
             }}
             title={currentTrack.liked ? "取消收藏" : "收藏"}
           >

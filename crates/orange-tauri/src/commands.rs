@@ -828,12 +828,24 @@ pub async fn create_playlist(
     state: tauri::State<'_, AppState>,
     name: String,
 ) -> Result<String, String> {
-    tracing::info!("create_playlist: name={}", name);
+    tracing::info!("create_playlist 开始: name={}", name);
     let library = state.library.clone();
-    tokio::task::spawn_blocking(move || library.create_playlist(&name))
+    let result = tokio::task::spawn_blocking(move || library.create_playlist(&name))
         .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            tracing::error!("create_playlist spawn_blocking 失败: {}", e);
+            e.to_string()
+        })?;
+    match result {
+        Ok(id) => {
+            tracing::info!("create_playlist 成功: id={}", id);
+            Ok(id)
+        }
+        Err(e) => {
+            tracing::error!("create_playlist 数据库错误: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 /// 重命名歌单
@@ -871,17 +883,27 @@ pub async fn add_to_playlist(
     track: Track,
 ) -> Result<(), String> {
     tracing::info!(
-        "add_to_playlist: playlist_id={}, track_id={}, source_kind={:?}, title={}",
+        "add_to_playlist 开始: playlist_id={}, title={}",
         playlist_id,
-        track.id.0,
-        track.source_kind,
         track.meta.title
     );
     let library = state.library.clone();
-    tokio::task::spawn_blocking(move || library.add_to_playlist(&playlist_id, &track))
+    let result = tokio::task::spawn_blocking(move || library.add_to_playlist(&playlist_id, &track))
         .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            tracing::error!("add_to_playlist spawn_blocking 失败: {}", e);
+            e.to_string()
+        })?;
+    match result {
+        Ok(()) => {
+            tracing::info!("add_to_playlist 成功");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("add_to_playlist 数据库错误: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 /// 从歌单移除歌曲

@@ -101,7 +101,13 @@ export function Sidebar() {
     const t = setInterval(() => {
       if (!document.hidden) loadPlaylists();
     }, 30000);
-    return () => clearInterval(t);
+    // 监听歌单变化事件（AddToPlaylistDialog 创建/添加后触发）
+    const onPlaylistsChanged = () => loadPlaylists();
+    window.addEventListener("playlists-changed", onPlaylistsChanged);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("playlists-changed", onPlaylistsChanged);
+    };
   }, []);
 
   const onItemAction = (item: MenuItem) => {

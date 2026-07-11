@@ -31,6 +31,7 @@ export function TrackActions({ track, size = 15, showLike = true, showPlayNext =
       setLiked(next);
       track.liked = next;
       await useLibraryStore.getState().refreshTracks();
+      window.dispatchEvent(new CustomEvent("playlists-changed"));
     } catch (err) {
       // 失败静默
     } finally {

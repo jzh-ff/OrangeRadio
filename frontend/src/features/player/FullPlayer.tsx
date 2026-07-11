@@ -752,7 +752,10 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                     }
                     usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
                     await useLibraryStore.getState().refreshTracks();
-                  } catch {}
+                    window.dispatchEvent(new CustomEvent("playlists-changed"));
+                  } catch (e) {
+                    console.error("[收藏] 失败:", e);
+                  }
                 }}
                 title={currentTrack.liked ? "取消收藏" : "收藏"}
                 aria-label={currentTrack.liked ? "取消收藏" : "收藏"}
