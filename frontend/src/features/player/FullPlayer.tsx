@@ -136,6 +136,8 @@ const ProgressSection = React.memo(function ProgressSection() {
 
 export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
+  // 收藏按钮的 local 重渲染触发器（不经过 playerStore，避免其他组件闪屏）
+  const [, forceLikeUpdate] = useState(0);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const fullLayout = usePlayerStore((s) => s.fullLayout);
   const setFullLayout = usePlayerStore((s) => s.setFullLayout);
@@ -744,18 +746,18 @@ export function FullPlayer({ pushToast }: FullPlayerProps = {}) {
                 onClick={async () => {
                   const track = currentTrack;
                   const next = !track.liked;
-                  // 乐观更新
-                  usePlayerStore.setState({ currentTrack: { ...track, liked: next } });
+                  // 直接 mutate（不创建新对象引用，避免触发其他组件重渲染闪屏）
+                  track.liked = next;
+                  forceLikeUpdate((t) => t + 1);
                   try {
                     if (next) {
                       await invoke("add_to_favorites", { track });
                     } else {
                       await invoke("remove_from_favorites", { track });
                     }
-                    // 不刷新整个列表（闪烁），收藏不触发侧栏更新
                   } catch (e) {
-                    // 失败回滚
-                    usePlayerStore.setState({ currentTrack: { ...track, liked: !next } });
+                    track.liked = !next;
+                    forceLikeUpdate((t) => t + 1);
                     console.error("[收藏] 失败:", e);
                   }
                 }}
